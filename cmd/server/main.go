@@ -17,15 +17,19 @@ import (
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("❌  Error load config: %v", err)
+		log.Fatalf("❌  Error load config: %w", err)
 	}
 
 	db, err := database.SetupDatabase(cfg)
 	if err != nil {
-		log.Fatalf("❌ Error open database: %v", err)
+		log.Fatalf("❌ Error open database: %w", err)
 	}
 	mode := os.Getenv("MODE")
 	r, err := routes.SetupRoutes(db, mode)
+
+	if err != nil {
+		log.Fatalf("❌ Error gin route: %w", err)
+	}
 
 	httpErr := make(chan error, 1)
 

@@ -18,6 +18,9 @@ type TokenService struct {
 }
 
 func NewTokenService(cfg *config.JWT) (*TokenService, error) {
+	if cfg.AccessPublicKeyUrl == "" {
+		return nil, fmt.Errorf("⚠️ Error Token Service. JWT_ACCESS_PUBLIC_KEY_URL not set.")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -34,12 +37,18 @@ func NewTokenService(cfg *config.JWT) (*TokenService, error) {
 
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("⚠️ Error getting access public key. Invalid status codo: %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("⚠️ Error getting access public key: %w", err)
 	}
 
-	accessPublicKey, err := jwt.ParseRSAPublicKeyFromPEM([]byte(body))
+	fmt.Printf("Received public key (%d bytes):\n%s\n", len(body), string(body))
+
+	accessPublicKey, err := jwt.ParseRSAPublicKeyFromPEM(body)
 
 	return &TokenService{
 		accessPublicKey: accessPublicKey,
@@ -56,8 +65,16 @@ func (s *TokenService) ValidateAccessToken(tokenString string) (*models.AccessCl
 	if err != nil {
 		return nil, err
 	}
-	if claims, ok := token.Claims.(*models.AccessClaims); ok && token.Valid {
-		return claims, nil
+	if claims, ok := token.Claims.(*models.AccessClaims); ok {
+		fmt.Printf("Claims parsed: UserID=%s, Username=%s, Role=%s\n",
+			claims.UserID, claims.Username, claims.Role)
+		if token.Valid {
+			return claims, nil
+		}
+	} else {
+		if mapClaims, ok := token.Claims.(jwt.MapClaims); ok {
+			fmt.Printf("MapClaims: %+v\n", mapClaims)
+		}
 	}
 	return nil, fmt.Errorf("⚠️ Error invalid token")
 }

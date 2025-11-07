@@ -17,10 +17,10 @@ spec:
     spec:
       containers:
         - name: stream
-          image: xomrkob/stream:0.1
+          image: xomrkob/stream:0.1.5
           imagePullPolicy: Always
           ports:
-            containerPort: 8080
+            - containerPort: 8080
           env:
             - name: SERVER_ADDR
               value: ":8080"
@@ -42,6 +42,8 @@ spec:
                 secretKeyRef:
                   name: go-app-secret
                   key: DB_USER
+            - name: JWT_ACCESS_PUBLIC_KEY_URL
+              value: http://web-server-gin-service:80/api/auth/public-key
           resources:
             requests:
               memory: "256Mi"
@@ -51,13 +53,13 @@ spec:
               cpu: "500m"
           livenessProbe:
             httpGet:
-              path: /health
+              path: stream/health
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /health
+              path: stream/health
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10

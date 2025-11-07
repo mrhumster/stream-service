@@ -51,12 +51,9 @@ func SetupRoutes(db *gorm.DB, mode string) (*gin.Engine, error) {
 	}
 
 	streamService, err := service.NewStreamService("my stream service")
-
 	streamHandler := handlers.NewStreamHandler(streamService)
 
-	auth := r.Group("/api", middleware.AuthMiddleware(tokenService))
-	auth.GET("/", streamHandler.GetContent)
-	r.GET("/health", func(c *gin.Context) {
+	r.GET("/stream/health", func(c *gin.Context) {
 		if _, err := db.DB(); err != nil {
 			log.Println("⚠️ PG ERROR: ", err.Error())
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "down", "error": err.Error()})
@@ -64,5 +61,11 @@ func SetupRoutes(db *gorm.DB, mode string) (*gin.Engine, error) {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "up"})
 	})
+
+	auth := r.Group("/stream")
+	auth.Use(middleware.AuthMiddleware(tokenService))
+	{
+		auth.GET("/api/content", streamHandler.GetContent)
+	}
 	return r, nil
 }

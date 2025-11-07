@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stream
+  namespace: go-app
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/http2-listener: "true"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      if ($http_content_type = "application/grpc") {
+        set $backend_protocol "grpc";
+      }
+    cert-manager.io/issuer: "ca-issuer"
+spec:
+  tls:
+    - hosts:
+        - go-app.example.com
+      secretName: ingress-certificate
+  ingressClassName: nginx
+  rules:
+    - host: go-app.example.com
+      http:
+        paths:
+          - path: /stream
+            pathType: Prefix
+            backend:
+              service:
+                name: stream-service
+                port:
+                  number: 80

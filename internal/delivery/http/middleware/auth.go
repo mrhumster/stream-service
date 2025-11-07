@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -15,6 +16,7 @@ func AuthMiddleware(tokenService *service.TokenService) gin.HandlerFunc {
 		token := extractToken(c.Request)
 		claims, err := tokenService.ValidateAccessToken(token)
 		if err != nil {
+			log.Printf("⚠️ AuthMiddleware error: %v", err)
 			c.JSON(http.StatusUnauthorized, response.ErrorResponse("invalid token claims"))
 			c.Abort()
 			return

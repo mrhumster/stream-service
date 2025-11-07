@@ -25,6 +25,7 @@ fi
 
 echo "⬆️docker push..."
 docker push xomrkob/stream:$VER
+docker push xomrkob/stream:latest
 
 if [ $? -eq 0 ]; then
   echo "🟢 Push success"

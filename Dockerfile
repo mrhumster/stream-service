@@ -25,8 +25,5 @@ COPY --from=builder --chown=appuser:appgroup /app/server .
 COPY --from=builder --chown=appuser:appgroup /app/config ./config
 EXPOSE 8080
 
-COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
-
 USER appuser
 CMD ["/app/server"]
