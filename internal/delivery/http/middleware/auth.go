@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"strings"
 
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
 	"github.com/mrhumster/stream-service/internal/service"
 
 	"github.com/mrhumster/web-server-gin/pkg/auth"
+	"github.com/mrhumster/web-server-gin/pkg/middleware"
 )
 
 func AuthMiddleware(tokenService *service.TokenService) gin.HandlerFunc {
@@ -43,31 +43,6 @@ func extractToken(r *http.Request) string {
 	return parts[1]
 }
 
-func Authorize(obj string, act string) gin.HandlerFunc {
-	client, err := auth.NewPermissionClient("auth-service:50051")
-	if err != nil {
-		log.Fatal("Failed to create auth client:", err)
-	}
-	return func(c *gin.Context) {
-		userIDinterface, exists := c.Get("userID")
-		userID := fmt.Sprintf("%v", userIDinterface)
-		if !exists {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, response.ErrorResponse("User hasn't logged in yet"))
-			return
-		}
-
-		resourceID := c.Param("id")
-
-		fullResource := obj
-		if resourceID != "" {
-			fullResource = fmt.Sprintf("%s/%s", obj, resourceID)
-		}
-
-		if ok, _ := client.CheckPermission(c.Request.Context(), userID, fullResource, act); !ok {
-			c.AbortWithStatusJSON(http.StatusForbidden, response.ErrorResponse("Access denied"))
-			return
-		}
-
-		c.Next()
-	}
+func Authorize(obj string, act string, client *auth.PermissionClient) gin.HandlerFunc {
+	return middleware.Authorize(client, obj, act)
 }

@@ -5,7 +5,7 @@ go 1.25.1
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
-	github.com/mrhumster/web-server-gin v1.2.3
+	github.com/mrhumster/web-server-gin v0.1.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
 )

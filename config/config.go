@@ -12,7 +12,8 @@ type Config struct {
 }
 
 type Server struct {
-	ServerAddr string
+	ServerAddr      string
+	AuthServiceAddr string
 }
 
 type Database struct {
@@ -41,7 +42,8 @@ func LoadConfig() (*Config, error) {
 			TimeZone: "UTC",
 		},
 		Server: Server{
-			ServerAddr: os.Getenv("SERVER_ADDR"),
+			ServerAddr:      os.Getenv("SERVER_ADDR"),
+			AuthServiceAddr: os.Getenv("AUTH_SERVICE_ADDRESS"),
 		},
 		JWT: JWT{
 			AccessPublicKeyUrl: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),

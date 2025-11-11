@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: stream
-          image: xomrkob/stream:0.1.5
+          image: xomrkob/stream:1.2.5
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -44,6 +44,8 @@ spec:
                   key: DB_USER
             - name: JWT_ACCESS_PUBLIC_KEY_URL
               value: http://web-server-gin-service:80/api/auth/public-key
+            - name: AUTH_SERVICE_ADDRESS
+              value: web-server-gin-service:50051
           resources:
             requests:
               memory: "256Mi"

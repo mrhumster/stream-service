@@ -12,23 +12,30 @@ import (
 	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/database"
 	"github.com/mrhumster/stream-service/internal/delivery/http/routes"
+	"github.com/mrhumster/web-server-gin/pkg/auth"
 )
 
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("❌  Error load config: %w", err)
+		log.Fatalf("❌  Error load config: %v", err)
 	}
 
 	db, err := database.SetupDatabase(cfg)
 	if err != nil {
-		log.Fatalf("❌ Error open database: %w", err)
+		log.Fatalf("❌ Error open database: %v", err)
 	}
 	mode := os.Getenv("MODE")
-	r, err := routes.SetupRoutes(db, mode)
+
+	permissionClient, err := auth.NewPermissionClient(cfg.Server.AuthServiceAddr)
+	if err != nil {
+		log.Fatalf("❌ Permission gRPC client: %v", err)
+	}
+
+	r, err := routes.SetupRoutes(db, mode, permissionClient)
 
 	if err != nil {
-		log.Fatalf("❌ Error gin route: %w", err)
+		log.Fatalf("❌ Error gin route: %v", err)
 	}
 
 	httpErr := make(chan error, 1)

@@ -10,6 +10,7 @@ import (
 	"github.com/mrhumster/stream-service/internal/delivery/http/handlers"
 	"github.com/mrhumster/stream-service/internal/delivery/http/middleware"
 	"github.com/mrhumster/stream-service/internal/service"
+	"github.com/mrhumster/web-server-gin/pkg/auth"
 	"gorm.io/gorm"
 )
 
@@ -19,7 +20,7 @@ const (
 	ModeRelease = "RELEASE"
 )
 
-func SetupRoutes(db *gorm.DB, mode string) (*gin.Engine, error) {
+func SetupRoutes(db *gorm.DB, mode string, permissionClient *auth.PermissionClient) (*gin.Engine, error) {
 	var (
 		cfg *config.Config
 		err error
@@ -64,7 +65,7 @@ func SetupRoutes(db *gorm.DB, mode string) (*gin.Engine, error) {
 
 	auth := r.Group("/stream")
 	auth.Use(middleware.AuthMiddleware(tokenService))
-	auth.Use(middleware.Authorize("stream", "read"))
+	auth.Use(middleware.Authorize("stream", "read", permissionClient))
 	{
 		auth.GET("/api/content", streamHandler.GetContent)
 	}
