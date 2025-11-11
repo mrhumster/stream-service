@@ -64,6 +64,7 @@ func SetupRoutes(db *gorm.DB, mode string) (*gin.Engine, error) {
 
 	auth := r.Group("/stream")
 	auth.Use(middleware.AuthMiddleware(tokenService))
+	auth.Use(middleware.Authorize("stream", "read"))
 	{
 		auth.GET("/api/content", streamHandler.GetContent)
 	}
