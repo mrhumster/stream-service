@@ -21,7 +21,7 @@ func NewStreamHandler(service *service.StreamService) *StreamHandler {
 func (h *StreamHandler) GetContent(c *gin.Context) {
 	claims, exists := c.Get("claims")
 	if !exists {
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("claims not exists in context")})
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "claims not exists in context"})
 	}
 	c.JSON(http.StatusOK, gin.H{"response": fmt.Sprintf("Claims %#v", claims)})
 }

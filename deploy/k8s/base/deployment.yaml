@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: stream
-          image: xomrkob/stream:1.2.5
+          image: xomrkob/stream:0.1.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -27,7 +27,7 @@ spec:
             - name: DOMAIN
               value: go-app.example.com
             - name: DB_HOST
-              value: postgresql.go-app.svc.cluster.local
+              value: potgresql-postgresql
             - name: DB_PORT
               value: "5432"
             - name: DB_NAME
