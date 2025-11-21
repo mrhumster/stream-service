@@ -6,135 +6,269 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
-	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
-type StreamRepositoryTestSuite struct {
-	suite.Suite
-	repo StreamRepository
+func TestStreamRepositoryInterface(t *testing.T) {
+	var _ StreamRepository = (*GormStreamRepository)(nil)
+	var _ StreamRepository = (*StreamRepositoryMock)(nil)
 }
 
-func (s *StreamRepositoryTestSuite) SetupTest() {
-	// Реализация конкретного репозитория
-}
-
-func TestStreamRepositoryTestSuite(t *testing.T) {
-	suite.Run(t, new(StreamRepositoryTestSuite))
-}
-
-func (suite *StreamRepositoryTestSuite) TestCreateAndGetByID() {
-
+func TestStreamRepositoryMock(t *testing.T) {
 	ctx := context.Background()
 
-	if suite.repo == nil {
-		suite.T().Skip("Repository not implemented yet")
-	}
+	t.Run("Create and Read", func(t *testing.T) {
+		mockRepo := &StreamRepositoryMock{}
+		ownerID := uuid.New()
+		streamID := uuid.New()
+		stream := &models.Stream{
+			Title:   "Test stream",
+			OwnerID: ownerID,
+			Status:  models.StatusDraft,
+		}
+		stream.ID = streamID
+
+		mockRepo.On("Create", ctx, stream).Return(nil)
+		mockRepo.On("Read", ctx, streamID).Return(stream, nil)
+
+		err := mockRepo.Create(ctx, stream)
+		require.NoError(t, err)
+
+		result, err := mockRepo.Read(ctx, streamID)
+		require.Equal(t, result.ID, stream.ID)
+		require.Equal(t, result.Title, stream.Title)
+
+		// ⚠️ Это суперважная штука в моках!
+		// Проверяет, что ВСЕ ожидания, которые ты настроил на моке, были выполнены.
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		mockRepo := &StreamRepositoryMock{}
+		streamID := uuid.New()
+		mockRepo.On("Delete", ctx, streamID).Return(nil)
+		err := mockRepo.Delete(ctx, streamID)
+		require.NoError(t, err)
+
+		mockRepo.AssertExpectations(t)
+	})
+}
+
+func setupTestDB(t *testing.T) *gorm.DB {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+
+	err = db.AutoMigrate(&models.Stream{})
+	require.NoError(t, err)
+	return db
+}
+
+func TestGormStreamRepository_Create(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewGormStreamRepository(db)
+	ctx := context.Background()
 
 	stream := &models.Stream{
-		Title:       "Test stream",
+		Title:       "Test Stream",
 		Description: "Test Description",
 		OwnerID:     uuid.New(),
 		Status:      models.StatusDraft,
 		Visibility:  models.VisibilityPrivate,
 	}
 
-	err := suite.repo.Create(ctx, stream)
-	suite.Require().NoError(err)
-	suite.Require().NotEqual(uuid.Nil, stream.ID)
+	err := repo.Create(ctx, stream)
+	require.NoError(t, err)
+	assert.NotEqual(t, uuid.Nil, stream.ID)
 
-	retrieved, err := suite.repo.Read(ctx, stream.ID)
-	suite.Require().NoError(err)
-	suite.Require().NotNil(retrieved)
-
-	suite.Require().Equal(stream.Title, retrieved.Title)
-	suite.Require().Equal(stream.ID, retrieved.ID)
-	suite.Require().Equal(stream.OwnerID, retrieved.OwnerID)
+	var count int64
+	db.Model(&models.Stream{}).Count(&count)
+	assert.Equal(t, count, 1)
 }
 
-func (suite *StreamRepositoryTestSuite) TestUpdate() {
+func TestGormStreamRepository_Read(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewGormStreamRepository(db)
 	ctx := context.Background()
 
-	if suite.repo == nil {
-		suite.T().Skip("Repository not implemented yet")
+	stream := &models.Stream{
+		Title:       "Test Stream",
+		Description: "Test Description",
+		OwnerID:     uuid.New(),
+		Status:      models.StatusDraft,
+		Visibility:  models.VisibilityPrivate,
 	}
 
-	stream := suite.createTestStream(ctx)
+	err := repo.Create(ctx, stream)
+	require.NoError(t, err)
+
+	err = repo.Delete(ctx, stream.ID)
+	require.NoError(t, err)
+
+	var count int64
+	db.Model(&models.Stream{}).Count(&count)
+	assert.Equal(t, count, 0)
+
+	deleted, err := repo.Read(ctx, stream.ID)
+	require.Nil(t, deleted)
+}
+
+func TestGormStreamRepository_Update(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewGormStreamRepository(db)
+	ctx := context.Background()
+
+	streamID := uuid.New()
+	stream := &models.Stream{
+		Title:       "Test Stream",
+		Description: "Test Description",
+		OwnerID:     uuid.New(),
+		Status:      models.StatusDraft,
+		Visibility:  models.VisibilityPrivate,
+	}
+	stream.ID = streamID
+
+	repo.Create(ctx, stream)
 
 	stream.Title = "Updated title"
-	err := suite.repo.Update(ctx, stream)
-	suite.Require().NoError(err)
+	err := repo.Update(ctx, stream)
+	require.NoError(t, err)
 
-	updated, err := suite.repo.Read(ctx, stream.ID)
-
-	suite.Require().NoError(err)
-	suite.Require().Equal(updated.Title, stream.Title)
-
+	updated, err := repo.Read(ctx, streamID)
+	require.NotNil(t, updated)
+	require.Equal(t, stream.Title, updated.Title)
 }
 
-func (suite *StreamRepositoryTestSuite) TestDelete() {
+func TestGormStreamRepository_Delete(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewGormStreamRepository(db)
 	ctx := context.Background()
+	streamID := uuid.New()
 
-	stream := suite.createTestStream(ctx)
+	stream := &models.Stream{
+		Title:   "For delete",
+		OwnerID: uuid.New(),
+	}
+	stream.ID = streamID
 
-	err := suite.repo.Delete(ctx, stream.ID)
-	suite.Require().NoError(err)
+	repo.Create(ctx, stream)
 
-	deleted, err := suite.repo.Read(ctx, stream.ID)
-	suite.Require().Error(err)
-	suite.Assert().Nil(deleted)
+	err := repo.Delete(ctx, streamID)
+	require.NoError(t, err)
+
+	var count int64
+	db.Model(&models.Stream{}).Count(&count)
+	assert.Equal(t, count, 0)
 }
 
-func (suite *StreamRepositoryTestSuite) TestListWithFilter() {
+func TestGormStreamRepository_List(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewGormStreamRepository(db)
 	ctx := context.Background()
 	ownerID := uuid.New()
-
 	stream1 := &models.Stream{
-		Title:   "Stream 1",
+		Title:   "stream 1",
 		OwnerID: ownerID,
-		Status:  models.StatusDraft,
 	}
+	repo.Create(ctx, stream1)
 	stream2 := &models.Stream{
-		Title:   "Stream 2",
+		Title:   "stream 2",
 		OwnerID: ownerID,
-		Status:  models.StatusPublished,
 	}
-
-	suite.Require().NoError(suite.repo.Create(ctx, stream1))
-	suite.Require().NoError(suite.repo.Create(ctx, stream2))
+	repo.Create(ctx, stream2)
 
 	filter := StreamFilter{
 		OwnerID: &ownerID,
-		Limit:   10,
 	}
-
-	streams, err := suite.repo.List(ctx, filter)
-	suite.Require().NoError(err)
-	suite.Assert().Len(streams, 2)
+	streams, err := repo.List(ctx, filter)
+	require.NoError(t, err)
+	require.Len(t, streams, 2)
 }
 
-func (suite *StreamRepositoryTestSuite) TestUpdateStatus() {
+func TestGormStreamRepository_GetByOwner(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewGormStreamRepository(db)
 	ctx := context.Background()
-	stream := suite.createTestStream(ctx)
+	ownerID := uuid.New()
+	stream1 := &models.Stream{
+		Title:   "stream 1",
+		OwnerID: ownerID,
+		Status:  models.StatusDraft,
+	}
+	repo.Create(ctx, stream1)
+	stream2 := &models.Stream{
+		Title:   "stream 2",
+		OwnerID: ownerID,
+		Status:  models.StatusDraft,
+	}
+	repo.Create(ctx, stream2)
 
-	err := suite.repo.UpdateStatus(ctx, stream.ID, models.StatusPublished)
-	suite.Assert().NoError(err)
-
-	updated, err := suite.repo.Read(ctx, stream.ID)
-	suite.Require().NoError(err)
-	suite.Assert().Equal(models.StatusPublished, updated.Status)
-
+	streams, err := repo.GetByOwner(ctx, ownerID)
+	require.NoError(t, err)
+	require.Len(t, streams, 2)
 }
 
-func (suite *StreamRepositoryTestSuite) createTestStream(ctx context.Context) *models.Stream {
+func TestGormStreamRepository_Exists(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewGormStreamRepository(db)
+	ctx := context.Background()
+	ownerID := uuid.New()
+	streamID := uuid.New()
 	stream := &models.Stream{
-		Title:       "Test stream",
-		Description: "Test Description",
-		OwnerID:     uuid.New(),
-		Status:      models.StatusDraft,
-		Visibility:  models.VisibilityPrivate,
+		Title:   "stream",
+		OwnerID: ownerID,
+		Status:  models.StatusDraft,
 	}
-	err := suite.repo.Create(ctx, stream)
-	suite.Require().NoError(err)
+	stream.ID = streamID
+	repo.Create(ctx, stream)
+	exists := repo.Exists(ctx, streamID)
+	require.True(t, exists)
+}
 
-	return stream
+func TestGormStreamRepository_UpdateStatus(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewGormStreamRepository(db)
+	ctx := context.Background()
+	ownerID := uuid.New()
+	streamID := uuid.New()
+	stream := &models.Stream{
+		Title:   "stream",
+		OwnerID: ownerID,
+		Status:  models.StatusDraft,
+	}
+	stream.ID = streamID
+	repo.Create(ctx, stream)
+	err := repo.UpdateStatus(ctx, streamID, models.StatusPublished)
+	require.NoError(t, err)
+
+	updated, err := repo.Read(ctx, stream.ID)
+	assert.Equal(t, updated.Status, models.StatusPublished)
+}
+
+func TestGormStreamRepository_UpdateProcessing(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewGormStreamRepository(db)
+	ctx := context.Background()
+	ownerID := uuid.New()
+	streamID := uuid.New()
+	stream := &models.Stream{
+		Title:   "stream",
+		OwnerID: ownerID,
+		Status:  models.StatusDraft,
+	}
+	stream.ID = streamID
+	repo.Create(ctx, stream)
+	processing := models.StreamProcessing{
+		Steps:    []string{"step one", "step two"},
+		Progress: 50,
+		Error:    nil,
+	}
+	err := repo.UpdateProcessing(ctx, stream.ID, processing)
+	require.NoError(t, err)
+
+	updated, err := repo.Read(ctx, stream.ID)
+	require.NoError(t, err)
+	require.Equal(t, updated.Processing, processing)
 }
