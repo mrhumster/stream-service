@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -85,7 +86,7 @@ func TestGormStreamRepository_Create(t *testing.T) {
 
 	var count int64
 	db.Model(&models.Stream{}).Count(&count)
-	assert.Equal(t, count, 1)
+	assert.Equal(t, count, int64(1))
 }
 
 func TestGormStreamRepository_Read(t *testing.T) {
@@ -109,7 +110,7 @@ func TestGormStreamRepository_Read(t *testing.T) {
 
 	var count int64
 	db.Model(&models.Stream{}).Count(&count)
-	assert.Equal(t, count, 0)
+	assert.Equal(t, count, int64(0))
 
 	deleted, err := repo.Read(ctx, stream.ID)
 	require.Nil(t, deleted)
@@ -160,7 +161,7 @@ func TestGormStreamRepository_Delete(t *testing.T) {
 
 	var count int64
 	db.Model(&models.Stream{}).Count(&count)
-	assert.Equal(t, count, 0)
+	assert.Equal(t, count, int64(0))
 }
 
 func TestGormStreamRepository_List(t *testing.T) {
@@ -270,5 +271,9 @@ func TestGormStreamRepository_UpdateProcessing(t *testing.T) {
 
 	updated, err := repo.Read(ctx, stream.ID)
 	require.NoError(t, err)
-	require.Equal(t, updated.Processing, processing)
+	var updProcessing *models.StreamProcessing
+	if err := json.Unmarshal(updated.Processing, &updProcessing); err != nil {
+		t.Errorf("error unmarshal precessing: %v", err)
+	}
+	require.Equal(t, processing, *updProcessing)
 }

@@ -3,9 +3,9 @@ package models
 import (
 	"encoding/json"
 	"fmt"
-	"time"
-	"gorm.io/datatypes"
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
+	"time"
 )
 
 func (s *Stream) IsDraft() bool {
@@ -57,6 +57,23 @@ func (s *Stream) SetMetadata(metadata *StreamMetadata) error {
 		return err
 	}
 	s.Metadata = datatypes.JSON(data)
+	return nil
+}
+
+func (s *Stream) GetAnalitics() (*StreamAnalytics, error) {
+	var analytics StreamAnalytics
+	if err := json.Unmarshal(s.Analytics, &analytics); err != nil {
+		return nil, err
+	}
+	return &analytics, nil
+}
+
+func (s *Stream) SetAnalitics(analitics *StreamAnalytics) error {
+	data, err := json.Marshal(analitics)
+	if err != nil {
+		return err
+	}
+	s.Analytics = datatypes.JSON(data)
 	return nil
 }
 
