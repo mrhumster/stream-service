@@ -89,6 +89,59 @@ func TestStreamServicImpl_UpdateStream(t *testing.T) {
 		require.NotNil(t, updated)
 		mockRepo.AssertExpectations(t)
 	})
+
+	t.Run("should validate title before update", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+
+		streamID := uuid.New()
+		existiongStream := &models.Stream{
+			Title:   "Original Title",
+			OwnerID: uuid.New(),
+			Status:  models.StatusDraft,
+		}
+		existiongStream.ID = streamID
+		emptyTitle := ""
+		req := service.UpdateStreamRequest{
+			Title: &emptyTitle,
+		}
+
+		mockRepo.On("Read", ctx, streamID).Return(existiongStream, nil)
+
+		updated, err := serviceImpl.UpdateStream(ctx, streamID, req)
+
+		require.Error(t, err)
+		assert.Nil(t, updated)
+		assert.Contains(t, err.Error(), "title")
+		mockRepo.AssertNotCalled(t, "Update")
+	})
+
+	t.Run("should validate title length", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+
+		streamID := uuid.New()
+		existingStream := &models.Stream{
+			Title:   "Original",
+			OwnerID: uuid.New(),
+			Status:  models.StatusDraft,
+		}
+		existingStream.ID = streamID
+		longTitle := ""
+		for i := 0; i < 256; i++ {
+			longTitle += "a"
+		}
+		req := service.UpdateStreamRequest{
+			Title: &longTitle,
+		}
+
+		mockRepo.On("Read", ctx, streamID).Return(existingStream, nil)
+		updated, err := serviceImpl.UpdateStream(ctx, streamID, req)
+
+		require.Error(t, err)
+		assert.Nil(t, updated)
+		mockRepo.AssertNotCalled(t, "Update")
+	})
 }
 
 func TestStreamServicImpl_CreateStream(t *testing.T) {

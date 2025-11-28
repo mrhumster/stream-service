@@ -64,6 +64,12 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 	}
 
 	if req.Title != nil {
+		if *req.Title == "" {
+			return nil, fmt.Errorf("stream title connot be empty")
+		}
+		if len(*req.Title) > 255 {
+			return nil, fmt.Errorf("stream title is too long")
+		}
 		stream.Title = *req.Title
 	}
 
