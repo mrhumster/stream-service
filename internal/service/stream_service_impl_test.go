@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 )
 
 func TestStreamServicImpl_UpdateStream(t *testing.T) {
@@ -55,6 +57,36 @@ func TestStreamServicImpl_UpdateStream(t *testing.T) {
 		assert.Equal(t, description, updatedStream.Description)
 		assert.Equal(t, models.VisibilityPublic, updatedStream.Visibility)
 
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("update stream tags", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+
+		streamID := uuid.New()
+
+		existingStream := &models.Stream{
+			Title:   "Test Stream",
+			OwnerID: uuid.New(),
+			Tags:    datatypes.JSON(`["old-tag"]`),
+		}
+
+		newTags := []string{"gaming", "live", "fun"}
+		req := service.UpdateStreamRequest{
+			Tags: &newTags,
+		}
+
+		mockRepo.On("Read", ctx, streamID).Return(existingStream, nil)
+		mockRepo.On("Update", ctx, mock.MatchedBy(func(stream *models.Stream) bool {
+			var tags []string
+			json.Unmarshal(stream.Tags, &tags)
+			return assert.ElementsMatch(t, newTags, tags)
+		})).Return(nil)
+
+		updated, err := serviceImpl.UpdateStream(ctx, streamID, req)
+		require.NoError(t, err)
+		require.NotNil(t, updated)
 		mockRepo.AssertExpectations(t)
 	})
 }
