@@ -30,7 +30,7 @@ func (m *MockStreamService) GetStream(ctx context.Context, id uuid.UUID) (*model
 	return args.Get(0).(*models.Stream), args.Error(1)
 }
 
-func (m *MockStreamService) UpdateStream(ctx context.Context, req service.UpdateStreamRequest) (*models.Stream, error) {
+func (m *MockStreamService) UpdateStream(ctx context.Context, id uuid.UUID, req service.UpdateStreamRequest) (*models.Stream, error) {
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

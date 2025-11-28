@@ -112,7 +112,7 @@ func (c *StreamServiceContractTest) TestCRUDOperations() {
 			Visibility: &newVisibility,
 		}
 
-		updated, err := c.service.UpdateStream(c.ctx, updateReq)
+		updated, err := c.service.UpdateStream(c.ctx, created.ID, updateReq)
 		require.NoError(c.t, err)
 		require.NotNil(c.t, updated)
 		assert.Equal(c.t, newTitle, updated.Title)

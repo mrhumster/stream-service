@@ -113,7 +113,7 @@ func (s *MockStreamServiceTestSuite) TestUpdateStream() {
 	expectedStream.ID = streamID
 	s.service.On("UpdateStream", s.ctx, req).Return(expectedStream, nil)
 
-	stream, err := s.service.UpdateStream(s.ctx, req)
+	stream, err := s.service.UpdateStream(s.ctx, streamID, req)
 
 	s.NoError(err)
 	s.Equal(expectedStream, stream)
@@ -127,7 +127,7 @@ func (s *MockStreamServiceTestSuite) TestUpdateStream() {
 	partialStream.ID = streamID
 	s.service.On("UpdateStream", s.ctx, partialReq).Return(partialStream, nil)
 
-	stream, err = s.service.UpdateStream(s.ctx, partialReq)
+	stream, err = s.service.UpdateStream(s.ctx, streamID, partialReq)
 	s.NoError(err)
 	s.Equal(partialStream, stream)
 }

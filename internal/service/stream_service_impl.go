@@ -46,7 +46,7 @@ func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*model
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (s *StreamServiceImpl) UpdateStream(ctx context.Context, req UpdateStreamRequest) (*models.Stream, error) {
+func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

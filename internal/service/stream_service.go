@@ -11,7 +11,7 @@ import (
 type StreamService interface {
 	CreateStream(ctx context.Context, req CreateStreamRequest) (*models.Stream, error)
 	GetStream(ctx context.Context, id uuid.UUID) (*models.Stream, error)
-	UpdateStream(ctx context.Context, req UpdateStreamRequest) (*models.Stream, error)
+	UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error)
 	DeleteStream(ctx context.Context, id uuid.UUID) error
 
 	ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, error)

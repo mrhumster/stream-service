@@ -13,6 +13,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestStreamServicImpl_UpdateStream(t *testing.T) {
+	ctx := context.Background()
+	t.Run("succesful stream update", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+
+		streamID := uuid.New()
+		ownerID := uuid.New()
+
+		existingStream := &models.Stream{
+			Title:       "Original Title",
+			Description: "Original Description",
+			OwnerID:     ownerID,
+			Status:      models.StatusDraft,
+			Visibility:  models.VisibilityPrivate,
+		}
+		existingStream.ID = streamID
+		title := "Updated title"
+		description := "Updated Description"
+		visibility := models.VisibilityPublic
+		req := service.UpdateStreamRequest{
+			Title:       &title,
+			Description: &description,
+			Visibility:  (*models.StreamVisibility)(&visibility),
+		}
+
+		mockRepo.On("Read", ctx, streamID).Return(existingStream, nil)
+		mockRepo.On("Update", ctx, mock.MatchedBy(func(stream *models.Stream) bool {
+			return stream.Title == title &&
+				stream.Description == description &&
+				stream.Visibility == models.VisibilityPublic &&
+				stream.ID == streamID
+		})).Return(nil)
+
+		updatedStream, err := serviceImpl.UpdateStream(ctx, streamID, req)
+
+		require.NoError(t, err)
+		require.NotNil(t, updatedStream)
+		assert.Equal(t, title, updatedStream.Title)
+		assert.Equal(t, description, updatedStream.Description)
+		assert.Equal(t, models.VisibilityPublic, updatedStream.Visibility)
+
+		mockRepo.AssertExpectations(t)
+	})
+}
+
 func TestStreamServicImpl_CreateStream(t *testing.T) {
 	ctx := context.Background()
 
