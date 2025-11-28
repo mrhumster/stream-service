@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/repository"
+	"gorm.io/datatypes"
 )
 
 type StreamServiceImpl struct {
@@ -34,6 +36,15 @@ func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRe
 		OwnerID:     req.OwnerID,
 		Status:      models.StatusDraft,
 		Visibility:  req.Visibility,
+	}
+
+	if len(req.Tags) > 0 {
+		tagsJSON, err := json.Marshal(req.Tags)
+		if err != nil {
+			return nil, fmt.Errorf("invalid tags format: %w", err)
+		}
+
+		stream.Tags = datatypes.JSON(tagsJSON)
 	}
 
 	if err := s.repo.Create(ctx, stream); err != nil {
@@ -65,7 +76,11 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 	}
 
 	if req.Tags != nil {
-
+		tagsJSON, err := json.Marshal(req.Tags)
+		if err != nil {
+			return nil, fmt.Errorf("invalid tags format: %w", err)
+		}
+		stream.Tags = datatypes.JSON(tagsJSON)
 	}
 
 	if err := s.repo.Update(ctx, stream); err != nil {
