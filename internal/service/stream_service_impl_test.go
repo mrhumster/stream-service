@@ -49,4 +49,38 @@ func TestStreamServicImpl_CreateStream(t *testing.T) {
 
 		mockRepo.AssertExpectations(t)
 	})
+
+	t.Run("empty title should fail", func(t *testing.T) {
+		mocRepo := &repository.StreamRepositoryMock{}
+		srv := service.NewStreamServiceImpl(mocRepo)
+
+		req := service.CreateStreamRequest{
+			Title:   "",
+			OwnerID: uuid.New(),
+		}
+
+		stream, err := srv.CreateStream(ctx, req)
+
+		require.Error(t, err)
+		assert.Nil(t, stream)
+		mocRepo.AssertNotCalled(t, "Create")
+	})
+
+	t.Run("repository error should propagate", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		srv := service.NewStreamServiceImpl(mockRepo)
+
+		req := service.CreateStreamRequest{
+			Title:   "Test stream",
+			OwnerID: uuid.New(),
+		}
+
+		mockRepo.On("Create", ctx, mock.AnythingOfType("*models.Stream")).Return(assert.AnError)
+		stream, err := srv.CreateStream(ctx, req)
+
+		require.Error(t, err)
+		assert.Nil(t, stream)
+		assert.ErrorIs(t, err, assert.AnError)
+		mockRepo.AssertExpectations(t)
+	})
 }

@@ -20,7 +20,27 @@ func NewStreamServiceImpl(repo repository.StreamRepository) *StreamServiceImpl {
 }
 
 func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRequest) (*models.Stream, error) {
-	return nil, fmt.Errorf("not implemented")
+	if req.Title == "" {
+		return nil, fmt.Errorf("stream title is required")
+	}
+
+	if req.OwnerID == uuid.Nil {
+		return nil, fmt.Errorf("owner ID is required")
+	}
+
+	stream := &models.Stream{
+		Title:       req.Title,
+		Description: req.Description,
+		OwnerID:     req.OwnerID,
+		Status:      models.StatusDraft,
+		Visibility:  req.Visibility,
+	}
+
+	if err := s.repo.Create(ctx, stream); err != nil {
+		return nil, err
+	}
+
+	return stream, nil
 }
 func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*models.Stream, error) {
 	return nil, fmt.Errorf("not implemented")
