@@ -47,7 +47,32 @@ func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*model
 }
 
 func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error) {
-	return nil, fmt.Errorf("not implemented")
+	stream, err := s.repo.Read(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("stream not found: %w", err)
+	}
+
+	if req.Title != nil {
+		stream.Title = *req.Title
+	}
+
+	if req.Description != nil {
+		stream.Description = *req.Description
+	}
+
+	if req.Visibility != nil {
+		stream.Visibility = *req.Visibility
+	}
+
+	if req.Tags != nil {
+
+	}
+
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return nil, fmt.Errorf("failed to update stream: %w", err)
+	}
+
+	return stream, nil
 }
 
 func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) error {
