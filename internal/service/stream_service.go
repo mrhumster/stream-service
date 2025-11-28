@@ -1,9 +1,47 @@
 package service
 
-type StreamService struct {
-	name string
+import (
+	"context"
+
+	"github.com/google/uuid"
+	"github.com/mrhumster/stream-service/internal/domain/models"
+	"github.com/mrhumster/stream-service/internal/repository"
+)
+
+type StreamService interface {
+	CreateStream(ctx context.Context, req CreateStreamRequest) (*models.Stream, error)
+	GetStream(ctx context.Context, id uuid.UUID) (*models.Stream, error)
+	UpdateStream(ctx context.Context, req UpdateStreamRequest) (*models.Stream, error)
+	DeleteStream(ctx context.Context, id uuid.UUID) error
+
+	ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, error)
+	ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, error)
+
+	PublishStream(ctx context.Context, streamID uuid.UUID) error
+	UnpublishStream(ctx context.Context, streamID uuid.UUID) error
+	UpdateStreamStatus(ctx context.Context, streamID uuid.UUID, status models.StreamStatus) error
+
+	StartStreamUpload(ctx context.Context, streamID uuid.UUID) (*UploadInfo, error)
+	CompleteStreamUpload(ctx context.Context, streamID uuid.UUID) error
+	CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error)
 }
 
-func NewStreamService(name string) (*StreamService, error) {
-	return &StreamService{name: name}, nil
+type CreateStreamRequest struct {
+	Title       string
+	Description string
+	Visibility  models.StreamVisibility
+	Tags        []string
+	OwnerID     uuid.UUID
+}
+
+type UpdateStreamRequest struct {
+	Title       *string
+	Description *string
+	Visibility  *models.StreamVisibility
+	Tags        *[]string
+}
+
+type UploadInfo struct {
+	UploadURL string
+	StreamID  uuid.UUID
 }
