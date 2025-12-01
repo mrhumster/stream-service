@@ -13,8 +13,58 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
+func TestStreamServicImpl_GetStream(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("successful get stream", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+		streamID := uuid.New()
+		existingStream := &models.Stream{
+			Title:   "Original Title",
+			OwnerID: uuid.New(),
+			Status:  models.StatusDraft,
+		}
+		existingStream.ID = streamID
+		mockRepo.On("Read", ctx, streamID).Return(existingStream, nil)
+		stream, err := serviceImpl.GetStream(ctx, streamID)
+
+		require.NoError(t, err)
+		require.NotNil(t, stream)
+		assert.Equal(t, existingStream.ID, stream.ID)
+		assert.Equal(t, existingStream.Title, stream.Title)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("stream not found", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+
+		nonExistenID := uuid.New()
+		mockRepo.On("Read", ctx, nonExistenID).Return(nil, gorm.ErrRecordNotFound)
+		stream, err := serviceImpl.GetStream(ctx, nonExistenID)
+		require.Error(t, err)
+		assert.Nil(t, stream)
+		assert.Contains(t, err.Error(), "not found")
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("repository error propagate", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+		streamID := uuid.New()
+		mockRepo.On("Read", ctx, streamID).Return(nil, assert.AnError)
+
+		stream, err := serviceImpl.GetStream(ctx, streamID)
+		require.Error(t, err)
+		assert.Nil(t, stream)
+		assert.ErrorIs(t, err, assert.AnError)
+		mockRepo.AssertExpectations(t)
+	})
+}
 func TestStreamServicImpl_UpdateStream(t *testing.T) {
 	ctx := context.Background()
 	t.Run("succesful stream update", func(t *testing.T) {
