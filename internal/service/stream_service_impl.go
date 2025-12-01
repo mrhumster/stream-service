@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 type StreamServiceImpl struct {
@@ -54,7 +56,14 @@ func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRe
 	return stream, nil
 }
 func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*models.Stream, error) {
-	return nil, fmt.Errorf("not implemented")
+	stream, err := s.repo.Read(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("stream not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to get stream: %w", err)
+	}
+	return stream, nil
 }
 
 func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error) {

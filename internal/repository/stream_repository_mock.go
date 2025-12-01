@@ -19,7 +19,11 @@ func (m *StreamRepositoryMock) Create(ctx context.Context, stream *models.Stream
 
 func (m *StreamRepositoryMock) Read(ctx context.Context, id uuid.UUID) (*models.Stream, error) {
 	args := m.Called(ctx, id)
-	return args.Get(0).(*models.Stream), args.Error(1)
+	var stream *models.Stream
+	if args.Get(0) != nil {
+		stream = args.Get(0).(*models.Stream)
+	}
+	return stream, args.Error(1)
 }
 
 func (m *StreamRepositoryMock) GetByOwner(ctx context.Context, id uuid.UUID) ([]*models.Stream, error) {
