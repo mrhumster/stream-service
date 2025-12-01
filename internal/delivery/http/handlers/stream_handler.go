@@ -9,10 +9,10 @@ import (
 )
 
 type StreamHandler struct {
-	service *service.StreamService
+	service *service.StreamServiceImpl
 }
 
-func NewStreamHandler(service *service.StreamService) *StreamHandler {
+func NewStreamHandler(service *service.StreamServiceImpl) *StreamHandler {
 	return &StreamHandler{
 		service: service,
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/delivery/http/handlers"
 	"github.com/mrhumster/stream-service/internal/delivery/http/middleware"
+	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
 	"github.com/mrhumster/web-server-gin/pkg/auth"
 	"gorm.io/gorm"
@@ -51,7 +52,8 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient *auth.PermissionClie
 		return nil, fmt.Errorf("⚠️ Error setup routes: %w", err)
 	}
 
-	streamService, err := service.NewStreamService("my stream service")
+	database := repository.NewGormStreamRepository(db)
+	streamService := service.NewStreamServiceImpl(database)
 	streamHandler := handlers.NewStreamHandler(streamService)
 
 	r.GET("/stream/health", func(c *gin.Context) {
