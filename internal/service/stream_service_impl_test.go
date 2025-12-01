@@ -16,6 +16,78 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestStreamServicImpl_ListStream(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("list all streams with filter", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+
+		ownerID := uuid.New()
+		filter := repository.StreamFilter{
+			OwnerID: &ownerID,
+			Limit:   10,
+			Offset:  0,
+		}
+
+		expectedStreams := []*models.Stream{
+			{Title: "Stream 1", OwnerID: ownerID},
+			{Title: "Stream 1", OwnerID: ownerID},
+		}
+		mockRepo.On("List", ctx, filter).Return(expectedStreams, nil)
+		streams, err := serviceImpl.ListStreams(ctx, filter)
+
+		require.NoError(t, err)
+		require.Len(t, streams, 2)
+		assert.Equal(t, "Stream 1", streams[0].Title)
+		assert.Equal(t, "Stream 2", streams[1].Title)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("list with search filter", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+
+		filter := repository.StreamFilter{
+			Search: "gaming",
+			Limit:  10,
+		}
+
+		expectedStreams := []*models.Stream{
+			{Title: "Gaming Stream", OwnerID: uuid.New()},
+		}
+
+		mockRepo.On("List", ctx, filter).Return(expectedStreams, nil)
+		streams, err := serviceImpl.ListStreams(ctx, filter)
+		require.NoError(t, err)
+		require.Len(t, streams, 1)
+		assert.Equal(t, "Gaming Stream", streams[0].Title)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("empty result", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+		filter := repository.StreamFilter{Limit: 10}
+		mockRepo.On("List", ctx, filter).Return([]*models.Stream{}, nil)
+		streams, err := serviceImpl.ListStreams(ctx, filter)
+		require.NoError(t, err)
+		assert.Empty(t, streams)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("repository error propagate", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+		filter := repository.StreamFilter{Limit: 10}
+		mockRepo.On("List", ctx, filter).Return(nil, assert.AnError)
+		streams, err := serviceImpl.ListStreams(ctx, filter)
+		require.Error(t, err)
+		assert.Nil(t, streams)
+		assert.ErrorIs(t, err, assert.AnError)
+		mockRepo.AssertExpectations(t)
+	})
+}
 func TestStreamServicImpl_DeleteStream(t *testing.T) {
 	ctx := context.Background()
 
@@ -54,6 +126,7 @@ func TestStreamServicImpl_DeleteStream(t *testing.T) {
 		streamID := uuid.New()
 
 		mockRepo.On("Read", ctx, streamID).Return(nil, assert.AnError)
+		mockRepo.On("Delete", ctx, streamID).Return(assert.AnError)
 		err := serviceImpl.DeleteStream(ctx, streamID)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, assert.AnError)
