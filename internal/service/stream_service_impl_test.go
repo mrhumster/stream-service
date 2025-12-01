@@ -22,7 +22,13 @@ func TestStreamServicImpl_DeleteStream(t *testing.T) {
 	t.Run("successful delete", func(t *testing.T) {
 		mockRepo := &repository.StreamRepositoryMock{}
 		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+		existingStream := &models.Stream{
+			Title:  "Stream for delete",
+			Status: models.StatusDraft,
+		}
 		streamID := uuid.New()
+		existingStream.ID = streamID
+		mockRepo.On("Read", ctx, streamID).Return(existingStream, nil)
 		mockRepo.On("Delete", ctx, streamID).Return(nil)
 		err := serviceImpl.DeleteStream(ctx, streamID)
 		require.NoError(t, err)
@@ -33,8 +39,7 @@ func TestStreamServicImpl_DeleteStream(t *testing.T) {
 		mockRepo := &repository.StreamRepositoryMock{}
 		serviceImpl := service.NewStreamServiceImpl(mockRepo)
 		streamID := uuid.New()
-
-		mockRepo.On("Delete", ctx, streamID).Return(gorm.ErrRecordNotFound)
+		mockRepo.On("Read", ctx, streamID).Return(nil, gorm.ErrRecordNotFound)
 
 		err := serviceImpl.DeleteStream(ctx, streamID)
 		require.Error(t, err)
@@ -48,7 +53,7 @@ func TestStreamServicImpl_DeleteStream(t *testing.T) {
 
 		streamID := uuid.New()
 
-		mockRepo.On("Delete", ctx, streamID).Return(assert.AnError)
+		mockRepo.On("Read", ctx, streamID).Return(nil, assert.AnError)
 		err := serviceImpl.DeleteStream(ctx, streamID)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, assert.AnError)
@@ -59,7 +64,7 @@ func TestStreamServicImpl_DeleteStream(t *testing.T) {
 		mockRepo := &repository.StreamRepositoryMock{}
 		serviceImpl := service.NewStreamServiceImpl(mockRepo)
 		streamID := uuid.New()
-		publishedStream := models.Stream{
+		publishedStream := &models.Stream{
 			Title:  "Published Stream",
 			Status: models.StatusPublished,
 		}

@@ -111,7 +111,21 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 }
 
 func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) error {
-	return fmt.Errorf("not implemented")
+	stream, err := s.repo.Read(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("stream not found")
+		}
+		return fmt.Errorf("delete stream error: %w", err)
+	}
+	if stream.Status == models.StatusPublished {
+		return fmt.Errorf("cannot delete published stream")
+	}
+
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return fmt.Errorf("failed to delete stream: %w", err)
+	}
+	return nil
 }
 
 func (s *StreamServiceImpl) ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, error) {
