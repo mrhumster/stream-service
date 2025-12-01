@@ -142,8 +142,30 @@ func TestStreamServicImpl_UpdateStream(t *testing.T) {
 		assert.Nil(t, updated)
 		mockRepo.AssertNotCalled(t, "Update")
 	})
-}
 
+	t.Run("cannot update published stream", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+
+		streamID := uuid.New()
+		publishedStream := &models.Stream{
+			Title:  "Published Stream",
+			Status: models.StatusPublished,
+		}
+		publishedStream.ID = streamID
+		newTitle := "New Title"
+		req := service.UpdateStreamRequest{Title: &newTitle}
+
+		mockRepo.On("Read", ctx, streamID).Return(publishedStream, nil)
+
+		updated, err := serviceImpl.UpdateStream(ctx, streamID, req)
+
+		require.Error(t, err)
+		assert.Nil(t, updated)
+		assert.Contains(t, err.Error(), "published")
+		mockRepo.AssertNotCalled(t, "Update")
+	})
+}
 func TestStreamServicImpl_CreateStream(t *testing.T) {
 	ctx := context.Background()
 

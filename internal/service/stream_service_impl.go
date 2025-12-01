@@ -59,6 +59,11 @@ func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*model
 
 func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error) {
 	stream, err := s.repo.Read(ctx, id)
+
+	if stream.Status == models.StatusPublished {
+		return nil, fmt.Errorf("cannot update published stream")
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("stream not found: %w", err)
 	}
