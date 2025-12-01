@@ -16,7 +16,33 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestStreamServicImpl_ListStream(t *testing.T) {
+func TestStreamServiceImpl_ListUserStreams(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("list user streams", func(t *testing.T) {
+		mockRepo := &repository.StreamRepositoryMock{}
+		serviceImpl := service.NewStreamServiceImpl(mockRepo)
+
+		userID := uuid.New()
+
+		expectedStreams := []*models.Stream{
+			{Title: "User Stream 1", OwnerID: userID},
+			{Title: "User Stream 2", OwnerID: userID},
+		}
+
+		mockRepo.On("List", ctx, mock.MatchedBy(func(filter repository.StreamFilter) bool {
+			return filter.OwnerID != nil && *filter.OwnerID == userID
+		})).Return(expectedStreams, nil)
+
+		streams, err := serviceImpl.ListUserStreams(ctx, userID)
+
+		require.NoError(t, err)
+		require.Len(t, streams, 2)
+		mockRepo.AssertExpectations(t)
+	})
+}
+
+func TestStreamServicImpl_ListStreams(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("list all streams with filter", func(t *testing.T) {
@@ -32,7 +58,7 @@ func TestStreamServicImpl_ListStream(t *testing.T) {
 
 		expectedStreams := []*models.Stream{
 			{Title: "Stream 1", OwnerID: ownerID},
-			{Title: "Stream 1", OwnerID: ownerID},
+			{Title: "Stream 2", OwnerID: ownerID},
 		}
 		mockRepo.On("List", ctx, filter).Return(expectedStreams, nil)
 		streams, err := serviceImpl.ListStreams(ctx, filter)
@@ -126,7 +152,6 @@ func TestStreamServicImpl_DeleteStream(t *testing.T) {
 		streamID := uuid.New()
 
 		mockRepo.On("Read", ctx, streamID).Return(nil, assert.AnError)
-		mockRepo.On("Delete", ctx, streamID).Return(assert.AnError)
 		err := serviceImpl.DeleteStream(ctx, streamID)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, assert.AnError)

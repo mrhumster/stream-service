@@ -129,11 +129,19 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 }
 
 func (s *StreamServiceImpl) ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, error) {
-	return nil, fmt.Errorf("not implemented")
+	streams, err := s.repo.List(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list streams: %w", err)
+	}
+	return streams, nil
 }
 
 func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, error) {
-	return nil, fmt.Errorf("not implemented")
+	filter := repository.StreamFilter{
+		OwnerID: &userID,
+		Limit:   100,
+	}
+	return s.ListStreams(ctx, filter)
 }
 
 func (s *StreamServiceImpl) PublishStream(ctx context.Context, streamID uuid.UUID) error {
