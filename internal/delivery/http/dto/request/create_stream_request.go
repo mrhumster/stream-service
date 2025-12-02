@@ -15,12 +15,12 @@ type CreateStreamRequest struct {
 	Tags        []string                `json:"tags"`
 }
 
-func (r *CreateStreamRequest) ToServiceRequest(ownerID string) (*service.CreateStreamRequest, error) {
+func (r *CreateStreamRequest) ToServiceRequest(ownerID string) (service.CreateStreamRequest, error) {
 	id, err := uuid.Parse(ownerID)
 	if err != nil {
-		return nil, fmt.Errorf("stream convert error: %w", err)
+		return service.CreateStreamRequest{}, fmt.Errorf("stream convert error: %w", err)
 	}
-	return &service.CreateStreamRequest{
+	return service.CreateStreamRequest{
 		Title:       r.Title,
 		Description: r.Description,
 		Visibility:  r.Visibility,
@@ -36,6 +36,12 @@ func (r *CreateStreamRequest) Validate() error {
 
 	if len(r.Title) > 255 {
 		return fmt.Errorf("title is too long")
+	}
+
+	switch r.Visibility {
+	case models.VisibilityPrivate, models.VisibilityPublic, models.VisibilityUnlisted:
+	default:
+		return fmt.Errorf("invalid visibility: %s", r.Visibility)
 	}
 
 	return nil
