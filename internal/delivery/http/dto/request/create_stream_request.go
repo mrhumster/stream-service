@@ -11,7 +11,7 @@ import (
 type CreateStreamRequest struct {
 	Title       string                  `json:"title" binding:"required,min=1,max=255"`
 	Description string                  `json:"description"`
-	Visibility  models.StreamVisibility `json:"visibility" binding:"required,oneof=public private, unlisted"`
+	Visibility  models.StreamVisibility `json:"visibility" binding:"required,oneof=public private unlisted"`
 	Tags        []string                `json:"tags"`
 }
 
