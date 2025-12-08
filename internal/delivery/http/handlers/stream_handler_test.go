@@ -57,6 +57,16 @@ func TestStreamHandler_ReadStream(t *testing.T) {
 		assert.Equal(t, expectedStream.Title, resp.Title)
 		mockService.AssertExpectations(t)
 	})
+
+	t.Run("invalid steram id return error", func(t *testing.T) {
+		invalidID := "undefined"
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", invalidID), nil)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		mockService.AssertNotCalled(t, "GetStream")
+	})
 }
 
 func TestStreamHandler_CreateStream(t *testing.T) {
