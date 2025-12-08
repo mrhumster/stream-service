@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,6 +21,42 @@ import (
 func setupTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	return gin.Default()
+}
+
+func TestStreamHandler_ReadStream(t *testing.T) {
+	mockService := &mocks.MockStreamService{}
+	handler := NewStreamHandler(mockService)
+
+	router := setupTestRouter()
+
+	router.Use(func(c *gin.Context) {
+		c.Set("userID", "00000000-0000-0000-0000-000000000000")
+		c.Next()
+	})
+
+	router.GET("/streams/:id", handler.GetStream)
+
+	t.Run("successfull read stream", func(t *testing.T) {
+		expectedStream := &models.Stream{
+			Title:   "Test Stream",
+			OwnerID: uuid.New(),
+			Status:  models.StatusDraft,
+		}
+		streamID := uuid.New()
+		expectedStream.ID = streamID
+		mockService.On("GetStream", mock.Anything, streamID).Return(expectedStream, nil)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", streamID.String()), nil)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp response.StreamResponse
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Equal(t, expectedStream.ID, resp.ID)
+		assert.Equal(t, expectedStream.Title, resp.Title)
+		mockService.AssertExpectations(t)
+	})
 }
 
 func TestStreamHandler_CreateStream(t *testing.T) {
