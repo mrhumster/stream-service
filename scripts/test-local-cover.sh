@@ -24,4 +24,6 @@ go tool cover -html=coverage.out -o /mnt/c/Users/XOMRKOB/Desktop/stream-service/
 
 echo "✅ Coverage report generated: coverage.html"
 
+echo "🚮 Delete 'coverage.out'..."
+rm coverage.out
 exit $TEST_EXIT_CODE

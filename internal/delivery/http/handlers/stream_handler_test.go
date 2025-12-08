@@ -23,6 +23,33 @@ func setupTestRouter() *gin.Engine {
 	return gin.Default()
 }
 
+func TestStreamHandler_OnlyAuthorized(t *testing.T) {
+	mockService := &mocks.MockStreamService{}
+	handler := NewStreamHandler(mockService)
+	router := setupTestRouter()
+
+	router.GET("/streams/:id", handler.GetStream)
+	router.POST("/streams", handler.CreateStream)
+
+	t.Run("GetStream is available only authorized users", func(t *testing.T) {
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", uuid.New()), nil)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		mockService.AssertNotCalled(t, "GetStream")
+	})
+
+	t.Run("CreateStream is available only authorized users", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/streams", nil)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		mockService.AssertNotCalled(t, "CreateStream")
+	})
+}
+
 func TestStreamHandler_ReadStream(t *testing.T) {
 	mockService := &mocks.MockStreamService{}
 	handler := NewStreamHandler(mockService)
