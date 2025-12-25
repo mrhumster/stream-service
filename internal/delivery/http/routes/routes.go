@@ -21,7 +21,7 @@ const (
 	ModeRelease = "RELEASE"
 )
 
-func SetupRoutes(db *gorm.DB, mode string, permissionClient *auth.PermissionClient) (*gin.Engine, error) {
+func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClient) (*gin.Engine, error) {
 	var (
 		cfg *config.Config
 		err error

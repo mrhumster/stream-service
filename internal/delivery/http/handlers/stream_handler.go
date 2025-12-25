@@ -63,12 +63,6 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 }
 
 func (h *StreamHandler) GetStream(c *gin.Context) {
-	_, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
-		return
-	}
-
 	streamID := c.Param("id")
 
 	streamIDuuid, err := uuid.Parse(streamID)
