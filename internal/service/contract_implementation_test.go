@@ -7,12 +7,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/service"
-	"github.com/mrhumster/stream-service/internal/service/mocks"
+	servicemock "github.com/mrhumster/stream-service/internal/service/mock"
 	"github.com/stretchr/testify/mock"
 )
 
 func TestMockStreamService_Contract(t *testing.T) {
-	mockService := &mocks.MockStreamService{}
+	mockService := &servicemock.MockStreamService{}
 
 	// Настройка мока для контрактных тестов
 	setupMockForContractTests(mockService)
@@ -22,7 +22,7 @@ func TestMockStreamService_Contract(t *testing.T) {
 }
 
 // setupMockForContractTests настраивает мок для прохождения контрактных тестов
-func setupMockForContractTests(mockService *mocks.MockStreamService) {
+func setupMockForContractTests(mockService *servicemock.MockStreamService) {
 	testStreamID := uuid.New()
 	testUserID := uuid.New()
 

@@ -9,17 +9,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/repository"
+	"github.com/mrhumster/web-server-gin/pkg/auth"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
 type StreamServiceImpl struct {
-	repo repository.StreamRepository
+	repo             repository.StreamRepository
+	permissionClient auth.PermissionClient
 }
 
-func NewStreamServiceImpl(repo repository.StreamRepository) *StreamServiceImpl {
+func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient) *StreamServiceImpl {
 	return &StreamServiceImpl{
-		repo: repo,
+		repo:             repo,
+		permissionClient: perm,
 	}
 }
 
@@ -52,6 +55,8 @@ func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRe
 	if err := s.repo.Create(ctx, stream); err != nil {
 		return nil, err
 	}
+
+	// TODO: Create permission for owner and need adding compensatory measures in case of error.
 
 	return stream, nil
 }

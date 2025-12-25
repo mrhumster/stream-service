@@ -15,7 +15,7 @@ import (
 
 func TestStreamRepositoryInterface(t *testing.T) {
 	var _ StreamRepository = (*GormStreamRepository)(nil)
-	var _ StreamRepository = (*StreamRepositoryMock)(nil)
+	var _ StreamRepository = (*)(nil)
 }
 
 func TestStreamRepositoryMock(t *testing.T) {

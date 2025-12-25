@@ -4,11 +4,11 @@ import (
 	"testing"
 
 	"github.com/mrhumster/stream-service/internal/service"
-	"github.com/mrhumster/stream-service/internal/service/mocks"
+	servicemock "github.com/mrhumster/stream-service/internal/service/mock"
 )
 
 func TestStreamServiceInterface(t *testing.T) {
-	var _ service.StreamService = (*mocks.MockStreamService)(nil)
+	var _ service.StreamService = (*servicemock.MockStreamService)(nil)
 }
 
 func TestStreamService_GetStream(t *testing.T) {

@@ -10,13 +10,13 @@ import (
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
-	"github.com/mrhumster/stream-service/internal/service/mocks"
+	servicemock "github.com/mrhumster/stream-service/internal/service/mock"
 	"github.com/stretchr/testify/suite"
 )
 
 type MockStreamServiceTestSuite struct {
 	suite.Suite
-	service *mocks.MockStreamService
+	service *servicemock.MockStreamService
 	ctx     context.Context
 }
 
@@ -25,7 +25,7 @@ func TestMockStreamServiceTestSuite(t *testing.T) {
 }
 
 func (s *MockStreamServiceTestSuite) SetupTest() {
-	s.service = &mocks.MockStreamService{}
+	s.service = &servicemock.MockStreamService{}
 	s.ctx = context.Background()
 }
 
@@ -51,7 +51,7 @@ func (s *MockStreamServiceTestSuite) TestCreateStream() {
 	}
 	expectedStream.ID = streamID
 
-	s.service.On("CreateStream", s.ctx, req).Return(expectedStream, nil)
+	s.service.EXPECT().CreateStream(s.ctx, req).Return(expectedStream, nil)
 
 	stream, err := s.service.CreateStream(s.ctx, req)
 

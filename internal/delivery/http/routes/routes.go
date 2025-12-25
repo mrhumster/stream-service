@@ -53,7 +53,7 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	}
 
 	database := repository.NewGormStreamRepository(db)
-	streamService := service.NewStreamServiceImpl(database)
+	streamService := service.NewStreamServiceImpl(database, permissionClient)
 	streamHandler := handlers.NewStreamHandler(streamService)
 
 	r.GET("/stream/health", func(c *gin.Context) {

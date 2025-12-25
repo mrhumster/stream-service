@@ -1,3 +1,5 @@
+//go:generate mockgen -source=stream_service.go -destination=./mock/stream_service_mock.go -package=servicemock
+
 package service
 
 import (
