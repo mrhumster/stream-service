@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
@@ -56,7 +57,20 @@ func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRe
 		return nil, err
 	}
 
-	// TODO: Create permission for owner and need adding compensatory measures in case of error.
+	sub := stream.OwnerID.String()
+	obj := fmt.Sprintf("stream/%s", stream.ID.String())
+	acts := []string{"write", "read", "delete"}
+	for _, act := range acts {
+		added, err := s.permissionClient.AddPolicy(ctx, sub, obj, act)
+
+		if err != nil {
+			log.Printf("Error creating permission. permissionClient.AddPolicy(sub = %s,obj = %s, act = %s)", sub, obj, act)
+		}
+
+		if added {
+			log.Printf("Permission added successfully. permissionClient.AddPolicy(sub = %s,obj = %s, act = %s)", sub, obj, act)
+		}
+	}
 
 	return stream, nil
 }
@@ -70,7 +84,6 @@ func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*model
 	}
 	return stream, nil
 }
-
 func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error) {
 	stream, err := s.repo.Read(ctx, id)
 
@@ -114,7 +127,6 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 
 	return stream, nil
 }
-
 func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) error {
 	stream, err := s.repo.Read(ctx, id)
 	if err != nil {
@@ -130,6 +142,7 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete stream: %w", err)
 	}
+	// TODO: Delete owner permission
 	return nil
 }
 

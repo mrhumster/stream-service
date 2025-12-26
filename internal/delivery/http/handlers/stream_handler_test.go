@@ -73,7 +73,7 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 	t.Run("successfull creation", func(t *testing.T) {
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
-			c.Set("userID", "00000000-0000-0000-0000-000000000000")
+			c.Set("userID", "12345678-1234-5678-0000-000000000000")
 			c.Next()
 		})
 

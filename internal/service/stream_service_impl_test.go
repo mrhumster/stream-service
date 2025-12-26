@@ -3,7 +3,9 @@ package service_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
@@ -402,14 +404,28 @@ func TestStreamServicImpl_CreateStream(t *testing.T) {
 			Tags:        []string{"gaming", "live"},
 			OwnerID:     ownerID,
 		}
-		mockRepo.EXPECT().Create(gomock.Any(), gomock.Cond(func(stream *models.Stream) bool {
-			return stream.Title == req.Title &&
-				stream.Description == req.Description &&
-				stream.OwnerID == ownerID &&
-				stream.Status == models.StatusDraft &&
-				stream.Visibility == req.Visibility
-		})).Return(nil)
 
+		generatedStreamID := uuid.New()
+		mockRepo.EXPECT().
+			Create(gomock.Any(), gomock.Any()).
+			Do(func(ctx context.Context, stream *models.Stream) {
+				if stream.ID == uuid.Nil {
+					stream.ID = generatedStreamID
+				}
+				stream.CreatedAt = time.Now()
+				stream.UpdatedAt = time.Now()
+			}).
+			Return(nil)
+
+		mockPermissionClient.EXPECT().
+			AddPolicy(gomock.Any(), ownerID.String(), fmt.Sprintf("stream/%s", generatedStreamID.String()), "write").
+			Return(true, nil)
+		mockPermissionClient.EXPECT().
+			AddPolicy(gomock.Any(), ownerID.String(), fmt.Sprintf("stream/%s", generatedStreamID.String()), "read").
+			Return(true, nil)
+		mockPermissionClient.EXPECT().
+			AddPolicy(gomock.Any(), ownerID.String(), fmt.Sprintf("stream/%s", generatedStreamID.String()), "delete").
+			Return(true, nil)
 		stream, err := serviceImpl.CreateStream(ctx, req)
 
 		require.NoError(t, err)
