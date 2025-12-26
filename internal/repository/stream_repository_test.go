@@ -1,4 +1,4 @@
-package repository
+package repository_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
+	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -14,48 +15,7 @@ import (
 )
 
 func TestStreamRepositoryInterface(t *testing.T) {
-	var _ StreamRepository = (*GormStreamRepository)(nil)
-	var _ StreamRepository = (*)(nil)
-}
-
-func TestStreamRepositoryMock(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("Create and Read", func(t *testing.T) {
-		mockRepo := &StreamRepositoryMock{}
-		ownerID := uuid.New()
-		streamID := uuid.New()
-		stream := &models.Stream{
-			Title:   "Test stream",
-			OwnerID: ownerID,
-			Status:  models.StatusDraft,
-		}
-		stream.ID = streamID
-
-		mockRepo.On("Create", ctx, stream).Return(nil)
-		mockRepo.On("Read", ctx, streamID).Return(stream, nil)
-
-		err := mockRepo.Create(ctx, stream)
-		require.NoError(t, err)
-
-		result, err := mockRepo.Read(ctx, streamID)
-		require.Equal(t, result.ID, stream.ID)
-		require.Equal(t, result.Title, stream.Title)
-
-		// ⚠️ Это суперважная штука в моках!
-		// Проверяет, что ВСЕ ожидания, которые ты настроил на моке, были выполнены.
-		mockRepo.AssertExpectations(t)
-	})
-
-	t.Run("Delete", func(t *testing.T) {
-		mockRepo := &StreamRepositoryMock{}
-		streamID := uuid.New()
-		mockRepo.On("Delete", ctx, streamID).Return(nil)
-		err := mockRepo.Delete(ctx, streamID)
-		require.NoError(t, err)
-
-		mockRepo.AssertExpectations(t)
-	})
+	var _ repository.StreamRepository = (*repository.GormStreamRepository)(nil)
 }
 
 func setupTestDB(t *testing.T) *gorm.DB {
@@ -69,7 +29,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 func TestGormStreamRepository_Create(t *testing.T) {
 	db := setupTestDB(t)
-	repo := NewGormStreamRepository(db)
+	repo := repository.NewGormStreamRepository(db)
 	ctx := context.Background()
 
 	stream := &models.Stream{
@@ -91,7 +51,7 @@ func TestGormStreamRepository_Create(t *testing.T) {
 
 func TestGormStreamRepository_Read(t *testing.T) {
 	db := setupTestDB(t)
-	repo := NewGormStreamRepository(db)
+	repo := repository.NewGormStreamRepository(db)
 	ctx := context.Background()
 
 	stream := &models.Stream{
@@ -118,7 +78,7 @@ func TestGormStreamRepository_Read(t *testing.T) {
 
 func TestGormStreamRepository_Update(t *testing.T) {
 	db := setupTestDB(t)
-	repo := NewGormStreamRepository(db)
+	repo := repository.NewGormStreamRepository(db)
 	ctx := context.Background()
 
 	streamID := uuid.New()
@@ -144,7 +104,7 @@ func TestGormStreamRepository_Update(t *testing.T) {
 
 func TestGormStreamRepository_Delete(t *testing.T) {
 	db := setupTestDB(t)
-	repo := NewGormStreamRepository(db)
+	repo := repository.NewGormStreamRepository(db)
 	ctx := context.Background()
 	streamID := uuid.New()
 
@@ -166,7 +126,7 @@ func TestGormStreamRepository_Delete(t *testing.T) {
 
 func TestGormStreamRepository_List(t *testing.T) {
 	db := setupTestDB(t)
-	repo := NewGormStreamRepository(db)
+	repo := repository.NewGormStreamRepository(db)
 	ctx := context.Background()
 	ownerID := uuid.New()
 	stream1 := &models.Stream{
@@ -180,7 +140,7 @@ func TestGormStreamRepository_List(t *testing.T) {
 	}
 	repo.Create(ctx, stream2)
 
-	filter := StreamFilter{
+	filter := repository.StreamFilter{
 		OwnerID: &ownerID,
 	}
 	streams, err := repo.List(ctx, filter)
@@ -190,7 +150,7 @@ func TestGormStreamRepository_List(t *testing.T) {
 
 func TestGormStreamRepository_GetByOwner(t *testing.T) {
 	db := setupTestDB(t)
-	repo := NewGormStreamRepository(db)
+	repo := repository.NewGormStreamRepository(db)
 	ctx := context.Background()
 	ownerID := uuid.New()
 	stream1 := &models.Stream{
@@ -213,7 +173,7 @@ func TestGormStreamRepository_GetByOwner(t *testing.T) {
 
 func TestGormStreamRepository_Exists(t *testing.T) {
 	db := setupTestDB(t)
-	repo := NewGormStreamRepository(db)
+	repo := repository.NewGormStreamRepository(db)
 	ctx := context.Background()
 	ownerID := uuid.New()
 	streamID := uuid.New()
@@ -230,7 +190,7 @@ func TestGormStreamRepository_Exists(t *testing.T) {
 
 func TestGormStreamRepository_UpdateStatus(t *testing.T) {
 	db := setupTestDB(t)
-	repo := NewGormStreamRepository(db)
+	repo := repository.NewGormStreamRepository(db)
 	ctx := context.Background()
 	ownerID := uuid.New()
 	streamID := uuid.New()
@@ -250,7 +210,7 @@ func TestGormStreamRepository_UpdateStatus(t *testing.T) {
 
 func TestGormStreamRepository_UpdateProcessing(t *testing.T) {
 	db := setupTestDB(t)
-	repo := NewGormStreamRepository(db)
+	repo := repository.NewGormStreamRepository(db)
 	ctx := context.Background()
 	ownerID := uuid.New()
 	streamID := uuid.New()

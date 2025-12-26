@@ -43,6 +43,7 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 	var req request.CreateStreamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
 	}
 
 	serviceReq, err := req.ToServiceRequest(userIDStr)
