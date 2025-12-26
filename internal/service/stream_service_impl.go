@@ -142,7 +142,22 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete stream: %w", err)
 	}
-	// TODO: Delete owner permission
+
+	// PERMS
+	obj := stream.OwnerID.String()
+	sub := fmt.Sprintf("stream/%s", stream.ID.String())
+	acts := []string{"read", "write", "delete"}
+	for _, act := range acts {
+		removed, err := s.permissionClient.RemovePolicy(ctx, obj, sub, act)
+		if err != nil {
+			log.Printf("Error creating permission. permissionClient.RemovePolicy(sub = %s,obj = %s, act = %s)", sub, obj, act)
+		}
+
+		if removed {
+			log.Printf("Permission removed successfully. permissionClient.RemovePolicy(sub = %s,obj = %s, act = %s)", sub, obj, act)
+		}
+
+	}
 	return nil
 }
 

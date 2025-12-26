@@ -58,7 +58,6 @@ func TestStreamServiceImpl_ListUserStreams(t *testing.T) {
 		require.Len(t, streams, 2)
 	})
 }
-
 func TestStreamServicImpl_ListStreams(t *testing.T) {
 	ctx := context.Background()
 	ctrl := gomock.NewController(t)
@@ -135,16 +134,54 @@ func TestStreamServicImpl_DeleteStream(t *testing.T) {
 	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient)
 
 	t.Run("successful delete", func(t *testing.T) {
-		existingStream := &models.Stream{
-			Title:  "Stream for delete",
-			Status: models.StatusDraft,
-		}
-		streamID := uuid.New()
-		existingStream.ID = streamID
-		mockRepo.EXPECT().Read(gomock.Any(), streamID).Return(existingStream, nil)
-		mockRepo.EXPECT().Delete(gomock.Any(), streamID).Return(nil)
+		ownerID := uuid.New()
+		generatedStreamID := uuid.New()
 
-		err := serviceImpl.DeleteStream(ctx, streamID)
+		streamForDelete := &models.Stream{
+			Description: "Drasft",
+			Title:       "Stream test",
+			OwnerID:     ownerID,
+			Status:      models.StatusDraft,
+		}
+
+		streamForDelete.ID = generatedStreamID
+
+		mockRepo.EXPECT().
+			Read(gomock.Any(), generatedStreamID).
+			Return(streamForDelete, nil)
+
+		mockRepo.EXPECT().
+			Delete(gomock.Any(), generatedStreamID).
+			Return(nil)
+
+		mockPermissionClient.EXPECT().
+			RemovePolicy(
+				gomock.Any(),
+				ownerID.String(),
+				fmt.Sprintf("stream/%s", generatedStreamID.String()),
+				"write",
+			).
+			Return(true, nil).
+			Times(1)
+
+		mockPermissionClient.EXPECT().RemovePolicy(
+			gomock.Any(),
+			ownerID.String(),
+			fmt.Sprintf("stream/%s", generatedStreamID.String()),
+			"read",
+		).
+			Return(true, nil).
+			Times(1)
+		mockPermissionClient.EXPECT().RemovePolicy(
+			gomock.Any(),
+			ownerID.String(),
+			fmt.Sprintf("stream/%s", generatedStreamID.String()),
+			"delete",
+		).
+			Return(true, nil).
+			Times(1)
+
+		err := serviceImpl.DeleteStream(ctx, generatedStreamID)
 		require.NoError(t, err)
 	})
 
