@@ -50,6 +50,7 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		return
 	}
 
 	stream, err := h.service.CreateStream(c.Request.Context(), serviceReq)
@@ -64,6 +65,19 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 }
 
 func (h *StreamHandler) GetStream(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
+		return
+	}
+
+	_, ok := userID.(string)
+
+	if !ok {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
+		return
+	}
+
 	streamID := c.Param("id")
 
 	streamIDuuid, err := uuid.Parse(streamID)
@@ -80,5 +94,54 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 	}
 
 	resp := response.FromDomainModel(stream)
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h *StreamHandler) UpdateStream(c *gin.Context) {
+	userID, exists := c.Get("userID")
+
+	if !exists {
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
+		return
+	}
+
+	_, ok := userID.(string)
+
+	if !ok {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
+		return
+	}
+
+	paramID := c.Param("id")
+
+	streamID, err := uuid.Parse(paramID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid stream ID in params"))
+		return
+	}
+
+	var req request.UpdateStreamRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	updateRequest, err := req.ToServiceRequest()
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	updatedStream, err := h.service.UpdateStream(c.Request.Context(), streamID, updateRequest)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	resp := response.FromDomainModel(updatedStream)
+
 	c.JSON(http.StatusOK, resp)
 }

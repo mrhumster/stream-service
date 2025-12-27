@@ -128,3 +128,41 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
 }
+
+func TestStreamHandler_UpdateStream(t *testing.T) {
+	t.Run("Update stream successfull", func(t *testing.T) {
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "00000000-0000-0000-0000-000000000000")
+			c.Next()
+		})
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.PATCH("/streams/:id", handler.UpdateStream)
+		existiongStream := uuid.New()
+		updatedStream := &models.Stream{
+			Title:       "Updated title",
+			Visibility:  "public",
+			Description: "Updated description",
+		}
+		updatedStream.ID = existiongStream
+
+		mockService.EXPECT().UpdateStream(gomock.Any(), existiongStream, gomock.Any()).Return(updatedStream, nil)
+
+		reqBody := `{"Ttitle": "Updated title", "Visibility": "public", "Description": "Updated description"}`
+		req := httptest.NewRequest("PATCH", fmt.Sprintf("/streams/%s", existiongStream.String()), bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var resp response.StreamResponse
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Equal(t, "Updated title", resp.Title)
+	})
+}
