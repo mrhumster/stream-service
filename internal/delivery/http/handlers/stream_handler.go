@@ -38,7 +38,6 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 	}
 
 	serviceReq, err := req.ToServiceRequest(userIDStr)
-
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
 		return
@@ -50,9 +49,9 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
 		return
 	}
+
 	resp := response.FromDomainModel(stream)
 	c.JSON(http.StatusCreated, resp)
-
 }
 
 func (h *StreamHandler) GetStream(c *gin.Context) {
@@ -135,4 +134,32 @@ func (h *StreamHandler) UpdateStream(c *gin.Context) {
 	resp := response.FromDomainModel(updatedStream)
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func (h *StreamHandler) DeleteStream(c *gin.Context) {
+	userID, exists := c.Get("userID")
+
+	if !exists {
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
+		return
+	}
+
+	_, ok := userID.(string)
+
+	if !ok {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
+		return
+	}
+
+	param := c.Param("id")
+
+	streamID, err := uuid.Parse(param)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid stream ID in params"))
+		return
+	}
+
+	h.service.DeleteStream(c.Request.Context(), streamID)
+	c.JSON(http.StatusOK, nil)
 }

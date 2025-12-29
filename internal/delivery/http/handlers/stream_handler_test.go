@@ -499,3 +499,90 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 	})
 
 }
+
+func TestStreamHandler_DeleteStream(t *testing.T) {
+	t.Run("delete succesfull", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "00000000-0000-0000-0000-000000000000")
+			c.Next()
+		})
+		handlers := NewStreamHandler(mockService)
+		router.DELETE("/streams/:id", handlers.DeleteStream)
+		existingStreamID := uuid.New()
+		mockService.EXPECT().DeleteStream(gomock.Any(), existingStreamID).Return(nil)
+		req := httptest.NewRequest("DELETE", fmt.Sprintf("/streams/%s", existingStreamID.String()), nil)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("invalid stream ID", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "00000000-0000-0000-0000-000000000000")
+			c.Next()
+		})
+		handlers := NewStreamHandler(mockService)
+		router.DELETE("/streams/:id", handlers.DeleteStream)
+		existingStreamID := "invalid-uuid-struct"
+		req := httptest.NewRequest("DELETE", fmt.Sprintf("/streams/%s", existingStreamID), nil)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Contains(t, resp["error"], "invalid stream ID in param")
+	})
+
+	t.Run("Only authenticated users can use deletion", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		r := setupTestRouter()
+		h := NewStreamHandler(mockService)
+		r.DELETE("/streams/:id", h.DeleteStream)
+		streamID := uuid.New()
+		req := httptest.NewRequest("DELETE", fmt.Sprintf("/streams/%s", streamID), nil)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Contains(t, resp["error"], "user not auth")
+	})
+	t.Run("Bad user ID type", func(t *testing.T) {
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", 123456)
+			c.Next()
+		})
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.DELETE("/streams/:id", handler.DeleteStream)
+		existiongStream := uuid.New()
+		reqBody := `{"Title": "", "Visibility": "public", "Description": "Updated description"}`
+		req := httptest.NewRequest("DELETE", fmt.Sprintf("/streams/%s", existiongStream.String()), bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
