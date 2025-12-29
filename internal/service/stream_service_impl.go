@@ -31,11 +31,9 @@ func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRe
 	if req.Title == "" {
 		return nil, fmt.Errorf("stream title is required")
 	}
-
 	if req.OwnerID == uuid.Nil {
 		return nil, fmt.Errorf("owner ID is required")
 	}
-
 	stream := &models.Stream{
 		Title:       req.Title,
 		Description: req.Description,
@@ -43,37 +41,31 @@ func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRe
 		Status:      models.StatusDraft,
 		Visibility:  req.Visibility,
 	}
-
 	if len(req.Tags) > 0 {
 		tagsJSON, err := json.Marshal(req.Tags)
 		if err != nil {
 			return nil, fmt.Errorf("invalid tags format: %w", err)
 		}
-
 		stream.Tags = datatypes.JSON(tagsJSON)
 	}
-
 	if err := s.repo.Create(ctx, stream); err != nil {
 		return nil, err
 	}
-
 	sub := stream.OwnerID.String()
 	obj := fmt.Sprintf("stream/%s", stream.ID.String())
 	acts := []string{"write", "read", "delete"}
 	for _, act := range acts {
 		added, err := s.permissionClient.AddPolicy(ctx, sub, obj, act)
-
 		if err != nil {
 			log.Printf("Error creating permission. permissionClient.AddPolicy(sub = %s,obj = %s, act = %s)", sub, obj, act)
 		}
-
 		if added {
 			log.Printf("Permission added successfully. permissionClient.AddPolicy(sub = %s,obj = %s, act = %s)", sub, obj, act)
 		}
 	}
-
 	return stream, nil
 }
+
 func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*models.Stream, error) {
 	stream, err := s.repo.Read(ctx, id)
 	if err != nil {
@@ -84,17 +76,15 @@ func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*model
 	}
 	return stream, nil
 }
+
 func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error) {
 	stream, err := s.repo.Read(ctx, id)
-
 	if stream.Status == models.StatusPublished {
 		return nil, fmt.Errorf("cannot update published stream")
 	}
-
 	if err != nil {
 		return nil, fmt.Errorf("stream not found: %w", err)
 	}
-
 	if req.Title != nil {
 		if *req.Title == "" {
 			return nil, fmt.Errorf("stream title connot be empty")
@@ -104,15 +94,12 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 		}
 		stream.Title = *req.Title
 	}
-
 	if req.Description != nil {
 		stream.Description = *req.Description
 	}
-
 	if req.Visibility != nil {
 		stream.Visibility = *req.Visibility
 	}
-
 	if req.Tags != nil {
 		tagsJSON, err := json.Marshal(req.Tags)
 		if err != nil {
@@ -120,13 +107,12 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 		}
 		stream.Tags = datatypes.JSON(tagsJSON)
 	}
-
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return nil, fmt.Errorf("failed to update stream: %w", err)
 	}
-
 	return stream, nil
 }
+
 func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) error {
 	stream, err := s.repo.Read(ctx, id)
 	if err != nil {

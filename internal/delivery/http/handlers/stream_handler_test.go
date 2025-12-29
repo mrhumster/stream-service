@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +24,7 @@ func setupTestRouter() *gin.Engine {
 	return gin.Default()
 }
 
-func TestStreamHandler_ReadStream(t *testing.T) {
+func TestStreamHandler_GetStream(t *testing.T) {
 	router := setupTestRouter()
 
 	router.Use(func(c *gin.Context) {
@@ -36,6 +37,64 @@ func TestStreamHandler_ReadStream(t *testing.T) {
 	mockService := servicemock.NewMockStreamService(ctrl)
 	handler := NewStreamHandler(mockService)
 	router.GET("/streams/:id", handler.GetStream)
+
+	t.Run("getting stream only auth users", func(t *testing.T) {
+		r1 := setupTestRouter()
+		ctrl1 := gomock.NewController(t)
+		defer ctrl1.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl1)
+		handler1 := NewStreamHandler(mockService)
+		r1.GET("/streams/:id", handler1.GetStream)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", uuid.New()), nil)
+		w := httptest.NewRecorder()
+		r1.ServeHTTP(w, req)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("invalid user ID type", func(t *testing.T) {
+		r1 := setupTestRouter()
+		r1.Use(func(c *gin.Context) {
+			c.Set("userID", 12345)
+			c.Next()
+		})
+		ctrl1 := gomock.NewController(t)
+		defer ctrl1.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl1)
+		handler1 := NewStreamHandler(mockService)
+		r1.GET("/streams/:id", handler1.GetStream)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", uuid.New()), nil)
+		w := httptest.NewRecorder()
+		r1.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("propagation service error", func(t *testing.T) {
+		r1 := setupTestRouter()
+		r1.Use(func(c *gin.Context) {
+			c.Set("userID", uuid.New().String())
+			c.Next()
+		})
+
+		ctrl1 := gomock.NewController(t)
+		defer ctrl1.Finish()
+		expectedError := "expected error"
+		mockService := servicemock.NewMockStreamService(ctrl1)
+		mockService.EXPECT().GetStream(gomock.Any(), gomock.Any()).Return(nil, errors.New(expectedError))
+		handler1 := NewStreamHandler(mockService)
+		r1.GET("/streams/:id", handler1.GetStream)
+		streamID := uuid.New()
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", streamID), nil)
+		w := httptest.NewRecorder()
+		r1.ServeHTTP(w, req)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+
+		assert.Contains(t, resp["error"], expectedError)
+
+	})
+
 	t.Run("successfull read stream", func(t *testing.T) {
 		expectedStream := &models.Stream{
 			Title:   "Test Stream",
@@ -69,6 +128,133 @@ func TestStreamHandler_ReadStream(t *testing.T) {
 }
 
 func TestStreamHandler_CreateStream(t *testing.T) {
+
+	t.Run("propagation validation error", func(t *testing.T) {
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "non-valid-uuid")
+			c.Next()
+		})
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		expectedError := "UUID"
+
+		handler := NewStreamHandler(mockService)
+		router.POST("/streams", handler.CreateStream)
+		reqBody := `{"Title": "Title", "Visibility": "public"}`
+		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+
+		assert.Contains(t, resp["error"], expectedError)
+
+	})
+	t.Run("propagation service error", func(t *testing.T) {
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "12345678-1234-5678-0000-000000000000")
+			c.Next()
+		})
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		expectedError := "title cannot be empty"
+		mockService.EXPECT().CreateStream(gomock.Any(), gomock.Any()).Return(nil, errors.New(expectedError))
+
+		handler := NewStreamHandler(mockService)
+		router.POST("/streams", handler.CreateStream)
+		reqBody := `{"Title": "Title", "Visibility": "public"}`
+		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+
+		assert.Contains(t, resp["error"], expectedError)
+
+	})
+
+	t.Run("error bind json", func(t *testing.T) {
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "12345678-1234-5678-0000-000000000000")
+			c.Next()
+		})
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.POST("/streams", handler.CreateStream)
+		reqBody := `{"Title": Test Stream, "Visibility": "public"}`
+		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("error bind json", func(t *testing.T) {
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "12345678-1234-5678-0000-000000000000")
+			c.Next()
+		})
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.POST("/streams", handler.CreateStream)
+		reqBody := `{"Title": Test Stream, "Visibility": "public"}`
+		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+	t.Run("creation only auth users", func(t *testing.T) {
+		router := setupTestRouter()
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.POST("/streams", handler.CreateStream)
+		reqBody := `{"Title": "Test Stream", "Visibility": "public"}`
+		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("bad user ID type", func(t *testing.T) {
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", 12345)
+			c.Next()
+		})
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.POST("/streams", handler.CreateStream)
+		reqBody := `{"Title": "Test Stream", "Visibility": "public"}`
+		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
 
 	t.Run("successfull creation", func(t *testing.T) {
 		router := setupTestRouter()
@@ -153,7 +339,7 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 
 		mockService.EXPECT().UpdateStream(gomock.Any(), existiongStream, gomock.Any()).Return(updatedStream, nil)
 
-		reqBody := `{"Ttitle": "Updated title", "Visibility": "public", "Description": "Updated description"}`
+		reqBody := `{"Title": "Updated title", "Visibility": "public", "Description": "Updated description"}`
 		req := httptest.NewRequest("PATCH", fmt.Sprintf("/streams/%s", existiongStream.String()), bytes.NewBufferString(reqBody))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -165,4 +351,151 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Updated title", resp.Title)
 	})
+
+	t.Run("Update stream only auth user", func(t *testing.T) {
+		router := setupTestRouter()
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.PATCH("/streams/:id", handler.UpdateStream)
+		reqBody := `{"Title": "Updated title", "Visibility": "public", "Description": "Updated description"}`
+		existiongStream := uuid.New()
+		req := httptest.NewRequest("PATCH", fmt.Sprintf("/streams/%s", existiongStream.String()), bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
+	t.Run("Validation error", func(t *testing.T) {
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "00000000-0000-0000-0000-000000000000")
+			c.Next()
+		})
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.PATCH("/streams/:id", handler.UpdateStream)
+		existiongStream := uuid.New()
+		reqBody := `{"Title": "", "Visibility": "public", "Description": "Updated description"}`
+		req := httptest.NewRequest("PATCH", fmt.Sprintf("/streams/%s", existiongStream.String()), bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("bad user ID type", func(t *testing.T) {
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", 123456)
+			c.Next()
+		})
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.PATCH("/streams/:id", handler.UpdateStream)
+		existiongStream := uuid.New()
+		reqBody := `{"Title": "", "Visibility": "public", "Description": "Updated description"}`
+		req := httptest.NewRequest("PATCH", fmt.Sprintf("/streams/%s", existiongStream.String()), bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("bad stream ID type", func(t *testing.T) {
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "00000000-0000-0000-0000-000000000000")
+			c.Next()
+		})
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.PATCH("/streams/:id", handler.UpdateStream)
+		reqBody := `{"Title": "", "Visibility": "public", "Description": "Updated description"}`
+		req := httptest.NewRequest("PATCH", "/streams/bad-stream-id", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("bad json", func(t *testing.T) {
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "00000000-0000-0000-0000-000000000000")
+			c.Next()
+		})
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.PATCH("/streams/:id", handler.UpdateStream)
+		existiongStream := uuid.New()
+		reqBody := `{"Title": "", "Visibility": public, "Description": "Updated description"}`
+		req := httptest.NewRequest("PATCH", fmt.Sprintf("/streams/%s", existiongStream.String()), bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("service returns validation error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "test-user-uuid")
+			c.Next()
+		})
+		router.PATCH("/streams/:id", handler.UpdateStream)
+
+		streamID := uuid.New()
+
+		expectedError := "title cannot be empty"
+		mockService.EXPECT().
+			UpdateStream(gomock.Any(), streamID, gomock.Any()).
+			Return(nil, errors.New(expectedError))
+
+		reqBody := `{"title": "Valid Title"}`
+		req := httptest.NewRequest("PATCH", "/streams/"+streamID.String(),
+			bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+
+		assert.Contains(t, resp["error"], expectedError)
+	})
+
 }
