@@ -1,0 +1,13 @@
+# https://kubernetes.io/docs/concepts/configuration/configmap/
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minio-config
+  namespace: go-app
+data:
+  MINIO_BROWSER: "on"
+  MINIO_DOMAIN: "minio"
+  MINIO_PROMETHEUS_AUTH_TYPE: "public"
+  MINIO_PROMETHEUS_URL: "http://minio:9000"
+---
+
