@@ -29,6 +29,7 @@ func (r *GormStreamRepository) Read(ctx context.Context, id uuid.UUID) (*models.
 	var stream *models.Stream
 	result := r.db.WithContext(ctx).First(&stream, id)
 	if result.Error != nil {
+		// TODO: Create error handling: ErrNotFound ...
 		return nil, result.Error
 	}
 	return stream, nil

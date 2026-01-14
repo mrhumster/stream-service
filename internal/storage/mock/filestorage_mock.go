@@ -13,6 +13,7 @@ import (
 	context "context"
 	io "io"
 	reflect "reflect"
+	time "time"
 
 	gomock "go.uber.org/mock/gomock"
 )
@@ -83,6 +84,21 @@ func (m *MockFileStorage) Exists(ctx context.Context, path string) (bool, error)
 func (mr *MockFileStorageMockRecorder) Exists(ctx, path any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exists", reflect.TypeOf((*MockFileStorage)(nil).Exists), ctx, path)
+}
+
+// GeneratePresignedURL mocks base method.
+func (m *MockFileStorage) GeneratePresignedURL(ctx context.Context, path string, expires time.Duration) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GeneratePresignedURL", ctx, path, expires)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GeneratePresignedURL indicates an expected call of GeneratePresignedURL.
+func (mr *MockFileStorageMockRecorder) GeneratePresignedURL(ctx, path, expires any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GeneratePresignedURL", reflect.TypeOf((*MockFileStorage)(nil).GeneratePresignedURL), ctx, path, expires)
 }
 
 // Upload mocks base method.

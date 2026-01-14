@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
@@ -179,7 +180,46 @@ func (s *StreamServiceImpl) UpdateStreamStatus(ctx context.Context, streamID uui
 }
 
 func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid.UUID) (*UploadInfo, error) {
-	return nil, fmt.Errorf("not implemented")
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("stream not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to get stream: %w", err)
+	}
+
+	if stream.Status == models.StatusPublished {
+		return nil, fmt.Errorf("cannot upload to published stream")
+	}
+
+	videoKey := fmt.Sprintf("videos/%s/%s/original", stream.OwnerID.String(), streamID.String())
+
+	uploadURL, err := s.storage.GeneratePresignedURL(ctx, videoKey, 1*time.Hour)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate upload URL: %w", err)
+	}
+
+	storageInfo := models.StreamStorage{
+		Provider: "minio",
+		Key:      videoKey,
+	}
+
+	storageJSON, err := json.Marshal(storageInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal storage info: %w", err)
+	}
+
+	stream.Storage = datatypes.JSON(storageJSON)
+	stream.Status = models.StatusProcessing
+
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return nil, fmt.Errorf("failed to update stream: %w", err)
+	}
+	return &UploadInfo{
+		UploadURL: uploadURL,
+		StreamID:  streamID,
+	}, nil
 }
 
 func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID uuid.UUID) error {
