@@ -19,13 +19,12 @@ func TestFileStorageInterface(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Upload and Download", func(t *testing.T) {
-		bucket := "test-bucket"
 		key := "test-file.txt"
 		content := []byte("Hello, World!")
 
 		mockStorage.EXPECT().
-			Upload(ctx, bucket, key, gomock.Any(), int64(len(content))).
-			DoAndReturn(func(ctx context.Context, bucket, key string, reader io.Reader, size int64) error {
+			Upload(ctx, key, gomock.Any(), int64(len(content))).
+			DoAndReturn(func(ctx context.Context, key string, reader io.Reader, size int64) error {
 				data, err := io.ReadAll(reader)
 				if err != nil {
 					return err
@@ -37,19 +36,19 @@ func TestFileStorageInterface(t *testing.T) {
 			})
 
 		mockStorage.EXPECT().
-			Exists(ctx, bucket, key).
+			Exists(ctx, key).
 			Return(true, nil)
 
 		mockStorage.EXPECT().
-			Download(ctx, bucket, key).
+			Download(ctx, key).
 			Return(io.NopCloser(bytes.NewReader(content)), nil)
 
-		err := mockStorage.Upload(ctx, bucket, key, bytes.NewReader(content), int64(len(content)))
+		err := mockStorage.Upload(ctx, key, bytes.NewReader(content), int64(len(content)))
 		if err != nil {
 			t.Fatalf("Upload failed: %v", err)
 		}
 
-		exists, err := mockStorage.Exists(ctx, bucket, key)
+		exists, err := mockStorage.Exists(ctx, key)
 		if err != nil {
 			t.Fatalf("Exists failed: %v", err)
 		}
@@ -57,7 +56,7 @@ func TestFileStorageInterface(t *testing.T) {
 			t.Fatal("File should exist")
 		}
 
-		reader, err := mockStorage.Download(ctx, bucket, key)
+		reader, err := mockStorage.Download(ctx, key)
 		if err != nil {
 			t.Fatalf("Download failed: %v", err)
 		}
@@ -74,23 +73,22 @@ func TestFileStorageInterface(t *testing.T) {
 	})
 
 	t.Run("Delete", func(t *testing.T) {
-		bucket := "test-bucket"
 		key := "delete-test.txt"
 
 		mockStorage.EXPECT().
-			Delete(ctx, bucket, key).
+			Delete(ctx, key).
 			Return(nil)
 
 		mockStorage.EXPECT().
-			Exists(ctx, bucket, key).
+			Exists(ctx, key).
 			Return(false, nil)
 
-		err := mockStorage.Delete(ctx, bucket, key)
+		err := mockStorage.Delete(ctx, key)
 		if err != nil {
 			t.Fatalf("Delete failed: %v", err)
 		}
 
-		exists, err := mockStorage.Exists(ctx, bucket, key)
+		exists, err := mockStorage.Exists(ctx, key)
 		if err != nil {
 			t.Fatalf("Exists failed: %v", err)
 		}
@@ -100,14 +98,13 @@ func TestFileStorageInterface(t *testing.T) {
 	})
 
 	t.Run("Download non-existent file", func(t *testing.T) {
-		bucket := "no-bucket"
 		key := "no-key"
 
 		mockStorage.EXPECT().
-			Download(ctx, bucket, key).
+			Download(ctx, key).
 			Return(nil, ErrNotFound)
 
-		_, err := mockStorage.Download(ctx, bucket, key)
+		_, err := mockStorage.Download(ctx, key)
 		if err != ErrNotFound {
 			t.Fatalf("Expected ErrNotFound, got %v", err)
 		}

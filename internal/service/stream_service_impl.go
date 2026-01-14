@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/repository"
+	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/web-server-gin/pkg/auth"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -18,12 +19,14 @@ import (
 type StreamServiceImpl struct {
 	repo             repository.StreamRepository
 	permissionClient auth.PermissionClient
+	storage          storage.FileStorage
 }
 
-func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient) *StreamServiceImpl {
+func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage) *StreamServiceImpl {
 	return &StreamServiceImpl{
 		repo:             repo,
 		permissionClient: perm,
+		storage:          stor,
 	}
 }
 

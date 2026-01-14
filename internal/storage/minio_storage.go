@@ -6,34 +6,32 @@ import (
 	"io"
 
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type MinIOStorage struct {
 	client MinIOClient
+	bucket string
 }
 
-func NewMinIOStorage(client MinIOClient) *MinIOStorage {
+func NewMinIOStorage(client MinIOClient, bucket string) *MinIOStorage {
 	return &MinIOStorage{
 		client: client,
+		bucket: bucket,
 	}
 }
 
-func NewMinIOStorageFromConfig(endpoint, accessKey, secretKey string, useSSL bool) (*MinIOStorage, error) {
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	})
+func (s *MinIOStorage) Upload(ctx context.Context, path string, data io.Reader, size int64) error {
+	exists, err := s.BucketExists(ctx, s.bucket)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create MinIO client: %w", err)
+		return fmt.Errorf("failed to check bucket: %w", err)
 	}
-	return &MinIOStorage{
-		client: client,
-	}, nil
-}
 
-func (s *MinIOStorage) Upload(ctx context.Context, bucket, key string, data io.Reader, size int64) error {
-	_, err := s.client.PutObject(ctx, bucket, key, data, size, minio.PutObjectOptions{
+	if !exists {
+		if err := s.CreateBucket(ctx, s.bucket); err != nil {
+			return fmt.Errorf("failed to create bucket: %w", err)
+		}
+	}
+	_, err = s.client.PutObject(ctx, s.bucket, path, data, size, minio.PutObjectOptions{
 		ContentType: "application/octet-stream",
 	})
 
@@ -44,24 +42,24 @@ func (s *MinIOStorage) Upload(ctx context.Context, bucket, key string, data io.R
 	return nil
 }
 
-func (s *MinIOStorage) Download(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
-	obj, err := s.client.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+func (s *MinIOStorage) Download(ctx context.Context, path string) (io.ReadCloser, error) {
+	obj, err := s.client.GetObject(ctx, s.bucket, path, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, s.mapMinIOError(err)
 	}
 	return obj, nil
 }
 
-func (s *MinIOStorage) Delete(ctx context.Context, bucket, key string) error {
-	err := s.client.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{})
+func (s *MinIOStorage) Delete(ctx context.Context, path string) error {
+	err := s.client.RemoveObject(ctx, s.bucket, path, minio.RemoveObjectOptions{})
 	if err != nil {
 		return s.mapMinIOError(err)
 	}
 	return nil
 }
 
-func (s *MinIOStorage) Exists(ctx context.Context, bucket, key string) (bool, error) {
-	_, err := s.client.StatObject(ctx, bucket, key, minio.StatObjectOptions{})
+func (s *MinIOStorage) Exists(ctx context.Context, path string) (bool, error) {
+	_, err := s.client.StatObject(ctx, s.bucket, path, minio.StatObjectOptions{})
 	if err != nil {
 		if minioErr, ok := err.(minio.ErrorResponse); ok {
 			switch minioErr.Code {

@@ -1,14 +1,17 @@
+// config/config.go
 package config
 
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type Config struct {
 	Server
 	Database
 	JWT
+	MinIO
 }
 
 type Server struct {
@@ -30,7 +33,18 @@ type JWT struct {
 	AccessPublicKeyUrl string
 }
 
+type MinIO struct {
+	Endpoint        string
+	AccessKeyID     string
+	SecretAccessKey string
+	BucketName      string
+	UseSSL          bool
+	Region          string
+}
+
 func LoadConfig() (*Config, error) {
+	useSSL, _ := strconv.ParseBool(getEnv("MINIO_USE_SSL", "false"))
+
 	return &Config{
 		Database: Database{
 			Host:     os.Getenv("DB_HOST"),
@@ -47,6 +61,14 @@ func LoadConfig() (*Config, error) {
 		},
 		JWT: JWT{
 			AccessPublicKeyUrl: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
+		},
+		MinIO: MinIO{
+			Endpoint:        getEnv("MINIO_ENDPOINT", "localhost:9000"),
+			AccessKeyID:     getEnv("MINIO_ACCESS_KEY_ID", "admin"),
+			SecretAccessKey: getEnv("MINIO_SECRET_ACCESS_KEY", "minio123"),
+			BucketName:      getEnv("MINIO_BUCKET_NAME", "stream-service-test"),
+			UseSSL:          useSSL,
+			Region:          getEnv("MINIO_REGION", "ru-east-1"),
 		},
 	}, nil
 }
@@ -81,4 +103,12 @@ func (config *Config) GetDsn() string {
 		config.Port,
 		config.SslMode,
 		config.TimeZone)
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+
+	return defaultValue
 }

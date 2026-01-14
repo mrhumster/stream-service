@@ -7,8 +7,8 @@ import (
 )
 
 type FileStorage interface {
-	Upload(ctx context.Context, bucket, key string, data io.Reader, size int64) error
-	Download(ctx context.Context, bucket, key string) (io.ReadCloser, error)
-	Delete(ctx context.Context, bucket, key string) error
-	Exists(ctx context.Context, bucket, key string) (bool, error)
+	Upload(ctx context.Context, path string, data io.Reader, size int64) error
+	Download(ctx context.Context, path string) (io.ReadCloser, error)
+	Delete(ctx context.Context, path string) error
+	Exists(ctx context.Context, path string) (bool, error)
 }

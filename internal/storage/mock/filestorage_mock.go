@@ -42,59 +42,59 @@ func (m *MockFileStorage) EXPECT() *MockFileStorageMockRecorder {
 }
 
 // Delete mocks base method.
-func (m *MockFileStorage) Delete(ctx context.Context, bucket, key string) error {
+func (m *MockFileStorage) Delete(ctx context.Context, path string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, bucket, key)
+	ret := m.ctrl.Call(m, "Delete", ctx, path)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Delete indicates an expected call of Delete.
-func (mr *MockFileStorageMockRecorder) Delete(ctx, bucket, key any) *gomock.Call {
+func (mr *MockFileStorageMockRecorder) Delete(ctx, path any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockFileStorage)(nil).Delete), ctx, bucket, key)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockFileStorage)(nil).Delete), ctx, path)
 }
 
 // Download mocks base method.
-func (m *MockFileStorage) Download(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+func (m *MockFileStorage) Download(ctx context.Context, path string) (io.ReadCloser, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Download", ctx, bucket, key)
+	ret := m.ctrl.Call(m, "Download", ctx, path)
 	ret0, _ := ret[0].(io.ReadCloser)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Download indicates an expected call of Download.
-func (mr *MockFileStorageMockRecorder) Download(ctx, bucket, key any) *gomock.Call {
+func (mr *MockFileStorageMockRecorder) Download(ctx, path any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Download", reflect.TypeOf((*MockFileStorage)(nil).Download), ctx, bucket, key)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Download", reflect.TypeOf((*MockFileStorage)(nil).Download), ctx, path)
 }
 
 // Exists mocks base method.
-func (m *MockFileStorage) Exists(ctx context.Context, bucket, key string) (bool, error) {
+func (m *MockFileStorage) Exists(ctx context.Context, path string) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Exists", ctx, bucket, key)
+	ret := m.ctrl.Call(m, "Exists", ctx, path)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Exists indicates an expected call of Exists.
-func (mr *MockFileStorageMockRecorder) Exists(ctx, bucket, key any) *gomock.Call {
+func (mr *MockFileStorageMockRecorder) Exists(ctx, path any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exists", reflect.TypeOf((*MockFileStorage)(nil).Exists), ctx, bucket, key)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exists", reflect.TypeOf((*MockFileStorage)(nil).Exists), ctx, path)
 }
 
 // Upload mocks base method.
-func (m *MockFileStorage) Upload(ctx context.Context, bucket, key string, data io.Reader, size int64) error {
+func (m *MockFileStorage) Upload(ctx context.Context, path string, data io.Reader, size int64) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Upload", ctx, bucket, key, data, size)
+	ret := m.ctrl.Call(m, "Upload", ctx, path, data, size)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Upload indicates an expected call of Upload.
-func (mr *MockFileStorageMockRecorder) Upload(ctx, bucket, key, data, size any) *gomock.Call {
+func (mr *MockFileStorageMockRecorder) Upload(ctx, path, data, size any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Upload", reflect.TypeOf((*MockFileStorage)(nil).Upload), ctx, bucket, key, data, size)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Upload", reflect.TypeOf((*MockFileStorage)(nil).Upload), ctx, path, data, size)
 }

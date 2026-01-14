@@ -11,6 +11,7 @@ import (
 	"github.com/mrhumster/stream-service/internal/delivery/http/middleware"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
+	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/web-server-gin/pkg/auth"
 	"gorm.io/gorm"
 )
@@ -21,7 +22,7 @@ const (
 	ModeRelease = "RELEASE"
 )
 
-func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClient) (*gin.Engine, error) {
+func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClient, storage storage.FileStorage) (*gin.Engine, error) {
 	var (
 		cfg *config.Config
 		err error
@@ -53,7 +54,7 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	}
 
 	database := repository.NewGormStreamRepository(db)
-	streamService := service.NewStreamServiceImpl(database, permissionClient)
+	streamService := service.NewStreamServiceImpl(database, permissionClient, storage)
 	streamHandler := handlers.NewStreamHandler(streamService)
 
 	r.GET("/stream/health", func(c *gin.Context) {

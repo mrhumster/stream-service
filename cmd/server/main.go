@@ -12,6 +12,7 @@ import (
 	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/database"
 	"github.com/mrhumster/stream-service/internal/delivery/http/routes"
+	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/web-server-gin/pkg/auth"
 )
 
@@ -20,6 +21,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("❌  Error load config: %v", err)
 	}
+
+	fileMinIOStorage, err := storage.NewMinIOStorageFromConfig(cfg.MinIO)
+
+	if err != nil {
+		log.Fatalf("❌  Error create file storage: %v", err)
+	}
+
+	ctx := context.Background()
 
 	db, err := database.SetupDatabase(cfg)
 	if err != nil {
@@ -32,7 +41,7 @@ func main() {
 		log.Fatalf("❌ Permission gRPC client: %v", err)
 	}
 
-	r, err := routes.SetupRoutes(db, mode, permissionClient)
+	r, err := routes.SetupRoutes(db, mode, permissionClient, fileMinIOStorage)
 
 	if err != nil {
 		log.Fatalf("❌ Error gin route: %v", err)
