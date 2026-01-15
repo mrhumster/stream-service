@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -534,9 +535,11 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 
 	t.Run("succesfully generates upload URL for draft stream", func(t *testing.T) {
 		mockRepo.EXPECT().Read(ctx, streamID).Return(existingStream, nil)
-		expectedURL := "https://minio.localhost:9000/test-bucket/videos/...?X-Amz-..."
+		expectedURL, _ := url.Parse("https://minio.localhost:9000/test-bucket/videos/...?X-Amz-...")
 		expectedKey := "videos/" + userID.String() + "/" + streamID.String() + "/original"
-		mockStorage.EXPECT().GeneratePresignedURL(ctx, expectedKey, gomock.Any()).Return(expectedURL, nil)
+		mockStorage.EXPECT().
+			GeneratePresignedURL(ctx, expectedKey, gomock.Any()).
+			Return(expectedURL, nil)
 		mockRepo.EXPECT().Update(ctx, gomock.Any()).DoAndReturn(func(ctx context.Context, updatedStream *models.Stream) error {
 			if updatedStream.Status != models.StatusProcessing {
 				t.Errorf("Expected status 'processing', got %s", updatedStream.Status)
@@ -560,7 +563,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		if result == nil {
 			t.Fatal("Expected UploadInfo, got nil")
 		}
-		if result.UploadURL != expectedURL {
+		if result.UploadURL != expectedURL.String() {
 			t.Errorf("Expected URL %s, got %s", expectedURL, result.UploadURL)
 		}
 		if result.StreamID != streamID {
@@ -608,7 +611,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockRepo.EXPECT().Read(ctx, streamID).Return(existingStream, nil)
 
 		storageErr := storage.ErrStorage
-		mockStorage.EXPECT().GeneratePresignedURL(ctx, gomock.Any(), gomock.Any()).Return("", storageErr)
+		mockStorage.EXPECT().GeneratePresignedURL(ctx, gomock.Any(), gomock.Any()).Return(nil, storageErr)
 		result, err := service.StartStreamUpload(ctx, streamID)
 		if err == nil {
 			t.Fatal("Expected error when storage fails")
@@ -625,7 +628,12 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 
 	t.Run("returns error when cannot update stream", func(t *testing.T) {
 		mockRepo.EXPECT().Read(ctx, streamID).Return(existingStream, nil)
-		mockStorage.EXPECT().GeneratePresignedURL(ctx, gomock.Any(), gomock.Any()).Return("https://example.com/upload", nil)
+		mockStorage.EXPECT().
+			GeneratePresignedURL(ctx, gomock.Any(), gomock.Any()).
+			Return(func() *url.URL {
+				u, _ := url.Parse("https://example.com/upload")
+				return u
+			}(), nil)
 		updateErr := fmt.Errorf("database error")
 		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(updateErr)
 		result, err := service.StartStreamUpload(ctx, streamID)

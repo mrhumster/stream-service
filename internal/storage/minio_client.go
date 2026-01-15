@@ -3,8 +3,11 @@ package storage
 
 import (
 	"context"
-	"github.com/minio/minio-go/v7"
 	"io"
+	"net/url"
+	"time"
+
+	"github.com/minio/minio-go/v7"
 )
 
 type MinIOClient interface {
@@ -14,4 +17,5 @@ type MinIOClient interface {
 	StatObject(ctx context.Context, bucketName, objectName string, opts minio.StatObjectOptions) (minio.ObjectInfo, error)
 	BucketExists(ctx context.Context, bucketName string) (bool, error)
 	MakeBucket(ctx context.Context, bucketName string, opts minio.MakeBucketOptions) error
+	PresignedGetObject(ctx context.Context, bucketName, objectName string, expires time.Duration, reqParams url.Values) (u *url.URL, err error)
 }

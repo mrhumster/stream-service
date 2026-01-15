@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/url"
 	"testing"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/mrhumster/stream-service/internal/storage/mock"
@@ -319,4 +321,80 @@ func TestMinIOStorage_BucketOperations(t *testing.T) {
 			t.Fatalf("Expected ErrAlreadyExists, got %v", err)
 		}
 	})
+}
+
+func TestMinIOStorage_GeneratePresignedURL(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	mockMinIO := mock.NewMockMinIOClient(ctrl)
+	bucket := "test-bucket"
+	storage := &MinIOStorage{
+		client: mockMinIO,
+		bucket: bucket,
+	}
+
+	tests := []struct {
+		name          string
+		objectName    string
+		expires       time.Duration
+		expectedURL   *url.URL
+		mockResponse  func()
+		expectedError error
+	}{
+		{
+			name:       "success case",
+			objectName: "test-file.txt",
+			expires:    30 * time.Minute,
+			expectedURL: func() *url.URL {
+				u, _ := url.Parse("https://example.com/signed-url")
+				return u
+			}(),
+			mockResponse: func() {
+				mockMinIO.EXPECT().
+					PresignedGetObject(ctx, bucket, "test-file.txt", 30*time.Minute, nil).
+					Return(func() *url.URL {
+						u, _ := url.Parse("https://example.com/signed-url")
+						return u
+					}(), nil)
+			},
+			expectedError: nil,
+		},
+		{
+			name:       "error case",
+			objectName: "error-file.txt",
+			expires:    15 * time.Minute,
+			expectedURL: func() *url.URL {
+				return nil
+			}(),
+			mockResponse: func() {
+				mockMinIO.EXPECT().
+					PresignedGetObject(ctx, bucket, "error-file.txt", 15*time.Minute, nil).
+					Return(func() *url.URL {
+						u, _ := url.Parse("")
+						return u
+					}(), minio.ErrorResponse{Code: "InternalError"})
+			},
+			expectedError: ErrGenerateURLFailed,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.mockResponse() // set mock in awaitei
+			url, err := storage.GeneratePresignedURL(ctx, tt.objectName, tt.expires)
+			if err != tt.expectedError {
+				t.Errorf("Expected error %v, got %v", tt.expectedError, err)
+			}
+			if url == nil && tt.expectedURL != nil {
+				t.Errorf("Expected URL got nil")
+			} else if url != nil && tt.expectedURL == nil {
+				t.Errorf("Expected nil URL, got non-nil")
+			} else if url != nil && tt.expectedURL != nil {
+				if url.String() != tt.expectedURL.String() {
+					t.Errorf("Expected URL %s, got %s", tt.expectedURL.String(), url.String())
+				}
+			}
+		})
+	}
 }

@@ -12,6 +12,7 @@ package mock
 import (
 	context "context"
 	io "io"
+	url "net/url"
 	reflect "reflect"
 	time "time"
 
@@ -87,10 +88,10 @@ func (mr *MockFileStorageMockRecorder) Exists(ctx, path any) *gomock.Call {
 }
 
 // GeneratePresignedURL mocks base method.
-func (m *MockFileStorage) GeneratePresignedURL(ctx context.Context, path string, expires time.Duration) (string, error) {
+func (m *MockFileStorage) GeneratePresignedURL(ctx context.Context, path string, expires time.Duration) (*url.URL, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GeneratePresignedURL", ctx, path, expires)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(*url.URL)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

@@ -217,7 +217,7 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid
 		return nil, fmt.Errorf("failed to update stream: %w", err)
 	}
 	return &UploadInfo{
-		UploadURL: uploadURL,
+		UploadURL: uploadURL.String(),
 		StreamID:  streamID,
 	}, nil
 }

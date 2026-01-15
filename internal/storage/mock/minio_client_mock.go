@@ -12,7 +12,9 @@ package mock
 import (
 	context "context"
 	io "io"
+	url "net/url"
 	reflect "reflect"
+	time "time"
 
 	minio "github.com/minio/minio-go/v7"
 	gomock "go.uber.org/mock/gomock"
@@ -84,6 +86,21 @@ func (m *MockMinIOClient) MakeBucket(ctx context.Context, bucketName string, opt
 func (mr *MockMinIOClientMockRecorder) MakeBucket(ctx, bucketName, opts any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MakeBucket", reflect.TypeOf((*MockMinIOClient)(nil).MakeBucket), ctx, bucketName, opts)
+}
+
+// PresignedGetObject mocks base method.
+func (m *MockMinIOClient) PresignedGetObject(ctx context.Context, bucketName, objectName string, expires time.Duration, reqParams url.Values) (*url.URL, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PresignedGetObject", ctx, bucketName, objectName, expires, reqParams)
+	ret0, _ := ret[0].(*url.URL)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PresignedGetObject indicates an expected call of PresignedGetObject.
+func (mr *MockMinIOClientMockRecorder) PresignedGetObject(ctx, bucketName, objectName, expires, reqParams any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PresignedGetObject", reflect.TypeOf((*MockMinIOClient)(nil).PresignedGetObject), ctx, bucketName, objectName, expires, reqParams)
 }
 
 // PutObject mocks base method.

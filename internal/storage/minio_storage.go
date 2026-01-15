@@ -2,9 +2,9 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -100,9 +100,13 @@ func (s *MinIOStorage) CreateBucket(ctx context.Context, bucket string) error {
 	return nil
 }
 
-func (s *MinIOStorage) GeneratePresignedURL(ctx context.Context, path string, expire time.Duration) (string, error) {
+func (s *MinIOStorage) GeneratePresignedURL(ctx context.Context, path string, expire time.Duration) (*url.URL, error) {
 	// TODO: Function should return url from MiniIO instance
-	return "", errors.New("not implemeted")
+	u, err := s.client.PresignedGetObject(ctx, s.bucket, path, expire, nil)
+	if err != nil {
+		return nil, ErrGenerateURLFailed
+	}
+	return u, nil
 }
 
 func (s *MinIOStorage) mapMinIOError(err error) error {
