@@ -229,3 +229,110 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID u
 func (s *StreamServiceImpl) CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error) {
 	return false, fmt.Errorf("not implemented")
 }
+
+func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequest) error {
+	stream, err := s.repo.Read(ctx, req.StreamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("stream not found")
+		}
+		return fmt.Errorf("failed to get stream: %w", err)
+	}
+	if stream.OwnerID != req.UserID {
+		return fmt.Errorf("forbidden: user does not own this stream")
+	}
+
+	if stream.Status != models.StatusDraft {
+		return fmt.Errorf("cannot upload video stream with status: %s", stream.Status)
+	}
+
+	storageKey := fmt.Sprintf("streams/%s/videos/%s_%s",
+		req.UserID.String(),
+		req.StreamID.String(),
+		uuid.New().String())
+
+	err = s.storage.Upload(ctx, storageKey, req.File, req.Size)
+	if err != nil {
+		return fmt.Errorf("failed to upload to storage: %w", err)
+	}
+
+	storageInfo := models.StreamStorage{
+		Provider: "minio",
+		Key:      storageKey,
+		Filename: req.FileName,
+		// TODO: Fill in remaining fields (bucket, url)
+	}
+
+	storageJSON, err := json.Marshal(storageInfo)
+	if err != nil {
+		_ = s.storage.Delete(ctx, storageKey)
+		return fmt.Errorf("failed to marshal storgae info: %w", err)
+	}
+
+	metadata := models.StreamMetadata{
+		Size: req.Size,
+		// TODO: Fill in remaining fields (duration, resolution)
+	}
+
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		_ = s.storage.Delete(ctx, storageKey)
+		return fmt.Errorf("failed to marshal metadata info: %w", err)
+	}
+
+	stream.Storage = datatypes.JSON(storageJSON)
+	stream.Metadata = datatypes.JSON(metadataJSON)
+
+	stream.Status = models.StatusProcessing
+	stream.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(ctx, stream); err != nil {
+		_ = s.storage.Delete(ctx, storageKey)
+		return fmt.Errorf("failed to update stream: %w", err)
+	}
+
+	// more interesting
+	// TODO: in this part, you can work with channels and gorutines
+	//	go s.processVideoAsync(req.StreamID, storageKey, req.FileName, req.Size)
+	return nil
+}
+
+func (s *StreamServiceImpl) processVideoAsync(streamID uuid.UUID, storageKey, filename string, size int64) {
+	ctx := context.Background()
+
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		log.Printf("Failed to get stream for processing: %v", err)
+		return
+	}
+
+	// TODO: Реальная обработка видео с ffmpeg
+	// Пока просто имитируем и обновляем дополнительные метаданные
+
+	time.Sleep(2 * time.Second)
+
+	var metadata models.StreamMetadata
+	if err := json.Unmarshal(stream.Metadata, &metadata); err != nil {
+		metadata = models.StreamMetadata{}
+	}
+
+	metadata.Duration = 3600
+	metadata.Format = ""
+	metadata.Resolution = "1920x1080" // Должно определяться из видео
+
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		log.Printf("Failed to marshal metadata: %v", err)
+		return
+	}
+
+	stream.Metadata = datatypes.JSON(metadataJSON)
+	stream.Status = models.StatusReady
+	stream.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(ctx, stream); err != nil {
+		log.Printf("Failed to update stream after processing: %v", err)
+	}
+
+	log.Printf("Video processing completed for stream %s", streamID)
+}

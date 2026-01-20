@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"io"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
@@ -26,6 +27,7 @@ type StreamService interface {
 	StartStreamUpload(ctx context.Context, streamID uuid.UUID) (*UploadInfo, error)
 	CompleteStreamUpload(ctx context.Context, streamID uuid.UUID) error
 	CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error)
+	UploadVideo(ctx context.Context, req UploadVideoRequest) error
 }
 
 type CreateStreamRequest struct {
@@ -46,4 +48,12 @@ type UpdateStreamRequest struct {
 type UploadInfo struct {
 	UploadURL string
 	StreamID  uuid.UUID
+}
+
+type UploadVideoRequest struct {
+	StreamID uuid.UUID
+	UserID   uuid.UUID
+	File     io.Reader
+	FileName string
+	Size     int64
 }

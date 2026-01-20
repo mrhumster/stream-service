@@ -53,6 +53,7 @@ type StreamStorage struct {
 	Bucket   string `json:"bucket"`
 	Key      string `json:"key"`
 	Url      string `json:"url"`
+	Filename string `json:"filename"`
 }
 
 type StreamProcessing struct {

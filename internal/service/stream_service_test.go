@@ -9,6 +9,7 @@ import (
 
 func TestStreamServiceInterface(t *testing.T) {
 	var _ service.StreamService = (*servicemock.MockStreamService)(nil)
+	var _ service.StreamService = (*service.StreamServiceImpl)(nil)
 }
 
 func TestStreamService_GetStream(t *testing.T) {

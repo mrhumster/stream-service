@@ -163,3 +163,49 @@ func (h *StreamHandler) DeleteStream(c *gin.Context) {
 	h.service.DeleteStream(c.Request.Context(), streamID)
 	c.JSON(http.StatusOK, nil)
 }
+
+func (h *StreamHandler) UploadVideo(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
+		return
+	}
+	userIDStr, ok := userID.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID"))
+		return
+	}
+	streamID := c.Param("id")
+	streamUUID, err := uuid.Parse(streamID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+	file, fileHeader, err := c.Request.FormFile("video")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("video file reuiqred"))
+		return
+	}
+	defer file.Close()
+
+	uploadReq := &request.VideoUploadRequest{
+		StreamID:   streamUUID,
+		UserID:     userIDStr,
+		File:       file,
+		FileHeader: fileHeader,
+	}
+	serviceReq, err := uploadReq.ToServiceRequest()
+	if err != nil {
+		if _, ok := err.(*request.ValidationError); ok {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		} else {
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		}
+		return
+	}
+	err = h.service.UploadVideo(c.Request.Context(), *serviceReq)
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "video uploaded successfully",
+	})
+}

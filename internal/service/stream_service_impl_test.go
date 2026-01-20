@@ -1,9 +1,11 @@
 package service_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"testing"
 	"time"
@@ -647,4 +649,210 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 			t.Errorf("Expected update error, got '%v'", err)
 		}
 	})
+}
+
+func TestStreamServiceImpl_UploadVideo(t *testing.T) {
+
+	ctx := context.Background()
+
+	t.Run("successful video upload", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+		streamID := uuid.New()
+		userID := uuid.New()
+		fileName := "test.mp4"
+		fileSize := int64(1024 * 1024)
+		fileData := []byte("fake video data")
+
+		existingStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   userID,
+			Title:     "Test stream",
+			Status:    models.StatusDraft,
+			Storage:   datatypes.JSON("{}"),
+		}
+
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(existingStream, nil)
+
+		mockStorage.EXPECT().
+			Upload(ctx, gomock.Any(), gomock.Any(), fileSize).
+			DoAndReturn(func(ctx context.Context, path string, reader io.Reader, size int64) error {
+				data, err := io.ReadAll(reader)
+				require.NoError(t, err)
+				assert.Equal(t, fileData, data)
+				assert.Contains(t, path, "streams/"+userID.String())
+				assert.Contains(t, path, streamID.String())
+				return nil
+			})
+		mockRepo.EXPECT().
+			Update(ctx, gomock.Any()).
+			DoAndReturn(func(ctx context.Context, s *models.Stream) error {
+				assert.Equal(t, models.StatusProcessing, s.Status)
+				var storageInfo models.StreamStorage
+				err := json.Unmarshal(s.Storage, &storageInfo)
+				require.NoError(t, err)
+				assert.Equal(t, fileName, storageInfo.Filename)
+
+				var streamMeta models.StreamMetadata
+				err = json.Unmarshal(s.Metadata, &streamMeta)
+				require.NoError(t, err)
+				assert.Equal(t, fileSize, streamMeta.Size)
+
+				assert.Contains(t, storageInfo.Key, userID.String())
+				assert.Contains(t, storageInfo.Key, streamID.String())
+				return nil
+			})
+
+		req := service.UploadVideoRequest{
+			StreamID: streamID,
+			UserID:   userID,
+			File:     bytes.NewReader(fileData),
+			FileName: fileName,
+			Size:     fileSize,
+		}
+		err := serviceImpl.UploadVideo(ctx, req)
+		require.NoError(t, err)
+	})
+
+	t.Run("stream not found", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepoo := repomock.NewMockStreamRepository(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+
+		serviceImpl := service.NewStreamServiceImpl(mockRepoo, mockPerm, mockStorage)
+
+		streamID := uuid.New()
+		userID := uuid.New()
+
+		mockRepoo.EXPECT().Read(ctx, streamID).Return(nil, gorm.ErrRecordNotFound)
+		req := service.UploadVideoRequest{
+			StreamID: streamID,
+			UserID:   userID,
+			File:     bytes.NewReader(nil),
+			Size:     100,
+		}
+		err := serviceImpl.UploadVideo(ctx, req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "stream not found")
+	})
+
+	t.Run("cannot upload to published stream", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepoo := repomock.NewMockStreamRepository(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+
+		serviceImpl := service.NewStreamServiceImpl(mockRepoo, mockPerm, mockStorage)
+
+		streamID := uuid.New()
+		userID := uuid.New()
+
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   userID,
+			Status:    models.StatusPublished,
+		}
+		mockRepoo.EXPECT().Read(ctx, streamID).Return(stream, nil)
+		req := service.UploadVideoRequest{
+			StreamID: streamID,
+			UserID:   userID,
+			File:     bytes.NewReader(nil),
+			FileName: "test.mp4",
+			Size:     100,
+		}
+
+		err := serviceImpl.UploadVideo(ctx, req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot upload")
+		assert.Contains(t, err.Error(), "published")
+	})
+	t.Run("storage upload fails", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+		streamID := uuid.New()
+		userID := uuid.New()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   userID,
+			Status:    models.StatusDraft,
+		}
+		mockRepo.EXPECT().Read(ctx, streamID).Return(stream, nil)
+		storageErr := fmt.Errorf("storage error: disk full")
+		mockStorage.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(storageErr)
+		req := service.UploadVideoRequest{
+			StreamID: streamID,
+			UserID:   userID,
+			File:     bytes.NewReader(nil),
+			FileName: "test.mp4",
+			Size:     100,
+		}
+		err := serviceImpl.UploadVideo(ctx, req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "storage")
+	})
+
+	t.Run("stream update fails after successful upload", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+
+		streamID := uuid.New()
+		userID := uuid.New()
+
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   userID,
+			Status:    models.StatusDraft,
+			Storage:   datatypes.JSON("{}"),
+		}
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(stream, nil)
+
+		mockStorage.EXPECT().
+			Upload(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil)
+		updateErr := fmt.Errorf("database error: connection lost")
+		mockRepo.EXPECT().
+			Update(ctx, gomock.Any()).
+			Return(updateErr)
+		mockStorage.EXPECT().
+			Delete(gomock.Any(), gomock.Any()).
+			Return(nil)
+		req := service.UploadVideoRequest{
+			StreamID: streamID,
+			UserID:   userID,
+			File:     bytes.NewReader(nil),
+			FileName: "test.mp4",
+			Size:     100,
+		}
+
+		err := serviceImpl.UploadVideo(ctx, req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update stream")
+	})
+
 }

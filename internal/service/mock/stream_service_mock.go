@@ -218,3 +218,17 @@ func (mr *MockStreamServiceMockRecorder) UpdateStreamStatus(ctx, streamID, statu
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStreamStatus", reflect.TypeOf((*MockStreamService)(nil).UpdateStreamStatus), ctx, streamID, status)
 }
+
+// UploadVideo mocks base method.
+func (m *MockStreamService) UploadVideo(ctx context.Context, req service.UploadVideoRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UploadVideo", ctx, req)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UploadVideo indicates an expected call of UploadVideo.
+func (mr *MockStreamServiceMockRecorder) UploadVideo(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadVideo", reflect.TypeOf((*MockStreamService)(nil).UploadVideo), ctx, req)
+}
