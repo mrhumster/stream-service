@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: stream
-          image: xomrkob/stream:0.1.1-fa02094cd4d1145daa2c5ecba49bb1a4ad189b56
+          image: xomrkob/stream:0.1.1-ed05a83fca41d6f8db00fa6bef39f4dd96c48319
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -27,7 +27,7 @@ spec:
             - name: DOMAIN
               value: go-app.example.com
             - name: DB_HOST
-              value: postgresql
+              value: potgresql-postgresql
             - name: DB_PORT
               value: "5432"
             - name: DB_NAME
@@ -46,6 +46,37 @@ spec:
               value: http://web-server-gin-service:80/api/auth/public-key
             - name: AUTH_SERVICE_ADDRESS
               value: web-server-gin-service:50051
+            - name: MINIO_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: go-app-config
+                  key: MINIO_ENDPOINT
+            - name: MINIO_BUCKET_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: go-app-config
+                  key: MINIO_BUCKET_NAME
+            - name: MINIO_USE_SSL
+              valueFrom:
+                configMapKeyRef:
+                  name: go-app-config
+                  key: MINIO_USE_SSL
+            - name: MINIO_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: go-app-config
+                  key: MINIO_REGION
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: secret-key
+
           resources:
             requests:
               memory: "256Mi"

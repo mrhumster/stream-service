@@ -8,6 +8,6 @@ data:
   MINIO_ENDPOINT: "minio:9000"
   MINIO_BUCKET_NAME: "go-app-bucket"
   MINIO_USE_SSL: "false"
-  MINIO_REGION: "ru-east-1"
+  MINIO_REGION: "us-east-1"
 ---
 
