@@ -204,6 +204,10 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 		return
 	}
 	err = h.service.UploadVideo(c.Request.Context(), *serviceReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "video uploaded successfully",

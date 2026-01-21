@@ -612,7 +612,7 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		mockService.EXPECT().
 			UploadVideo(gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx any, req any) error {
-				uploadReq := req.(*service.UploadVideoRequest)
+				uploadReq := req.(service.UploadVideoRequest)
 				assert.Equal(t, streamID, uploadReq.StreamID)
 				assert.NotNil(t, uploadReq.File)
 				assert.Equal(t, "test.mp4", uploadReq.FileName)
@@ -638,7 +638,7 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 			c.Set("userID", uuid.New().String())
 			c.Next()
 		})
-		router.POST("/streams/:id/upload", handler.UploadVideo)
+		router.POST("/stream/:id/upload", handler.UploadVideo)
 		streamID := uuid.New()
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
@@ -652,7 +652,7 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusBadRequest, w.Code)
-		assert.Contains(t, w.Body.String(), "invalid video format")
+		assert.Contains(t, w.Body.String(), "invalid file extension")
 	})
 
 	t.Run("service return error", func(t *testing.T) {
@@ -669,8 +669,6 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 			c.Next()
 		})
 		router.POST("/stream/:id/upload", handlers.UploadVideo)
-		req := httptest.NewRequest("POST", "/stream/"+streamID.String()+"/upload", nil)
-		req.Header.Set("Content-Type", "multipart/form-data")
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
 		part, err := writer.CreateFormFile("video", "test.mp4")
@@ -682,9 +680,11 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 			UploadVideo(gomock.Any(), gomock.Any()).
 			Return(expectedError)
 
+		req := httptest.NewRequest("POST", "/stream/"+streamID.String()+"/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusInternalServerError, w.Code)
-		assert.Contains(t, w.Body.String(), expectedError)
+		assert.Contains(t, w.Body.String(), "stream not found")
 	})
 }

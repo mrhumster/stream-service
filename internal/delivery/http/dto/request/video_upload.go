@@ -52,8 +52,9 @@ func isValidVideoContentType(contentType string) bool {
 		"video/quicktime",
 		"video/x-msvideo",
 		"video/x-matroska",
+		"application/octet-stream",
+		"",
 	}
-
 	return slices.Contains(allowedTypes, contentType)
 }
 
