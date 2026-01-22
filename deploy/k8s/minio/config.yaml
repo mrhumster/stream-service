@@ -9,5 +9,6 @@ data:
   MINIO_DOMAIN: "minio"
   MINIO_PROMETHEUS_AUTH_TYPE: "public"
   MINIO_PROMETHEUS_URL: "http://minio:9000"
+  MINIO_REGION: "us-east-1"
 ---
 

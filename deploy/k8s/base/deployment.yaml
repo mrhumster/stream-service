@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: stream
-          image: xomrkob/stream:0.1.1-ed05a83fca41d6f8db00fa6bef39f4dd96c48319
+          image: xomrkob/stream:0.1.1-92167d80ae2c83f7cb2f084c9fad6e6ddaa9dcc8
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

@@ -80,25 +80,10 @@ spec:
                 configMapKeyRef:
                   name: minio-config
                   key: MINIO_BROWSER
-            - name: MINIO_ENDPOINT
-              valueFrom:
-                configMapKeyRef:
-                  name: go-app-config
-                  key: MINIO_ENDPOINT
-            - name: MINIO_BUCKET_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: go-app-config
-                  key: MINIO_BUCKET_NAME
-            - name: MINIO_USE_SSL
-              valueFrom:
-                configMapKeyRef:
-                  name: go-app-config
-                  key: MINIO_USE_SSL
             - name: MINIO_REGION
               valueFrom:
                 configMapKeyRef:
-                  name: go-app-config
+                  name: minio-config
                   key: MINIO_REGION
           ports:
             - containerPort: 9000

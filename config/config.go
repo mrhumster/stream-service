@@ -64,8 +64,8 @@ func LoadConfig() (*Config, error) {
 		},
 		MinIO: MinIO{
 			Endpoint:        getEnv("MINIO_ENDPOINT", "localhost:9000"),
-			AccessKeyID:     getEnv("MINIO_ACCESS_KEY_ID", "admin"),
-			SecretAccessKey: getEnv("MINIO_SECRET_ACCESS_KEY", "minio123"),
+			AccessKeyID:     getEnv("MINIO_ACCESS_KEY", "admin"),
+			SecretAccessKey: getEnv("MINIO_SECRET_KEY", "minio123"),
 			BucketName:      getEnv("MINIO_BUCKET_NAME", "stream-service-test"),
 			UseSSL:          useSSL,
 			Region:          getEnv("MINIO_REGION", "ru-east-1"),
