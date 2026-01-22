@@ -129,6 +129,21 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 		return fmt.Errorf("cannot delete published stream")
 	}
 
+	if stream.Storage != nil {
+		var stor models.StreamStorage
+
+		err = json.Unmarshal(stream.Storage, &stor)
+		if err != nil {
+			return fmt.Errorf("unmarshaling storage error: %w", err)
+		}
+		if stor.Key != "" {
+			err = s.storage.Delete(ctx, stor.Key)
+			if err != nil {
+				return fmt.Errorf("error delete stream file from storage: %w", err)
+			}
+		}
+	}
+
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete stream: %w", err)
 	}
@@ -140,7 +155,7 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 	for _, act := range acts {
 		removed, err := s.permissionClient.RemovePolicy(ctx, obj, sub, act)
 		if err != nil {
-			log.Printf("Error creating permission. permissionClient.RemovePolicy(sub = %s,obj = %s, act = %s)", sub, obj, act)
+			log.Printf("Error removing permission. permissionClient.RemovePolicy(sub = %s,obj = %s, act = %s)", sub, obj, act)
 		}
 
 		if removed {

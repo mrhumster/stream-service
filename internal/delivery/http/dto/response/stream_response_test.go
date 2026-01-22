@@ -1,6 +1,7 @@
 package response
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -14,6 +15,20 @@ func TestStreamResponse_FromDomainModel(t *testing.T) {
 	ownerID := uuid.New()
 	now := time.Now()
 
+	storage := models.StreamStorage{
+		Key:      "file",
+		Bucket:   "bucket",
+		Provider: "minio",
+		Url:      "http://localhost:9000",
+		Filename: "file.mp4",
+	}
+
+	storageJSON, err := json.Marshal(storage)
+
+	if err != nil {
+		t.Errorf("Error marshal storage to JSON error: %s", err.Error())
+	}
+
 	stream := &models.Stream{
 		Title:       "Test stream",
 		Description: "Test Description",
@@ -21,6 +36,7 @@ func TestStreamResponse_FromDomainModel(t *testing.T) {
 		OwnerID:     ownerID,
 		Visibility:  models.VisibilityPublic,
 		PublishedAt: &now,
+		Storage:     storageJSON,
 	}
 	stream.ID = streamID
 	stream.CreatedAt = now
@@ -34,4 +50,10 @@ func TestStreamResponse_FromDomainModel(t *testing.T) {
 	assert.Equal(t, models.StatusPublished, resp.Status)
 	assert.Equal(t, models.VisibilityPublic, resp.Visibility)
 	assert.Equal(t, now, resp.CreatedAt)
+
+	assert.Equal(t, storage.Key, resp.Storage["key"])
+	assert.Equal(t, storage.Bucket, resp.Storage["bucket"])
+	assert.Equal(t, storage.Provider, resp.Storage["provider"])
+	assert.Equal(t, storage.Url, resp.Storage["url"])
+	assert.Equal(t, storage.Filename, resp.Storage["filename"])
 }

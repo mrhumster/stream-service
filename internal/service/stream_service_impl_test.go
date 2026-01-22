@@ -130,7 +130,7 @@ func TestStreamServicImpl_ListStreams(t *testing.T) {
 		assert.ErrorIs(t, err, assert.AnError)
 	})
 }
-func TestStreamServicImpl_DeleteStream(t *testing.T) {
+func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 	ctx := context.Background()
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -220,7 +220,50 @@ func TestStreamServicImpl_DeleteStream(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "published")
 	})
+	t.Run("delete with file", func(t *testing.T) {
+		c := gomock.NewController(t)
+		defer c.Finish()
 
+		r := repomock.NewMockStreamRepository(c)
+		p := authmock.NewMockPermissionClient(c)
+		s := mock.NewMockFileStorage(ctrl)
+		srv := service.NewStreamServiceImpl(r, p, s)
+		streamID := uuid.New()
+		userID := uuid.New()
+		storageKey := fmt.Sprintf("streams/%s/videos/%s_%s",
+			userID.String(),
+			streamID.String(),
+			uuid.New().String())
+
+		stor := models.StreamStorage{
+			Key:      storageKey,
+			Bucket:   "bucket",
+			Filename: "filename",
+			Url:      "https://localhost/filename",
+			Provider: "minio",
+		}
+		storJSON, err := json.Marshal(stor)
+
+		if err != nil {
+			t.Errorf("Marshalization error: %v", err)
+		}
+
+		streamWithFile := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   userID,
+			Title:     "Stream with file",
+			Status:    models.StatusDraft,
+			Storage:   datatypes.JSON(storJSON),
+		}
+		r.EXPECT().Read(gomock.Any(), streamID).Return(streamWithFile, nil)
+		r.EXPECT().Delete(gomock.Any(), streamID).Return(nil)
+		p.EXPECT().RemovePolicy(gomock.Any(), userID.String(), "stream/"+streamID.String(), "read").Return(true, nil)
+		p.EXPECT().RemovePolicy(gomock.Any(), userID.String(), "stream/"+streamID.String(), "write").Return(true, nil)
+		p.EXPECT().RemovePolicy(gomock.Any(), userID.String(), "stream/"+streamID.String(), "delete").Return(true, nil)
+		s.EXPECT().Delete(gomock.Any(), stor.Key).Return(nil)
+		err = srv.DeleteStream(ctx, streamID)
+		require.NoError(t, err)
+	})
 }
 func TestStreamServicImpl_GetStream(t *testing.T) {
 	ctx := context.Background()

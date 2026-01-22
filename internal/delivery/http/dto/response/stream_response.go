@@ -20,6 +20,7 @@ type StreamResponse struct {
 	CreatedAt   time.Time               `json:"created_at"`
 	UpdatedAt   time.Time               `json:"updated_at"`
 	PublishedAt *time.Time              `json:"published_at"`
+	Storage     map[string]string       `json:"storage"`
 }
 
 func FromDomainModel(stream *models.Stream) StreamResponse {
@@ -45,6 +46,12 @@ func FromDomainModel(stream *models.Stream) StreamResponse {
 		var metadata map[string]any
 		json.Unmarshal(stream.Metadata, &metadata)
 		resp.Metadata = metadata
+	}
+
+	if len(stream.Storage) > 0 {
+		var storage map[string]string
+		json.Unmarshal(stream.Storage, &storage)
+		resp.Storage = storage
 	}
 
 	return resp
