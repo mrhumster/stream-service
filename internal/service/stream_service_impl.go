@@ -276,6 +276,8 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 		Key:      storageKey,
 		Filename: req.FileName,
 		// TODO: Fill in remaining fields (bucket, url)
+		Bucket: "bucket",
+		Url:    "fake url",
 	}
 
 	storageJSON, err := json.Marshal(storageInfo)

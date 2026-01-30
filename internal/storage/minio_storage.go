@@ -22,6 +22,10 @@ func NewMinIOStorage(client MinIOClient, bucket string) *MinIOStorage {
 	}
 }
 
+func (s *MinIOStorage) GetBucketName() string {
+	return s.bucket
+}
+
 func (s *MinIOStorage) Upload(ctx context.Context, path string, data io.Reader, size int64) error {
 	exists, err := s.BucketExists(ctx, s.bucket)
 	if err != nil {

@@ -743,6 +743,8 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 				err := json.Unmarshal(s.Storage, &storageInfo)
 				require.NoError(t, err)
 				assert.Equal(t, fileName, storageInfo.Filename)
+				assert.NotEmpty(t, storageInfo.Bucket)
+				assert.NotEmpty(t, storageInfo.Url)
 
 				var streamMeta models.StreamMetadata
 				err = json.Unmarshal(s.Metadata, &streamMeta)
