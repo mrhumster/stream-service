@@ -14,4 +14,5 @@ type FileStorage interface {
 	Delete(ctx context.Context, path string) error
 	Exists(ctx context.Context, path string) (bool, error)
 	GeneratePresignedURL(ctx context.Context, path string, expires time.Duration) (*url.URL, error)
+	GetBucketName() string
 }

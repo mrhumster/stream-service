@@ -239,7 +239,6 @@ func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 			Key:      storageKey,
 			Bucket:   "bucket",
 			Filename: "filename",
-			Url:      "https://localhost/filename",
 			Provider: "minio",
 		}
 		storJSON, err := json.Marshal(stor)
@@ -735,6 +734,7 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 				assert.Contains(t, path, streamID.String())
 				return nil
 			})
+		mockStorage.EXPECT().GetBucketName().Return("bucketname")
 		mockRepo.EXPECT().
 			Update(ctx, gomock.Any()).
 			DoAndReturn(func(ctx context.Context, s *models.Stream) error {
@@ -744,7 +744,6 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, fileName, storageInfo.Filename)
 				assert.NotEmpty(t, storageInfo.Bucket)
-				assert.NotEmpty(t, storageInfo.Url)
 
 				var streamMeta models.StreamMetadata
 				err = json.Unmarshal(s.Metadata, &streamMeta)
@@ -863,7 +862,7 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 
 		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
-
+		mockStorage.EXPECT().GetBucketName().Return("bucketname")
 		streamID := uuid.New()
 		userID := uuid.New()
 
@@ -900,4 +899,69 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 		assert.Contains(t, err.Error(), "update stream")
 	})
 
+}
+
+func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("successful URL generation", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+
+		streamID := uuid.New()
+		userID := uuid.New()
+
+		storageInfo := models.StreamStorage{
+			Provider: "minio",
+			Key:      "streams/user-id/videos/file-key.mp4",
+			Filename: "video.mp4",
+			Bucket:   "streams",
+		}
+		storageJSON, _ := json.Marshal(storageInfo)
+
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   userID,
+			Status:    models.StatusReady,
+			Storage:   datatypes.JSON(storageJSON),
+		}
+
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(stream, nil)
+
+		expectedURL := "https://go-app.example.com/storage/streams/user-id/videos/file-key.mp4?signature=..."
+		mockStorage.EXPECT().
+			GeneratePresignedURL(ctx, storageInfo.Key, gomock.Any()).
+			Return(&url.URL{
+				Scheme:   "https",
+				Host:     "go-app.example.com",
+				Path:     "/storage/streams/user-id/videos/file-key.mp4",
+				RawQuery: "signature=...",
+			}, nil)
+
+		urlStr, expiresAt, err := serviceImpl.GenerateDownloadURL(ctx, streamID, userID.String())
+
+		require.NoError(t, err)
+		assert.Equal(t, expectedURL, urlStr)
+		assert.True(t, expiresAt.After(time.Now()))
+	})
+
+	t.Run("stream not found", func(t *testing.T) {
+		// ...
+	})
+
+	t.Run("access denied", func(t *testing.T) {
+		// ...
+	})
+
+	t.Run("stream not ready", func(t *testing.T) {
+		// ...
+	})
 }

@@ -19,7 +19,6 @@ func TestStreamResponse_FromDomainModel(t *testing.T) {
 		Key:      "file",
 		Bucket:   "bucket",
 		Provider: "minio",
-		Url:      "http://localhost:9000",
 		Filename: "file.mp4",
 	}
 
@@ -54,6 +53,5 @@ func TestStreamResponse_FromDomainModel(t *testing.T) {
 	assert.Equal(t, storage.Key, resp.Storage["key"])
 	assert.Equal(t, storage.Bucket, resp.Storage["bucket"])
 	assert.Equal(t, storage.Provider, resp.Storage["provider"])
-	assert.Equal(t, storage.Url, resp.Storage["url"])
 	assert.Equal(t, storage.Filename, resp.Storage["filename"])
 }

@@ -102,6 +102,20 @@ func (mr *MockFileStorageMockRecorder) GeneratePresignedURL(ctx, path, expires a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GeneratePresignedURL", reflect.TypeOf((*MockFileStorage)(nil).GeneratePresignedURL), ctx, path, expires)
 }
 
+// GetBucketName mocks base method.
+func (m *MockFileStorage) GetBucketName() string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBucketName")
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetBucketName indicates an expected call of GetBucketName.
+func (mr *MockFileStorageMockRecorder) GetBucketName() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBucketName", reflect.TypeOf((*MockFileStorage)(nil).GetBucketName))
+}
+
 // Upload mocks base method.
 func (m *MockFileStorage) Upload(ctx context.Context, path string, data io.Reader, size int64) error {
 	m.ctrl.T.Helper()

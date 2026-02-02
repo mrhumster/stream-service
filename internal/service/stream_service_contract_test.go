@@ -42,7 +42,6 @@ func createTestStreamData(id uuid.UUID, title string, ownerID uuid.UUID) *models
 		Provider: "s3",
 		Bucket:   "streams",
 		Key:      id.String() + ".mp4",
-		Url:      "https://storage.example.com/" + id.String() + ".mp4",
 	})
 	processing, _ := json.Marshal(models.StreamProcessing{
 		Progress: 100,

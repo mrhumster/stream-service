@@ -52,7 +52,6 @@ type StreamStorage struct {
 	Provider string `json:"provider"`
 	Bucket   string `json:"bucket"`
 	Key      string `json:"key"`
-	Url      string `json:"url"`
 	Filename string `json:"filename"`
 }
 

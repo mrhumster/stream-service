@@ -275,9 +275,7 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 		Provider: "minio",
 		Key:      storageKey,
 		Filename: req.FileName,
-		// TODO: Fill in remaining fields (bucket, url)
-		Bucket: "bucket",
-		Url:    "fake url",
+		Bucket:   s.storage.GetBucketName(),
 	}
 
 	storageJSON, err := json.Marshal(storageInfo)
@@ -352,4 +350,42 @@ func (s *StreamServiceImpl) processVideoAsync(streamID uuid.UUID, storageKey, fi
 	}
 
 	log.Printf("Video processing completed for stream %s", streamID)
+}
+
+func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userID string) (string, time.Time, error) {
+	stream, err := s.GetStream(ctx, streamID)
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", time.Time{}, fmt.Errorf("stream not found")
+		}
+		return "", time.Time{}, fmt.Errorf("error getting stream: %w", err)
+	}
+
+	if stream.OwnerID.String() != userID {
+		return "", time.Time{}, errors.New("access denied")
+	}
+
+	if stream.Status != models.StatusReady {
+		return "", time.Time{}, fmt.Errorf("stream not ready for download (status: %s)", stream.Status)
+	}
+
+	var storageInfo models.StreamStorage
+	if err := json.Unmarshal(stream.Storage, &storageInfo); err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to parse storage info: %w", err)
+	}
+
+	if storageInfo.Key == "" {
+		return "", time.Time{}, fmt.Errorf("storage key is empty")
+	}
+
+	expires := 1 * time.Hour
+
+	url, err := s.storage.GeneratePresignedURL(ctx, storageInfo.Key, expires)
+
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to generate Download URL: %w", err)
+	}
+
+	return url.String(), time.Now().Add(expires), nil
 }

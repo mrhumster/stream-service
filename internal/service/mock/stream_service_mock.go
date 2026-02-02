@@ -12,6 +12,7 @@ package servicemock
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	uuid "github.com/google/uuid"
 	models "github.com/mrhumster/stream-service/internal/domain/models"
@@ -100,6 +101,22 @@ func (m *MockStreamService) DeleteStream(ctx context.Context, id uuid.UUID) erro
 func (mr *MockStreamServiceMockRecorder) DeleteStream(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteStream", reflect.TypeOf((*MockStreamService)(nil).DeleteStream), ctx, id)
+}
+
+// GenerateDownloadURL mocks base method.
+func (m *MockStreamService) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userID string) (string, time.Time, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GenerateDownloadURL", ctx, streamID, userID)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(time.Time)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GenerateDownloadURL indicates an expected call of GenerateDownloadURL.
+func (mr *MockStreamServiceMockRecorder) GenerateDownloadURL(ctx, streamID, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateDownloadURL", reflect.TypeOf((*MockStreamService)(nil).GenerateDownloadURL), ctx, streamID, userID)
 }
 
 // GetStream mocks base method.
