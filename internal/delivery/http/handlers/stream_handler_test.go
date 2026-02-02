@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -686,5 +687,38 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 		assert.Contains(t, w.Body.String(), "stream not found")
+	})
+}
+
+func TestStreamHandler_DownloadStream(t *testing.T) {
+	setupTest := func() (*gin.Engine, *servicemock.MockStreamService, *StreamHandler) {
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "00000000-0000-0000-0000-000000000000")
+			c.Next()
+		})
+		ctrl := gomock.NewController(t)
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.GET("/streams/:id/download", handler.DownloadStream)
+		return router, mockService, handler
+	}
+	t.Run("successfull download request", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		streamID := uuid.New()
+		expectedURL := "https://storage.example.com/streams/...?signature=..."
+		expiresAt := time.Now().Add(1 * time.Hour)
+		mockService.EXPECT().GenerateDownloadURL(gomock.Any(), streamID).Return(expectedURL, expiresAt, nil)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
+		req.Header.Set("Accept", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+
+		var resp response.DownloadResponse
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Equal(t, expectedURL, resp.URL)
+		assert.Equal(t, expiresAt.Format(time.RFC3339), resp.ExpiresAt.Format(time.RFC3339))
 	})
 }

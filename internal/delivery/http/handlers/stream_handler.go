@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -212,4 +214,52 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 		"status":  "success",
 		"message": "video uploaded successfully",
 	})
+}
+
+func (h *StreamHandler) DownloadStream(c *gin.Context) {
+	streamID := c.Param("id")
+	streamUUID, err := uuid.Parse(streamID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+
+	downloadUrl, expiresAt, err := h.service.GenerateDownloadURL(c, streamUUID)
+	if err != nil {
+		h.handleDownloadError(c, err)
+		return
+	}
+	h.handleWithDownloadURL(c, downloadUrl, expiresAt)
+}
+
+func (h *StreamHandler) handleDownloadError(c *gin.Context, err error) {
+	errorMsg := err.Error()
+
+	switch {
+	case strings.Contains(errorMsg, "not found"):
+		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+	case strings.Contains(errorMsg, "access denied") || strings.Contains(errorMsg, "forbidden"):
+		c.JSON(http.StatusForbidden, response.ErrorResponse("access denied"))
+	case strings.Contains(errorMsg, "not ready"):
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("stream not available for download"))
+	default:
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("failed to generate download link"))
+	}
+
+}
+
+func (h *StreamHandler) handleWithDownloadURL(c *gin.Context, downloadURL string, expiresAt time.Time) {
+	directDownload := c.Query("direct") == "true"
+	acceptHeader := c.GetHeader("Accept")
+	if directDownload && strings.Contains(acceptHeader, "text/html") {
+		c.Redirect(http.StatusTemporaryRedirect, downloadURL)
+		return
+	}
+	c.JSON(http.StatusOK, response.NewDownloadResponse(
+		downloadURL,
+		expiresAt,
+		"",
+		0,
+	))
+
 }

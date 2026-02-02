@@ -352,7 +352,7 @@ func (s *StreamServiceImpl) processVideoAsync(streamID uuid.UUID, storageKey, fi
 	log.Printf("Video processing completed for stream %s", streamID)
 }
 
-func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userID string) (string, time.Time, error) {
+func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (string, time.Time, error) {
 	stream, err := s.GetStream(ctx, streamID)
 
 	if err != nil {
@@ -360,10 +360,6 @@ func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uu
 			return "", time.Time{}, fmt.Errorf("stream not found")
 		}
 		return "", time.Time{}, fmt.Errorf("error getting stream: %w", err)
-	}
-
-	if stream.OwnerID.String() != userID {
-		return "", time.Time{}, errors.New("access denied")
 	}
 
 	if stream.Status != models.StatusReady {

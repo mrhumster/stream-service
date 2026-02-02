@@ -75,6 +75,7 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 		auth.PATCH("/api/content/:id", middleware.Authorize("stream", "write", permissionClient), streamHandler.UpdateStream)
 		auth.DELETE("/api/content/:id", middleware.Authorize("stream", "delete", permissionClient), streamHandler.DeleteStream)
 		auth.POST("/api/content/:id/upload", middleware.Authorize("stream", "write", permissionClient), streamHandler.UploadVideo)
+		auth.GET("/api/content/:id/download", middleware.Authorize("stream", "read", permissionClient), streamHandler.DownloadStream)
 	}
 	return r, nil
 }

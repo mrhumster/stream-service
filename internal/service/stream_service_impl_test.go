@@ -936,17 +936,17 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 			Read(ctx, streamID).
 			Return(stream, nil)
 
-		expectedURL := "https://go-app.example.com/storage/streams/user-id/videos/file-key.mp4?signature=..."
+		expectedURL := "https://storage.example.com/streams/user-id/videos/file-key.mp4?signature=..."
 		mockStorage.EXPECT().
 			GeneratePresignedURL(ctx, storageInfo.Key, gomock.Any()).
 			Return(&url.URL{
 				Scheme:   "https",
-				Host:     "go-app.example.com",
-				Path:     "/storage/streams/user-id/videos/file-key.mp4",
+				Host:     "storage.example.com",
+				Path:     "/streams/user-id/videos/file-key.mp4",
 				RawQuery: "signature=...",
 			}, nil)
 
-		urlStr, expiresAt, err := serviceImpl.GenerateDownloadURL(ctx, streamID, userID.String())
+		urlStr, expiresAt, err := serviceImpl.GenerateDownloadURL(ctx, streamID)
 
 		require.NoError(t, err)
 		assert.Equal(t, expectedURL, urlStr)
