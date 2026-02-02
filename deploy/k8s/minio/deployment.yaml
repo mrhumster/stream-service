@@ -54,37 +54,11 @@ spec:
             successThreshold: 1
             failureThreshold: 3
             periodSeconds: 15
-          env:
-            - name: MINIO_ROOT_USER
-              valueFrom:
-                secretKeyRef:
-                  name: minio-credentials
-                  key: root-user
-            - name: MINIO_ROOT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: minio-credentials
-                  key: root-password
-            - name: MINIO_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: minio-credentials
-                  key: access-key
-            - name: MINIO_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: minio-credentials
-                  key: secret-key
-            - name: MINIO_BROWSER
-              valueFrom:
-                configMapKeyRef:
-                  name: minio-config
-                  key: MINIO_BROWSER
-            - name: MINIO_REGION
-              valueFrom:
-                configMapKeyRef:
-                  name: minio-config
-                  key: MINIO_REGION
+          envFrom:
+            - configMapRef:
+                name: minio-config
+            - secretRef:
+                name: minio-credentials
           ports:
             - containerPort: 9000
               name: minio-api

@@ -5,7 +5,9 @@ metadata:
   name: minio-config
   namespace: go-app
 data:
+  MINIO_SERVER_URL: "http://minio.go-app.svc.cluster.local:9000"
   MINIO_BROWSER: "on"
+  MINIO_BROWSER_REDIRECT_URL: "https://console.storage.example.com"
   MINIO_DOMAIN: "minio"
   MINIO_PROMETHEUS_AUTH_TYPE: "public"
   MINIO_PROMETHEUS_URL: "http://minio:9000"
