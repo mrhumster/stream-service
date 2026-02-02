@@ -12,5 +12,8 @@ data:
   MINIO_PROMETHEUS_AUTH_TYPE: "public"
   MINIO_PROMETHEUS_URL: "http://minio:9000"
   MINIO_REGION: "us-east-1"
+  MINIO_API_CORS_ALLOW_ORIGIN: "https://go-app.example.com"
+  MINIO_API_CORS_ALLOW_HEADERS: "Authorization,Content-Type,X-Amz*"
+  MINIO_API_CORS_ALLOW_METHODS: "GET,PUT,POST,DELETE,OPTIONS,HEAD"
 ---
 
