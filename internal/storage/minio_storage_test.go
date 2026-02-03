@@ -382,7 +382,7 @@ func TestMinIOStorage_GeneratePresignedURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.mockResponse() // set mock in awaitei
-			url, err := storage.GeneratePresignedURL(ctx, tt.objectName, tt.expires)
+			url, err := storage.GeneratePresignedURL(ctx, tt.objectName, "filename", tt.expires)
 			if err != tt.expectedError {
 				t.Errorf("Expected error %v, got %v", tt.expectedError, err)
 			}

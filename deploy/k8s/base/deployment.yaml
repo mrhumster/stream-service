@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: stream
-          image: xomrkob/stream:0.1.1-92167d80ae2c83f7cb2f084c9fad6e6ddaa9dcc8
+          image: xomrkob/stream:0.1.1-3186ab0dd77fe10adfb998d31e6d0313ff96fa6b
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -70,12 +70,12 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: minio-credentials
-                  key: access-key
+                  key: MINIO_ACCESS_KEY
             - name: MINIO_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: minio-credentials
-                  key: secret-key
+                  key: MINIO_SECRET_KEY
 
           resources:
             requests:

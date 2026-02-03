@@ -104,7 +104,7 @@ func (s *MinIOStorage) CreateBucket(ctx context.Context, bucket string) error {
 	return nil
 }
 
-func (s *MinIOStorage) GeneratePresignedURL(ctx context.Context, path string, expire time.Duration) (*url.URL, error) {
+func (s *MinIOStorage) GeneratePresignedURL(ctx context.Context, path, filename string, expire time.Duration) (*url.URL, error) {
 	u, err := s.client.PresignedGetObject(ctx, s.bucket, path, expire, nil)
 	if err != nil {
 		return nil, ErrGenerateURLFailed

@@ -13,6 +13,6 @@ type FileStorage interface {
 	Download(ctx context.Context, path string) (io.ReadCloser, error)
 	Delete(ctx context.Context, path string) error
 	Exists(ctx context.Context, path string) (bool, error)
-	GeneratePresignedURL(ctx context.Context, path string, expires time.Duration) (*url.URL, error)
+	GeneratePresignedURL(ctx context.Context, path, filename string, expires time.Duration) (*url.URL, error)
 	GetBucketName() string
 }

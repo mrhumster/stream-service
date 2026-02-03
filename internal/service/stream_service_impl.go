@@ -209,7 +209,7 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid
 
 	videoKey := fmt.Sprintf("videos/%s/%s/original", stream.OwnerID.String(), streamID.String())
 
-	uploadURL, err := s.storage.GeneratePresignedURL(ctx, videoKey, 1*time.Hour)
+	uploadURL, err := s.storage.GeneratePresignedURL(ctx, videoKey, "filename.avi", 1*time.Hour)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate upload URL: %w", err)
@@ -352,36 +352,48 @@ func (s *StreamServiceImpl) processVideoAsync(streamID uuid.UUID, storageKey, fi
 	log.Printf("Video processing completed for stream %s", streamID)
 }
 
-func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (string, time.Time, error) {
+func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (*GenerateDownloadURLInfo, error) {
 	stream, err := s.GetStream(ctx, streamID)
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", time.Time{}, fmt.Errorf("stream not found")
+			return nil, fmt.Errorf("stream not found")
 		}
-		return "", time.Time{}, fmt.Errorf("error getting stream: %w", err)
+		return nil, fmt.Errorf("error getting stream: %w", err)
 	}
 
 	if stream.Status != models.StatusReady {
-		return "", time.Time{}, fmt.Errorf("stream not ready for download (status: %s)", stream.Status)
+		return nil, fmt.Errorf("stream not ready for download (status: %s)", stream.Status)
 	}
 
 	var storageInfo models.StreamStorage
 	if err := json.Unmarshal(stream.Storage, &storageInfo); err != nil {
-		return "", time.Time{}, fmt.Errorf("failed to parse storage info: %w", err)
+		return nil, fmt.Errorf("failed to parse storage info: %w", err)
 	}
 
 	if storageInfo.Key == "" {
-		return "", time.Time{}, fmt.Errorf("storage key is empty")
+		return nil, fmt.Errorf("storage key is empty")
+	}
+
+	var streamMeta models.StreamMetadata
+	if err := json.Unmarshal(stream.Metadata, &streamMeta); err != nil {
+		return nil, fmt.Errorf("failed to parse meta info: %w", err)
 	}
 
 	expires := 1 * time.Hour
 
-	url, err := s.storage.GeneratePresignedURL(ctx, storageInfo.Key, expires)
+	url, err := s.storage.GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, expires)
 
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("failed to generate Download URL: %w", err)
+		return nil, fmt.Errorf("failed to generate Download URL: %w", err)
 	}
 
-	return url.String(), time.Now().Add(expires), nil
+	resp := &GenerateDownloadURLInfo{
+		DownloadURL: url,
+		ExpiresAt:   time.Now().Add(expires),
+		FileName:    storageInfo.Filename,
+		Size:        streamMeta.Size,
+	}
+
+	return resp, nil
 }

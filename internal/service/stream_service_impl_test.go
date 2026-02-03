@@ -564,7 +564,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 	mockPerms := authmock.NewMockPermissionClient(ctrl)
 	mockStorage := mock.NewMockFileStorage(ctrl)
 
-	service := service.NewStreamServiceImpl(mockRepo, mockPerms, mockStorage)
+	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerms, mockStorage)
 
 	streamID := uuid.New()
 	userID := uuid.New()
@@ -582,7 +582,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		expectedURL, _ := url.Parse("https://minio.localhost:9000/test-bucket/videos/...?X-Amz-...")
 		expectedKey := "videos/" + userID.String() + "/" + streamID.String() + "/original"
 		mockStorage.EXPECT().
-			GeneratePresignedURL(ctx, expectedKey, gomock.Any()).
+			GeneratePresignedURL(ctx, expectedKey, gomock.Any(), gomock.Any()).
 			Return(expectedURL, nil)
 		mockRepo.EXPECT().Update(ctx, gomock.Any()).DoAndReturn(func(ctx context.Context, updatedStream *models.Stream) error {
 			if updatedStream.Status != models.StatusProcessing {
@@ -600,7 +600,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 			}
 			return nil
 		})
-		result, err := service.StartStreamUpload(ctx, streamID)
+		result, err := serviceImpl.StartStreamUpload(ctx, streamID)
 		if err != nil {
 			t.Fatalf("StartStreamUpload failed: %v", err)
 		}
@@ -624,7 +624,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		}
 
 		mockRepo.EXPECT().Read(ctx, streamID).Return(publishedStream, nil)
-		result, err := service.StartStreamUpload(ctx, streamID)
+		result, err := serviceImpl.StartStreamUpload(ctx, streamID)
 		if err == nil {
 			t.Fatal("Expected error for published stream")
 		}
@@ -639,7 +639,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 
 	t.Run("returns error when stream not found", func(t *testing.T) {
 		mockRepo.EXPECT().Read(ctx, streamID).Return(nil, repository.ErrNotFound)
-		result, err := service.StartStreamUpload(ctx, streamID)
+		result, err := serviceImpl.StartStreamUpload(ctx, streamID)
 		if err == nil {
 			t.Fatal("Expected error when stream not found")
 		}
@@ -655,8 +655,8 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockRepo.EXPECT().Read(ctx, streamID).Return(existingStream, nil)
 
 		storageErr := storage.ErrStorage
-		mockStorage.EXPECT().GeneratePresignedURL(ctx, gomock.Any(), gomock.Any()).Return(nil, storageErr)
-		result, err := service.StartStreamUpload(ctx, streamID)
+		mockStorage.EXPECT().GeneratePresignedURL(ctx, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, storageErr)
+		result, err := serviceImpl.StartStreamUpload(ctx, streamID)
 		if err == nil {
 			t.Fatal("Expected error when storage fails")
 		}
@@ -673,14 +673,14 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 	t.Run("returns error when cannot update stream", func(t *testing.T) {
 		mockRepo.EXPECT().Read(ctx, streamID).Return(existingStream, nil)
 		mockStorage.EXPECT().
-			GeneratePresignedURL(ctx, gomock.Any(), gomock.Any()).
+			GeneratePresignedURL(ctx, gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(func() *url.URL {
 				u, _ := url.Parse("https://example.com/upload")
 				return u
 			}(), nil)
 		updateErr := fmt.Errorf("database error")
 		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(updateErr)
-		result, err := service.StartStreamUpload(ctx, streamID)
+		result, err := serviceImpl.StartStreamUpload(ctx, streamID)
 		if err == nil {
 			t.Fatal("Expected error when update fails")
 		}
@@ -923,6 +923,13 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 			Filename: "video.mp4",
 			Bucket:   "streams",
 		}
+
+		streamMeta := models.StreamMetadata{
+			Size: int64(100),
+		}
+
+		metaJson, _ := json.Marshal(streamMeta)
+
 		storageJSON, _ := json.Marshal(storageInfo)
 
 		stream := &models.Stream{
@@ -930,6 +937,7 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 			OwnerID:   userID,
 			Status:    models.StatusReady,
 			Storage:   datatypes.JSON(storageJSON),
+			Metadata:  datatypes.JSON(metaJson),
 		}
 
 		mockRepo.EXPECT().
@@ -938,7 +946,7 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 
 		expectedURL := "https://storage.example.com/streams/user-id/videos/file-key.mp4?signature=..."
 		mockStorage.EXPECT().
-			GeneratePresignedURL(ctx, storageInfo.Key, gomock.Any()).
+			GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, gomock.Any()).
 			Return(&url.URL{
 				Scheme:   "https",
 				Host:     "storage.example.com",
@@ -946,11 +954,11 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 				RawQuery: "signature=...",
 			}, nil)
 
-		urlStr, expiresAt, err := serviceImpl.GenerateDownloadURL(ctx, streamID)
+		resp, err := serviceImpl.GenerateDownloadURL(ctx, streamID)
 
 		require.NoError(t, err)
-		assert.Equal(t, expectedURL, urlStr)
-		assert.True(t, expiresAt.After(time.Now()))
+		assert.Equal(t, expectedURL, resp.DownloadURL.String())
+		assert.True(t, resp.ExpiresAt.After(time.Now()))
 	})
 
 	t.Run("stream not found", func(t *testing.T) {

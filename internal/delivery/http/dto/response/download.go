@@ -1,7 +1,10 @@
 package response
 
 import (
+	"errors"
 	"time"
+
+	"github.com/mrhumster/stream-service/internal/service"
 )
 
 type DownloadResponse struct {
@@ -12,12 +15,19 @@ type DownloadResponse struct {
 	Message   string    `json:"message,omitempty"`
 }
 
-func NewDownloadResponse(url string, expiresAt time.Time, filename string, size int64) *DownloadResponse {
-	return &DownloadResponse{
-		URL:       url,
-		ExpiresAt: expiresAt,
-		Filename:  filename,
-		Size:      size,
-		Message:   "Use this URL to download the file. URL expires at " + expiresAt.Format(time.RFC3339),
+func NewDownloadResponse(serviceResponse *service.GenerateDownloadURLInfo) (*DownloadResponse, error) {
+	if serviceResponse.DownloadURL == nil {
+		return nil, errors.New("url in response from GenerateDownloadURL is nil")
 	}
+
+	if serviceResponse.ExpiresAt.Before(time.Now()) {
+		return nil, errors.New("expire urls date in response from GenerateDownloadURL incorrect")
+	}
+	return &DownloadResponse{
+		URL:       serviceResponse.DownloadURL.String(),
+		ExpiresAt: serviceResponse.ExpiresAt,
+		Filename:  serviceResponse.FileName,
+		Size:      serviceResponse.Size,
+		Message:   "Use this URL to download the file. URL expires at " + serviceResponse.ExpiresAt.Format(time.RFC3339),
+	}, nil
 }

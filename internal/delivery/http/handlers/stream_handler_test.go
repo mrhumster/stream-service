@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -706,9 +707,21 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 	t.Run("successfull download request", func(t *testing.T) {
 		router, mockService, _ := setupTest()
 		streamID := uuid.New()
-		expectedURL := "https://storage.example.com/streams/...?signature=..."
+		expectedURL := "https://storage.example.com/streams/user-id/videos/file-key.mp4?signature=..."
 		expiresAt := time.Now().Add(1 * time.Hour)
-		mockService.EXPECT().GenerateDownloadURL(gomock.Any(), streamID).Return(expectedURL, expiresAt, nil)
+		mockService.EXPECT().
+			GenerateDownloadURL(gomock.Any(), streamID).
+			Return(&service.GenerateDownloadURLInfo{
+				DownloadURL: &url.URL{
+					Scheme:   "https",
+					Host:     "storage.example.com",
+					Path:     "/streams/user-id/videos/file-key.mp4",
+					RawQuery: "signature=...",
+				},
+				ExpiresAt: time.Now().Add(1 * time.Hour),
+				FileName:  "filename.ext",
+				Size:      int64(100),
+			}, nil)
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
 		req.Header.Set("Accept", "application/json")
 		w := httptest.NewRecorder()
@@ -720,5 +733,83 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, expectedURL, resp.URL)
 		assert.Equal(t, expiresAt.Format(time.RFC3339), resp.ExpiresAt.Format(time.RFC3339))
+	})
+
+	t.Run("wrong uuid", func(t *testing.T) {
+		router, _, _ := setupTest()
+		streamID := "bad-uuid-format"
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
+		req.Header.Set("Accept", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("stream not found", func(t *testing.T) {
+		router, service, _ := setupTest()
+		streamID := uuid.New()
+		service.EXPECT().GenerateDownloadURL(gomock.Any(), streamID).Return(nil, errors.New("stream not found"))
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code)
+		var resp response.Error
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		require.Contains(t, resp.Error, "stream not found")
+	})
+	t.Run("stream not ready for download", func(t *testing.T) {
+		router, service, _ := setupTest()
+		streamID := uuid.New()
+		service.EXPECT().GenerateDownloadURL(gomock.Any(), streamID).Return(nil, fmt.Errorf("stream not ready for download (status: %s)", models.StatusDraft))
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		var resp response.Error
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		require.Contains(t, resp.Error, "stream not available for download")
+	})
+
+	t.Run("error conver service respose", func(t *testing.T) {
+		router, serviceMock, _ := setupTest()
+		streamID := uuid.New()
+		serviceMock.EXPECT().GenerateDownloadURL(gomock.Any(), streamID).Return(
+			&service.GenerateDownloadURLInfo{
+				DownloadURL: nil,
+			}, nil)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		var resp response.Error
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		require.Contains(t, resp.Error, "failed to generate download link")
+	})
+
+	t.Run("direct download", func(t *testing.T) {
+
+		router, mockService, _ := setupTest()
+		streamID := uuid.New()
+		mockService.EXPECT().
+			GenerateDownloadURL(gomock.Any(), streamID).
+			Return(&service.GenerateDownloadURLInfo{
+				DownloadURL: &url.URL{
+					Scheme:   "https",
+					Host:     "storage.example.com",
+					Path:     "/streams/user-id/videos/file-key.mp4",
+					RawQuery: "signature=...",
+				},
+				ExpiresAt: time.Now().Add(1 * time.Hour),
+				FileName:  "filename.ext",
+				Size:      int64(100),
+			}, nil)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download?direct=true", streamID), nil)
+		req.Header.Set("Accept", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusTemporaryRedirect, w.Code)
 	})
 }

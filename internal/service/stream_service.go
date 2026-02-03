@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"io"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,7 +30,14 @@ type StreamService interface {
 	CompleteStreamUpload(ctx context.Context, streamID uuid.UUID) error
 	CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error)
 	UploadVideo(ctx context.Context, req UploadVideoRequest) error
-	GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (string, time.Time, error)
+	GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (*GenerateDownloadURLInfo, error)
+}
+
+type GenerateDownloadURLInfo struct {
+	DownloadURL *url.URL
+	ExpiresAt   time.Time
+	FileName    string
+	Size        int64
 }
 
 type CreateStreamRequest struct {
