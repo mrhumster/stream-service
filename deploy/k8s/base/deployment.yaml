@@ -25,7 +25,7 @@ spec:
             - name: SERVER_ADDR
               value: ":8080"
             - name: DOMAIN
-              value: go-app.example.com
+              value: api.example.com
             - name: DB_HOST
               value: potgresql-postgresql
             - name: DB_PORT
@@ -43,7 +43,7 @@ spec:
                   name: go-app-secret
                   key: DB_USER
             - name: JWT_ACCESS_PUBLIC_KEY_URL
-              value: http://web-server-gin-service:80/api/auth/public-key
+              value: http://web-server-gin-service:80/auth/public-key
             - name: AUTH_SERVICE_ADDRESS
               value: web-server-gin-service:50051
             - name: MINIO_ENDPOINT
