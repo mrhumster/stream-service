@@ -16,7 +16,7 @@ metadata:
 spec:
   tls:
     - hosts:
-        - go-app.example.com
+        - api.example.com
       secretName: stream-tls
   ingressClassName: nginx
   rules:
