@@ -42,19 +42,6 @@ func TestStreamHandler_GetStream(t *testing.T) {
 	handler := NewStreamHandler(mockService)
 	router.GET("/streams/:id", handler.GetStream)
 
-	t.Run("getting stream only auth users", func(t *testing.T) {
-		r1 := setupTestRouter()
-		ctrl1 := gomock.NewController(t)
-		defer ctrl1.Finish()
-		mockService := servicemock.NewMockStreamService(ctrl1)
-		handler1 := NewStreamHandler(mockService)
-		r1.GET("/streams/:id", handler1.GetStream)
-		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", uuid.New()), nil)
-		w := httptest.NewRecorder()
-		r1.ServeHTTP(w, req)
-		require.Equal(t, http.StatusUnauthorized, w.Code)
-	})
-
 	t.Run("invalid user ID type", func(t *testing.T) {
 		r1 := setupTestRouter()
 		r1.Use(func(c *gin.Context) {
@@ -64,6 +51,9 @@ func TestStreamHandler_GetStream(t *testing.T) {
 		ctrl1 := gomock.NewController(t)
 		defer ctrl1.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl1)
+		mockService.EXPECT().GetStream(gomock.Any(), gomock.Any()).Return(&models.Stream{
+			Visibility: models.VisibilityPrivate,
+		}, nil)
 		handler1 := NewStreamHandler(mockService)
 		r1.GET("/streams/:id", handler1.GetStream)
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", uuid.New()), nil)

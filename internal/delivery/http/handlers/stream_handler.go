@@ -55,8 +55,15 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 		return
 	}
 
-	streamsList := response.ListReponse[*models.Stream]{
-		Items:  streams,
+	var streamRespList []response.StreamResponse
+
+	for _, v := range streams {
+		streamResp := response.FromDomainModel(v)
+		streamRespList = append(streamRespList, streamResp)
+	}
+
+	streamsList := response.ListReponse[response.StreamResponse]{
+		Items:  streamRespList,
 		Total:  len(streams),
 		Limit:  filter.Limit,
 		Offset: filter.Offset,
@@ -112,6 +119,11 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 
 	stream, err := h.service.GetStream(c.Request.Context(), streamIDuuid)
 
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+
 	if stream.Visibility != models.VisibilityPublic {
 		userID, exists := c.Get("userID")
 		if !exists {
@@ -126,11 +138,6 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 			return
 		}
 
-	}
-
-	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
-		return
 	}
 
 	resp := response.FromDomainModel(stream)
