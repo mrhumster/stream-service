@@ -3,6 +3,7 @@ package repository_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -146,6 +147,31 @@ func TestGormStreamRepository_List(t *testing.T) {
 	streams, err := repo.List(ctx, filter)
 	require.NoError(t, err)
 	require.Len(t, streams, 2)
+}
+
+func TestGormStreamRepository_ListWithLimit(t *testing.T) {
+	db := setupTestDB(t)
+	repo := repository.NewGormStreamRepository(db)
+	ctx := context.Background()
+	filter := repository.StreamFilter{
+		Limit:  2,
+		Offset: 0,
+	}
+
+	for i := range 10 {
+		s := &models.Stream{
+			Title:      fmt.Sprintf("Strema %d", i),
+			OwnerID:    uuid.New(),
+			Visibility: models.VisibilityPublic,
+		}
+
+		err := repo.Create(ctx, s)
+		require.NoError(t, err)
+	}
+
+	streams, err := repo.List(ctx, filter)
+	require.NoError(t, err)
+	assert.Len(t, streams, 2)
 }
 
 func TestGormStreamRepository_GetByOwner(t *testing.T) {

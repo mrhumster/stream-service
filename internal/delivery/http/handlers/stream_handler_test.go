@@ -860,5 +860,4 @@ func TestStreamHandler_ListStreamPublic(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, resp.Items, 3)
 	})
-
 }
