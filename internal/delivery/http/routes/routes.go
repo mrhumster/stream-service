@@ -75,6 +75,8 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 		c.JSON(http.StatusOK, gin.H{"status": "up"})
 	})
 
+	r.GET("/stream", streamHandler.ListStreamPublic)
+
 	auth := r.Group("/stream")
 	auth.Use(middleware.AuthMiddleware(tokenService))
 	auth.Use(middleware.Authorize("stream", "read", permissionClient))
