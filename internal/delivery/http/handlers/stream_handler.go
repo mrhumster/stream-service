@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/request"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
+	"github.com/mrhumster/stream-service/internal/domain/models"
+	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
 )
 
@@ -17,6 +20,49 @@ type StreamHandler struct {
 
 func NewStreamHandler(service service.StreamService) *StreamHandler {
 	return &StreamHandler{service: service}
+}
+
+func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
+	pub := models.VisibilityPublic
+	limit := c.Query("limit")
+	offset := c.Query("offset")
+	filter := repository.StreamFilter{
+		Visibility: &pub,
+		Offset:     0,
+		Limit:      10,
+	}
+	if limit != "" {
+		limitInt, err := strconv.Atoi(limit)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid limit query"))
+			return
+		}
+		filter.Limit = limitInt
+	}
+
+	if offset != "" {
+		offsetInt, err := strconv.Atoi(offset)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid offset query"))
+			return
+		}
+		filter.Offset = offsetInt
+	}
+
+	streams, err := h.service.ListStreams(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("error getting stream list from service"))
+		return
+	}
+
+	streamsList := response.ListReponse[*models.Stream]{
+		Items:  streams,
+		Total:  len(streams),
+		Limit:  filter.Limit,
+		Offset: filter.Offset,
+	}
+
+	c.JSON(http.StatusOK, streamsList)
 }
 
 func (h *StreamHandler) CreateStream(c *gin.Context) {

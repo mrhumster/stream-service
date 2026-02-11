@@ -813,3 +813,52 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 		require.Equal(t, http.StatusTemporaryRedirect, w.Code)
 	})
 }
+
+func TestStreamHandler_ListStreamPublic(t *testing.T) {
+	setupTest := func() (*gin.Engine, *servicemock.MockStreamService, *StreamHandler) {
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "00000000-0000-0000-0000-000000000000")
+			c.Next()
+		})
+		ctrl := gomock.NewController(t)
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.GET("/streams", handler.ListStreamPublic)
+		return router, mockService, handler
+	}
+
+	t.Run("success stream list", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		ownerID, _ := uuid.Parse("00000000-0000-0000-0000-000000000000")
+		streamList := []*models.Stream{
+			{
+				BaseModel:  models.BaseModel{ID: uuid.New()},
+				Title:      "Stream 1",
+				OwnerID:    ownerID,
+				Visibility: models.VisibilityPublic,
+			}, {
+				BaseModel:  models.BaseModel{ID: uuid.New()},
+				Title:      "Stream 2",
+				OwnerID:    ownerID,
+				Visibility: models.VisibilityPublic,
+			}, {
+				BaseModel:  models.BaseModel{ID: uuid.New()},
+				Title:      "Not my stream",
+				OwnerID:    uuid.New(),
+				Visibility: models.VisibilityPublic,
+			},
+		}
+		mockService.EXPECT().ListStreams(gomock.Any(), gomock.Any()).Return(streamList, nil)
+		req := httptest.NewRequest("GET", "/streams", nil)
+		req.Header.Set("Accept", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusOK)
+		var resp response.ListReponse[*models.Stream]
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Len(t, resp.Items, 3)
+	})
+
+}
