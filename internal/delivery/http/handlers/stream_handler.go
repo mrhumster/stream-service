@@ -102,19 +102,6 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 }
 
 func (h *StreamHandler) GetStream(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
-		return
-	}
-
-	_, ok := userID.(string)
-
-	if !ok {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
-		return
-	}
-
 	streamID := c.Param("id")
 
 	streamIDuuid, err := uuid.Parse(streamID)
@@ -124,6 +111,22 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 	}
 
 	stream, err := h.service.GetStream(c.Request.Context(), streamIDuuid)
+
+	if stream.Visibility != models.VisibilityPublic {
+		userID, exists := c.Get("userID")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
+			return
+		}
+
+		_, ok := userID.(string)
+
+		if !ok {
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
+			return
+		}
+
+	}
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
