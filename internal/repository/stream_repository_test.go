@@ -2,15 +2,19 @@ package repository_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -26,6 +30,13 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	err = db.AutoMigrate(&models.Stream{})
 	require.NoError(t, err)
 	return db
+}
+
+func setupMockDB(t *testing.T) (*sql.DB, *gorm.DB, sqlmock.Sqlmock) {
+	db, mock, err := sqlmock.New()
+	assert.NoError(t, err)
+	gormDB, err := gorm.Open(postgres.New(postgres.Config{Conn: db}), &gorm.Config{})
+	return db, gormDB, mock
 }
 
 func TestGormStreamRepository_Create(t *testing.T) {
@@ -123,6 +134,29 @@ func TestGormStreamRepository_Delete(t *testing.T) {
 	var count int64
 	db.Model(&models.Stream{}).Count(&count)
 	assert.Equal(t, count, int64(0))
+
+	t.Run("stream not found err", func(t *testing.T) {
+		err := repo.Delete(ctx, uuid.New())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "stream not found")
+	})
+
+	t.Run("gorm error with delete", func(t *testing.T) {
+		db, gorm, mock := setupMockDB(t)
+		defer db.Close()
+		repo_with_mock := repository.NewGormStreamRepository(gorm)
+
+		streamID := uuid.New()
+		rows := sqlmock.NewRows([]string{"id", "title"}).AddRow(streamID, "title")
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "streams" WHERE id = $1 AND "streams"."deleted_at" IS NULL ORDER BY "streams"."id" LIMIT $2`)).WithArgs(streamID.String(), 1).WillReturnRows(rows)
+
+		mock.ExpectBegin()
+		mock.ExpectQuery(regexp.QuoteMeta(`UPDATE "streams"`)).WithArgs(streamID).WillReturnError(fmt.Errorf("database connection lost"))
+		mock.ExpectRollback()
+		err := repo_with_mock.Delete(ctx, streamID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "database connection lost")
+	})
 }
 
 func TestGormStreamRepository_List(t *testing.T) {
@@ -131,18 +165,27 @@ func TestGormStreamRepository_List(t *testing.T) {
 	ctx := context.Background()
 	ownerID := uuid.New()
 	stream1 := &models.Stream{
-		Title:   "stream 1",
-		OwnerID: ownerID,
+		Title:      "stream 1",
+		OwnerID:    ownerID,
+		Status:     models.StatusDraft,
+		Visibility: models.VisibilityPublic,
 	}
 	repo.Create(ctx, stream1)
 	stream2 := &models.Stream{
-		Title:   "stream 2",
-		OwnerID: ownerID,
+		Title:      "stream 2",
+		OwnerID:    ownerID,
+		Status:     models.StatusDraft,
+		Visibility: models.VisibilityPublic,
 	}
 	repo.Create(ctx, stream2)
-
+	status := models.StatusDraft
+	visibility := models.VisibilityPublic
 	filter := repository.StreamFilter{
-		OwnerID: &ownerID,
+		OwnerID:    &ownerID,
+		Limit:      0,
+		Status:     &status,
+		Visibility: &visibility,
+		Offset:     1,
 	}
 	streams, err := repo.List(ctx, filter)
 	require.NoError(t, err)
@@ -262,4 +305,51 @@ func TestGormStreamRepository_UpdateProcessing(t *testing.T) {
 		t.Errorf("error unmarshal precessing: %v", err)
 	}
 	require.Equal(t, processing, *updProcessing)
+}
+
+func TestGormStreamRepository_Update_Extra(t *testing.T) {
+	db := setupTestDB(t)
+	repo := repository.NewGormStreamRepository(db)
+	ctx := context.Background()
+	t.Run("error with nil uuid", func(t *testing.T) {
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: uuid.Nil},
+			Title:     "wrong id",
+		}
+		err := repo.Update(ctx, stream)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "stream ID can't be nil")
+	})
+
+	t.Run("stream not found", func(t *testing.T) {
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: uuid.New()},
+			Title:     "it was never created",
+		}
+		err := repo.Update(ctx, stream)
+		assert.Error(t, err)
+		require.Contains(t, err.Error(), "stream not found")
+	})
+
+	t.Run("failed to update", func(t *testing.T) {
+		db, gormBD, mock := setupMockDB(t)
+		defer db.Close()
+		repo2 := repository.NewGormStreamRepository(gormBD)
+
+		streamID := uuid.New()
+		rows := sqlmock.NewRows([]string{"id", "title"}).AddRow(streamID.String(), "title")
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "streams" WHERE id = $1`)).WillReturnRows(rows)
+		mock.ExpectBegin()
+		mock.ExpectExec("UPDATE \"streams\"").WillReturnError(fmt.Errorf("database connection lost"))
+		mock.ExpectRollback()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			Title:     "title",
+		}
+		err := repo2.Update(ctx, stream)
+		assert.Error(t, err)
+		require.Contains(t, err.Error(), "database connection lost")
+
+	})
 }

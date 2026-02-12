@@ -62,6 +62,22 @@ func TestStreamHandler_GetStream(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 
+	t.Run("request without userID", func(t *testing.T) {
+		r1 := setupTestRouter()
+		ctrl1 := gomock.NewController(t)
+		defer ctrl1.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl1)
+		mockService.EXPECT().GetStream(gomock.Any(), gomock.Any()).Return(&models.Stream{
+			Visibility: models.VisibilityPrivate,
+		}, nil)
+		handler1 := NewStreamHandler(mockService)
+		r1.GET("/streams/:id", handler1.GetStream)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", uuid.New()), nil)
+		w := httptest.NewRecorder()
+		r1.ServeHTTP(w, req)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+	})
+
 	t.Run("propagation service error", func(t *testing.T) {
 		r1 := setupTestRouter()
 		r1.Use(func(c *gin.Context) {
@@ -118,6 +134,10 @@ func TestStreamHandler_GetStream(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("invalid user id return errror", func(t *testing.T) {
+
 	})
 }
 
@@ -679,6 +699,110 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 		assert.Contains(t, w.Body.String(), "stream not found")
 	})
+
+	t.Run("without loginID", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handlers := NewStreamHandler(mockService)
+		streamID := uuid.New()
+		router := setupTestRouter()
+		router.POST("/stream/:id/upload", handlers.UploadVideo)
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, err := writer.CreateFormFile("video", "test.mp4")
+		require.NoError(t, err)
+		part.Write([]byte("video data"))
+		writer.Close()
+		req := httptest.NewRequest("POST", "/stream/"+streamID.String()+"/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		assert.Contains(t, w.Body.String(), "user not authenticated")
+	})
+
+	t.Run("user id bad type", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handlers := NewStreamHandler(mockService)
+		streamID := uuid.New()
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", 1234)
+			c.Next()
+		})
+		router.POST("/stream/:id/upload", handlers.UploadVideo)
+
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, err := writer.CreateFormFile("video", "test.mp4")
+		require.NoError(t, err)
+		part.Write([]byte("video data"))
+		writer.Close()
+		req := httptest.NewRequest("POST", "/stream/"+streamID.String()+"/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), "invalid user ID")
+	})
+
+	t.Run("stream id bad type", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handlers := NewStreamHandler(mockService)
+		streamID := "123455"
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", uuid.New().String())
+			c.Next()
+		})
+		router.POST("/stream/:id/upload", handlers.UploadVideo)
+
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, err := writer.CreateFormFile("video", "test.mp4")
+		require.NoError(t, err)
+		part.Write([]byte("video data"))
+		writer.Close()
+		req := httptest.NewRequest("POST", "/stream/"+streamID+"/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "invalid stream")
+	})
+	t.Run("video file required", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handlers := NewStreamHandler(mockService)
+		streamID := uuid.New()
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", uuid.New().String())
+			c.Next()
+		})
+		router.POST("/stream/:id/upload", handlers.UploadVideo)
+
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, err := writer.CreateFormFile("not-video", "test.mp4")
+		require.NoError(t, err)
+		part.Write([]byte("video data"))
+		writer.Close()
+		req := httptest.NewRequest("POST", "/stream/"+streamID.String()+"/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "video file required")
+	})
+
 }
 
 func TestStreamHandler_DownloadStream(t *testing.T) {
@@ -840,7 +964,7 @@ func TestStreamHandler_ListStreamPublic(t *testing.T) {
 			},
 		}
 		mockService.EXPECT().ListStreams(gomock.Any(), gomock.Any()).Return(streamList, nil)
-		req := httptest.NewRequest("GET", "/streams", nil)
+		req := httptest.NewRequest("GET", "/streams?limit=10&offset=1", nil)
 		req.Header.Set("Accept", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -849,5 +973,35 @@ func TestStreamHandler_ListStreamPublic(t *testing.T) {
 		err := json.Unmarshal(w.Body.Bytes(), &resp)
 		require.NoError(t, err)
 		assert.Len(t, resp.Items, 3)
+	})
+
+	t.Run("validation limit error", func(t *testing.T) {
+		router, _, _ := setupTest()
+		req := httptest.NewRequest("GET", "/streams?limit=bad", nil)
+		req.Header.Set("Accept", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
+	})
+
+	t.Run("validation offset error", func(t *testing.T) {
+		router, _, _ := setupTest()
+		req := httptest.NewRequest("GET", "/streams?offset=bad", nil)
+		req.Header.Set("Accept", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
+	})
+
+	t.Run("service error propagate", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().
+			ListStreams(gomock.Any(), gomock.Any()).
+			Return(nil, errors.New("srevice error"))
+		req := httptest.NewRequest("GET", "/streams", nil)
+		req.Header.Set("Accept", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusInternalServerError)
 	})
 }

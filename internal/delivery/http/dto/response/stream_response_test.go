@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/datatypes"
 )
 
 func TestStreamResponse_FromDomainModel(t *testing.T) {
@@ -28,6 +29,16 @@ func TestStreamResponse_FromDomainModel(t *testing.T) {
 		t.Errorf("Error marshal storage to JSON error: %s", err.Error())
 	}
 
+	streamMetaData := models.StreamMetadata{
+		Duration:   321,
+		Size:       123,
+		Format:     "video",
+		Resolution: "2x2",
+	}
+
+	streamMetaDataJSON, err := json.Marshal(streamMetaData)
+	assert.NoError(t, err)
+
 	stream := &models.Stream{
 		Title:       "Test stream",
 		Description: "Test Description",
@@ -36,6 +47,8 @@ func TestStreamResponse_FromDomainModel(t *testing.T) {
 		Visibility:  models.VisibilityPublic,
 		PublishedAt: &now,
 		Storage:     storageJSON,
+		Tags:        datatypes.JSON(`["tag1", "tag2"]`),
+		Metadata:    datatypes.JSON(streamMetaDataJSON),
 	}
 	stream.ID = streamID
 	stream.CreatedAt = now
@@ -54,4 +67,8 @@ func TestStreamResponse_FromDomainModel(t *testing.T) {
 	assert.Equal(t, storage.Bucket, resp.Storage["bucket"])
 	assert.Equal(t, storage.Provider, resp.Storage["provider"])
 	assert.Equal(t, storage.Filename, resp.Storage["filename"])
+	assert.Contains(t, resp.Tags, "tag1")
+	assert.Contains(t, resp.Metadata, "resolution")
+	assert.Equal(t, resp.Metadata["resolution"], "2x2")
+
 }

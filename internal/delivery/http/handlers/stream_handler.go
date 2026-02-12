@@ -240,7 +240,7 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 	}
 	file, fileHeader, err := c.Request.FormFile("video")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse("video file reuiqred"))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("video file required"))
 		return
 	}
 	defer file.Close()

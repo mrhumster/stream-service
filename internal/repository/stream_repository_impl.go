@@ -36,7 +36,7 @@ func (r *GormStreamRepository) Read(ctx context.Context, id uuid.UUID) (*models.
 }
 func (r *GormStreamRepository) Update(ctx context.Context, stream *models.Stream) error {
 	if stream.ID == uuid.Nil {
-		return fmt.Errorf("stream ID can not be nil")
+		return fmt.Errorf("stream ID can't be nil")
 	}
 	var existing *models.Stream
 	if err := r.db.WithContext(ctx).First(&existing, "id = ?", stream.ID).Error; err != nil {
