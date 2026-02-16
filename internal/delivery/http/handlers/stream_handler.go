@@ -49,7 +49,7 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 		filter.Offset = offsetInt
 	}
 
-	streams, err := h.service.ListStreams(c.Request.Context(), filter)
+	streams, total, err := h.service.ListStreams(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("error getting stream list from service"))
 		return
@@ -64,7 +64,7 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 
 	streamsList := response.ListReponse[response.StreamResponse]{
 		Items:  streamRespList,
-		Total:  len(streams),
+		Total:  total,
 		Limit:  filter.Limit,
 		Offset: filter.Offset,
 	}

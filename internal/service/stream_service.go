@@ -19,8 +19,8 @@ type StreamService interface {
 	UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error)
 	DeleteStream(ctx context.Context, id uuid.UUID) error
 
-	ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, error)
-	ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, error)
+	ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, int64, error)
+	ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, int64, error)
 
 	PublishStream(ctx context.Context, streamID uuid.UUID) error
 	UnpublishStream(ctx context.Context, streamID uuid.UUID) error

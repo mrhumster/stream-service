@@ -269,7 +269,7 @@ func (c *StreamServiceContractTest) TestListOperations() {
 		require.NoError(c.t, err)
 
 		// Test ListUserStreams
-		userStreams, err := c.service.ListUserStreams(c.ctx, userID)
+		userStreams, _, err := c.service.ListUserStreams(c.ctx, userID)
 		assert.NoError(c.t, err)
 		assert.NotNil(c.t, userStreams)
 
@@ -300,7 +300,7 @@ func (c *StreamServiceContractTest) TestListOperations() {
 		}
 
 		for _, filter := range filterTests {
-			streams, err := c.service.ListStreams(c.ctx, filter)
+			streams, _, err := c.service.ListStreams(c.ctx, filter)
 			assert.NoError(c.t, err)
 			assert.NotNil(c.t, streams)
 		}

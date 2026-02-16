@@ -59,7 +59,8 @@ func (r *GormStreamRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (r *GormStreamRepository) List(ctx context.Context, filter StreamFilter) ([]*models.Stream, error) {
+func (r *GormStreamRepository) List(ctx context.Context, filter StreamFilter) ([]*models.Stream, int64, error) {
+	var total int64
 	query := r.db.WithContext(ctx).Model(&models.Stream{})
 
 	if filter.OwnerID != nil {
@@ -79,6 +80,10 @@ func (r *GormStreamRepository) List(ctx context.Context, filter StreamFilter) ([
 		query = query.Where("title ILIKE ? or description ILIKE ?", searchPattern, searchPattern)
 	}
 
+	if err := query.Count(&total).Error; err != nil {
+		return nil, total, err
+	}
+
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
@@ -94,9 +99,9 @@ func (r *GormStreamRepository) List(ctx context.Context, filter StreamFilter) ([
 	var streams []*models.Stream
 	result := query.Find(&streams)
 	if result.Error != nil {
-		return nil, fmt.Errorf("failed to list stream: %w", result.Error)
+		return nil, total, fmt.Errorf("failed to list stream: %w", result.Error)
 	}
-	return streams, nil
+	return streams, total, nil
 }
 
 func (r *GormStreamRepository) GetByOwner(ctx context.Context, ownerID uuid.UUID) ([]*models.Stream, error) {

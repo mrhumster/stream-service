@@ -15,7 +15,7 @@ type StreamRepository interface {
 	Update(ctx context.Context, stream *models.Stream) error
 	Delete(ctx context.Context, id uuid.UUID) error
 
-	List(ctx context.Context, filter StreamFilter) ([]*models.Stream, error)
+	List(ctx context.Context, filter StreamFilter) ([]*models.Stream, int64, error)
 	GetByOwner(ctx context.Context, ownerID uuid.UUID) ([]*models.Stream, error)
 	Exists(ctx context.Context, id uuid.UUID) bool
 

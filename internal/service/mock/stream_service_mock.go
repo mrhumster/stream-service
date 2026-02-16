@@ -133,12 +133,13 @@ func (mr *MockStreamServiceMockRecorder) GetStream(ctx, id any) *gomock.Call {
 }
 
 // ListStreams mocks base method.
-func (m *MockStreamService) ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, error) {
+func (m *MockStreamService) ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListStreams", ctx, filter)
 	ret0, _ := ret[0].([]*models.Stream)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // ListStreams indicates an expected call of ListStreams.
@@ -148,12 +149,13 @@ func (mr *MockStreamServiceMockRecorder) ListStreams(ctx, filter any) *gomock.Ca
 }
 
 // ListUserStreams mocks base method.
-func (m *MockStreamService) ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, error) {
+func (m *MockStreamService) ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListUserStreams", ctx, userID)
 	ret0, _ := ret[0].([]*models.Stream)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // ListUserStreams indicates an expected call of ListUserStreams.

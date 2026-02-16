@@ -189,7 +189,7 @@ func TestGormStreamRepository_List(t *testing.T) {
 		Visibility: &visibility,
 		Offset:     0,
 	}
-	streams, err := repo.List(ctx, filter)
+	streams, _, err := repo.List(ctx, filter)
 	require.NoError(t, err)
 	require.Len(t, streams, 2)
 }
@@ -214,7 +214,7 @@ func TestGormStreamRepository_ListWithLimit(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	streams, err := repo.List(ctx, filter)
+	streams, _, err := repo.List(ctx, filter)
 	require.NoError(t, err)
 	assert.Len(t, streams, 2)
 }

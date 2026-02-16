@@ -166,15 +166,15 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 	return nil
 }
 
-func (s *StreamServiceImpl) ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, error) {
-	streams, err := s.repo.List(ctx, filter)
+func (s *StreamServiceImpl) ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
+	streams, total, err := s.repo.List(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list streams: %w", err)
+		return nil, total, fmt.Errorf("failed to list streams: %w", err)
 	}
-	return streams, nil
+	return streams, total, nil
 }
 
-func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, error) {
+func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, int64, error) {
 	filter := repository.StreamFilter{
 		OwnerID: &userID,
 		Limit:   100,

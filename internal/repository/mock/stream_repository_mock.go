@@ -115,12 +115,13 @@ func (mr *MockStreamRepositoryMockRecorder) IncrementViews(ctx, id any) *gomock.
 }
 
 // List mocks base method.
-func (m *MockStreamRepository) List(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, error) {
+func (m *MockStreamRepository) List(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "List", ctx, filter)
 	ret0, _ := ret[0].([]*models.Stream)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // List indicates an expected call of List.
