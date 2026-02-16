@@ -55,11 +55,10 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 		return
 	}
 
-	var streamRespList []response.StreamResponse
+	streamRespList := make([]response.StreamResponse, 0, len(streams))
 
 	for _, v := range streams {
-		streamResp := response.FromDomainModel(v)
-		streamRespList = append(streamRespList, streamResp)
+		streamRespList = append(streamRespList, response.FromDomainModel(v))
 	}
 
 	streamsList := response.ListReponse[response.StreamResponse]{

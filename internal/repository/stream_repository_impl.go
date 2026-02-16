@@ -92,7 +92,7 @@ func (r *GormStreamRepository) List(ctx context.Context, filter StreamFilter) ([
 		query = query.Offset(filter.Offset)
 	}
 
-	query.Limit(filter.Limit)
+	query = query.Limit(filter.Limit)
 
 	query = query.Order("created_at DESC")
 
