@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"testing"
@@ -164,28 +165,29 @@ func TestGormStreamRepository_List(t *testing.T) {
 	repo := repository.NewGormStreamRepository(db)
 	ctx := context.Background()
 	ownerID := uuid.New()
+	status := models.StatusDraft
+	visibility := models.VisibilityPublic
+
 	stream1 := &models.Stream{
 		Title:      "stream 1",
 		OwnerID:    ownerID,
-		Status:     models.StatusDraft,
-		Visibility: models.VisibilityPublic,
+		Status:     status,
+		Visibility: visibility,
 	}
 	repo.Create(ctx, stream1)
 	stream2 := &models.Stream{
 		Title:      "stream 2",
 		OwnerID:    ownerID,
-		Status:     models.StatusDraft,
-		Visibility: models.VisibilityPublic,
+		Status:     status,
+		Visibility: visibility,
 	}
 	repo.Create(ctx, stream2)
-	status := models.StatusDraft
-	visibility := models.VisibilityPublic
 	filter := repository.StreamFilter{
 		OwnerID:    &ownerID,
 		Limit:      0,
 		Status:     &status,
 		Visibility: &visibility,
-		Offset:     1,
+		Offset:     0,
 	}
 	streams, err := repo.List(ctx, filter)
 	require.NoError(t, err)
@@ -352,4 +354,92 @@ func TestGormStreamRepository_Update_Extra(t *testing.T) {
 		require.Contains(t, err.Error(), "database connection lost")
 
 	})
+}
+
+func TestGormStreamRepository_IncremetViews(t *testing.T) {
+	t.Run("success increvent views", func(t *testing.T) {
+		gormDB := setupTestDB(t)
+		repo := repository.NewGormStreamRepository(gormDB)
+		ctx := context.Background()
+		id := uuid.New()
+		metadata := models.StreamMetadata{
+			Size: 1,
+		}
+		analytic := models.StreamAnalytics{
+			Views: 0,
+		}
+
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: id},
+			Title:     "zero views with create",
+		}
+		err := stream.SetAnalitics(&analytic)
+		assert.NoError(t, err)
+		err = stream.SetMetadata(&metadata)
+		assert.NoError(t, err)
+		err = repo.Create(ctx, stream)
+		assert.NoError(t, err)
+		err = repo.IncrementViews(ctx, id)
+		require.NoError(t, err)
+		streamOut, err := repo.Read(ctx, id)
+		assert.NoError(t, err)
+		analOut, err := streamOut.GetAnalitics()
+		assert.NoError(t, err)
+		assert.Equal(t, analOut.Views, int64(1))
+	})
+	t.Run("stream not found", func(t *testing.T) {
+		db, gorm, mock := setupMockDB(t)
+		defer db.Close()
+		id := uuid.New()
+		query := regexp.QuoteMeta(`SELECT * FROM "streams" WHERE ID = $1`)
+		mock.ExpectQuery(query).
+			WithArgs(id).WillReturnError(errors.New("stream not found"))
+		ctx := context.Background()
+		repo := repository.NewGormStreamRepository(gorm)
+		err := repo.IncrementViews(ctx, id)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("increment view error", func(t *testing.T) {
+		db, gorm, mock := setupMockDB(t)
+		defer db.Close()
+		id := uuid.New()
+		rows := sqlmock.NewRows([]string{"id", "title"}).AddRow(id, "title")
+		query := regexp.QuoteMeta(`SELECT * FROM "streams" WHERE "streams"."id" = $1 AND "streams"."deleted_at" IS NULL ORDER BY "streams"."id" LIMIT $2`)
+		mock.ExpectQuery(query).
+			WithArgs(id, 1).
+			WillReturnRows(rows)
+		mock.ExpectBegin()
+		query = regexp.QuoteMeta(`UPDATE "streams"`)
+		mock.ExpectQuery(query).
+			WillReturnError(fmt.Errorf("database connection lost"))
+		ctx := context.Background()
+		repo := repository.NewGormStreamRepository(gorm)
+		err := repo.IncrementViews(ctx, id)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "increment views error: unexpected end of JSON inpu")
+	})
+
+	t.Run("save error", func(t *testing.T) {
+		db, gorm, mock := setupMockDB(t)
+		defer db.Close()
+		id := uuid.New()
+		analyticsJSON := `{"views": 100}`
+		rows := sqlmock.NewRows([]string{"id", "title", "analytics"}).AddRow(id, "title", analyticsJSON)
+		query := regexp.QuoteMeta(`SELECT * FROM "streams" WHERE "streams"."id" = $1 AND "streams"."deleted_at" IS NULL ORDER BY "streams"."id" LIMIT $2`)
+		mock.ExpectQuery(query).
+			WithArgs(id, 1).
+			WillReturnRows(rows)
+		mock.ExpectBegin()
+		query = regexp.QuoteMeta(`UPDATE "streams"`)
+		mock.ExpectExec(query).
+			WillReturnError(fmt.Errorf("database connection lost"))
+		ctx := context.Background()
+		repo := repository.NewGormStreamRepository(gorm)
+		err := repo.IncrementViews(ctx, id)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "database connection lost")
+	})
+
 }

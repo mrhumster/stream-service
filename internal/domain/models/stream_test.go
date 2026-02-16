@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStream_Validate(t *testing.T) {
@@ -158,5 +159,17 @@ func TestStream_StatusMethods(t *testing.T) {
 
 		assert.True(t, stream.IsOwnedBy(ownerID))
 		assert.False(t, stream.IsOwnedBy(otherID))
+	})
+}
+
+func TestStream_SetMetadata(t *testing.T) {
+	t.Run("setting", func(t *testing.T) {
+		stream := Stream{Title: "Meta set test"}
+		meta := StreamMetadata{Size: 1}
+		err := stream.SetMetadata(&meta)
+		assert.NoError(t, err)
+		metaOut, err := stream.GetMetadata()
+		assert.NoError(t, err)
+		require.Equal(t, &meta, metaOut)
 	})
 }
