@@ -55,7 +55,7 @@ func TestStreamServiceImpl_ListUserStreams(t *testing.T) {
 					}),
 				),
 			).
-			Return(expectedStreams, nil)
+			Return(expectedStreams, int64(2), nil)
 
 		streams, _, err := serviceImpl.ListUserStreams(ctx, userID)
 
@@ -85,7 +85,7 @@ func TestStreamServicImpl_ListStreams(t *testing.T) {
 			{Title: "Stream 1", OwnerID: ownerID},
 			{Title: "Stream 2", OwnerID: ownerID},
 		}
-		mockRepo.EXPECT().List(gomock.Any(), filter).Return(expectedStreams, nil).Times(1)
+		mockRepo.EXPECT().List(gomock.Any(), filter).Return(expectedStreams, int64(2), nil).Times(1)
 
 		streams, _, err := serviceImpl.ListStreams(ctx, filter)
 
@@ -106,7 +106,7 @@ func TestStreamServicImpl_ListStreams(t *testing.T) {
 			{Title: "Gaming Stream", OwnerID: uuid.New()},
 		}
 
-		mockRepo.EXPECT().List(gomock.Any(), filter).Return(expectedStreams, nil).Times(1)
+		mockRepo.EXPECT().List(gomock.Any(), filter).Return(expectedStreams, int64(1), nil).Times(1)
 		streams, _, err := serviceImpl.ListStreams(ctx, filter)
 		require.NoError(t, err)
 		require.Len(t, streams, 1)
@@ -115,7 +115,7 @@ func TestStreamServicImpl_ListStreams(t *testing.T) {
 
 	t.Run("empty result", func(t *testing.T) {
 		filter := repository.StreamFilter{Limit: 10}
-		mockRepo.EXPECT().List(gomock.Any(), filter).Return([]*models.Stream{}, nil).Times(1)
+		mockRepo.EXPECT().List(gomock.Any(), filter).Return([]*models.Stream{}, int64(0), nil).Times(1)
 		streams, _, err := serviceImpl.ListStreams(ctx, filter)
 		require.NoError(t, err)
 		assert.Empty(t, streams)
@@ -123,7 +123,7 @@ func TestStreamServicImpl_ListStreams(t *testing.T) {
 
 	t.Run("repository error propagate", func(t *testing.T) {
 		filter := repository.StreamFilter{Limit: 10}
-		mockRepo.EXPECT().List(gomock.Any(), filter).Return(nil, assert.AnError).Times(1)
+		mockRepo.EXPECT().List(gomock.Any(), filter).Return(nil, int64(2), assert.AnError).Times(1)
 		streams, _, err := serviceImpl.ListStreams(ctx, filter)
 		require.Error(t, err)
 		assert.Nil(t, streams)

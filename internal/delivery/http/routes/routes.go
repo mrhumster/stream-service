@@ -83,6 +83,7 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	auth.Use(middleware.AuthMiddleware(tokenService))
 	auth.Use(middleware.Authorize("stream", "read", permissionClient))
 	{
+		auth.GET("/own", middleware.Authorize("stream", "read", permissionClient), streamHandler.ListStreamOwner)
 		auth.POST("/", middleware.Authorize("stream", "write", permissionClient), streamHandler.CreateStream)
 		auth.PATCH("/:id", middleware.Authorize("stream", "write", permissionClient), streamHandler.UpdateStream)
 		auth.DELETE("/:id", middleware.Authorize("stream", "delete", permissionClient), streamHandler.DeleteStream)

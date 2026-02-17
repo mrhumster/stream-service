@@ -22,6 +22,37 @@ func NewStreamHandler(service service.StreamService) *StreamHandler {
 	return &StreamHandler{service: service}
 }
 
+func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
+	userID, exists := c.Get("userID")
+
+	if !exists {
+		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authorized"))
+		return
+	}
+
+	userUUID, err := uuid.Parse(userID.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("error parsing user id"))
+		return
+	}
+
+	var filter repository.StreamFilter
+	streams, total, err := h.service.ListUserStreams(c.Request.Context(), userUUID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+	var resp response.ListReponse[response.StreamResponse]
+	for _, s := range streams {
+		resp.Items = append(resp.Items, response.FromDomainModel(s))
+	}
+	resp.Total = total
+	resp.Limit = filter.Limit
+	resp.Offset = filter.Offset
+
+	c.JSON(http.StatusOK, resp)
+}
+
 func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 	pub := models.VisibilityPublic
 	limit := c.Query("limit")

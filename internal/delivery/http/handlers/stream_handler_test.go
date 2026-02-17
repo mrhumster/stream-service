@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -931,10 +932,6 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 func TestStreamHandler_ListStreamPublic(t *testing.T) {
 	setupTest := func() (*gin.Engine, *servicemock.MockStreamService, *StreamHandler) {
 		router := setupTestRouter()
-		router.Use(func(c *gin.Context) {
-			c.Set("userID", "00000000-0000-0000-0000-000000000000")
-			c.Next()
-		})
 		ctrl := gomock.NewController(t)
 		mockService := servicemock.NewMockStreamService(ctrl)
 		handler := NewStreamHandler(mockService)
@@ -963,7 +960,7 @@ func TestStreamHandler_ListStreamPublic(t *testing.T) {
 				Visibility: models.VisibilityPublic,
 			},
 		}
-		mockService.EXPECT().ListStreams(gomock.Any(), gomock.Any()).Return(streamList, nil)
+		mockService.EXPECT().ListStreams(gomock.Any(), gomock.Any()).Return(streamList, int64(3), nil)
 		req := httptest.NewRequest("GET", "/streams?limit=10&offset=1", nil)
 		req.Header.Set("Accept", "application/json")
 		w := httptest.NewRecorder()
@@ -997,11 +994,107 @@ func TestStreamHandler_ListStreamPublic(t *testing.T) {
 		router, mockService, _ := setupTest()
 		mockService.EXPECT().
 			ListStreams(gomock.Any(), gomock.Any()).
-			Return(nil, errors.New("srevice error"))
+			Return(nil, int64(0), errors.New("srevice error"))
 		req := httptest.NewRequest("GET", "/streams", nil)
 		req.Header.Set("Accept", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		require.Equal(t, w.Code, http.StatusInternalServerError)
+	})
+}
+
+func TestStreamHandler_ListStreamOwner(t *testing.T) {
+	userID := uuid.New()
+
+	setupTest := func() (*gin.Engine, *servicemock.MockStreamService, *StreamHandler) {
+		router := setupTestRouter()
+		ctrl := gomock.NewController(t)
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", userID.String())
+			c.Next()
+		})
+		router.GET("/streams", handler.ListStreamOwner)
+		return router, mockService, handler
+	}
+
+	t.Run("seccesful downalod of stream list with owner", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		streams := []*models.Stream{
+			&models.Stream{
+				Title:   "Stream 1",
+				OwnerID: userID,
+				Status:  models.StatusPublished,
+			},
+			&models.Stream{
+				Title:   "Stream 2",
+				OwnerID: userID,
+				Status:  models.StatusDraft,
+			},
+			&models.Stream{
+				Title:   "Stream 3",
+				OwnerID: userID,
+				Status:  models.StatusPublished,
+			},
+			&models.Stream{
+				Title:   "Stream 4",
+				OwnerID: userID,
+				Status:  models.StatusProcessing,
+			},
+		}
+		ctx := context.Background()
+		mockService.EXPECT().ListUserStreams(ctx, userID).Return(streams, int64(4), nil)
+		req := httptest.NewRequest("GET", "/streams", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp response.ListReponse[response.StreamResponse]
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		assert.NoError(t, err)
+		assert.Equal(t, resp.Total, int64(4))
+		assert.Len(t, resp.Items, 4)
+	})
+
+	t.Run("only auth user can make request", func(t *testing.T) {
+		router_without_userID := setupTestRouter()
+		controller := gomock.NewController(t)
+		defer controller.Finish()
+		mockServide := servicemock.NewMockStreamService(controller)
+		handler := NewStreamHandler(mockServide)
+		router_without_userID.GET("/streams", handler.ListStreamOwner)
+		req := httptest.NewRequest("GET", "/streams", nil)
+		w := httptest.NewRecorder()
+		router_without_userID.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusUnauthorized)
+		assert.Contains(t, w.Body.String(), "not authorized")
+	})
+
+	t.Run("error parse user uuid", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", "1234asdasw")
+			c.Next()
+		})
+		router.GET("/streams", handler.ListStreamOwner)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusInternalServerError)
+		assert.Contains(t, w.Body.String(), "error parsing")
+	})
+
+	t.Run("propagation service error", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any()).Return(nil, int64(0), errors.New("service error"))
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
+		assert.Contains(t, w.Body.String(), "service error")
 	})
 }
