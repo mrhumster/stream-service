@@ -16,6 +16,7 @@ import (
 	reflect "reflect"
 	time "time"
 
+	storage "github.com/mrhumster/stream-service/internal/storage"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,6 +42,34 @@ func NewMockFileStorage(ctrl *gomock.Controller) *MockFileStorage {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockFileStorage) EXPECT() *MockFileStorageMockRecorder {
 	return m.recorder
+}
+
+// AbortMultipart mocks base method.
+func (m *MockFileStorage) AbortMultipart(ctx context.Context, path, uploadID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AbortMultipart", ctx, path, uploadID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AbortMultipart indicates an expected call of AbortMultipart.
+func (mr *MockFileStorageMockRecorder) AbortMultipart(ctx, path, uploadID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AbortMultipart", reflect.TypeOf((*MockFileStorage)(nil).AbortMultipart), ctx, path, uploadID)
+}
+
+// CompleteMultipart mocks base method.
+func (m *MockFileStorage) CompleteMultipart(ctx context.Context, path, uploadID string, parts []storage.MultipartPart) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteMultipart", ctx, path, uploadID, parts)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CompleteMultipart indicates an expected call of CompleteMultipart.
+func (mr *MockFileStorageMockRecorder) CompleteMultipart(ctx, path, uploadID, parts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteMultipart", reflect.TypeOf((*MockFileStorage)(nil).CompleteMultipart), ctx, path, uploadID, parts)
 }
 
 // Delete mocks base method.
@@ -116,6 +145,21 @@ func (mr *MockFileStorageMockRecorder) GetBucketName() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBucketName", reflect.TypeOf((*MockFileStorage)(nil).GetBucketName))
 }
 
+// InitMultipart mocks base method.
+func (m *MockFileStorage) InitMultipart(ctx context.Context, path string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InitMultipart", ctx, path)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// InitMultipart indicates an expected call of InitMultipart.
+func (mr *MockFileStorageMockRecorder) InitMultipart(ctx, path any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitMultipart", reflect.TypeOf((*MockFileStorage)(nil).InitMultipart), ctx, path)
+}
+
 // Upload mocks base method.
 func (m *MockFileStorage) Upload(ctx context.Context, path string, data io.Reader, size int64) error {
 	m.ctrl.T.Helper()
@@ -128,4 +172,19 @@ func (m *MockFileStorage) Upload(ctx context.Context, path string, data io.Reade
 func (mr *MockFileStorageMockRecorder) Upload(ctx, path, data, size any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Upload", reflect.TypeOf((*MockFileStorage)(nil).Upload), ctx, path, data, size)
+}
+
+// UploadPart mocks base method.
+func (m *MockFileStorage) UploadPart(ctx context.Context, path, uploadID string, partNumber int, data io.Reader, size int64) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UploadPart", ctx, path, uploadID, partNumber, data, size)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UploadPart indicates an expected call of UploadPart.
+func (mr *MockFileStorageMockRecorder) UploadPart(ctx, path, uploadID, partNumber, data, size any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadPart", reflect.TypeOf((*MockFileStorage)(nil).UploadPart), ctx, path, uploadID, partNumber, data, size)
 }

@@ -1,4 +1,4 @@
-package storage
+package storage_test
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/stream-service/internal/storage/mock"
 	"go.uber.org/mock/gomock"
 )
@@ -102,10 +103,10 @@ func TestFileStorageInterface(t *testing.T) {
 
 		mockStorage.EXPECT().
 			Download(ctx, key).
-			Return(nil, ErrNotFound)
+			Return(nil, storage.ErrNotFound)
 
 		_, err := mockStorage.Download(ctx, key)
-		if err != ErrNotFound {
+		if err != storage.ErrNotFound {
 			t.Fatalf("Expected ErrNotFound, got %v", err)
 		}
 	})

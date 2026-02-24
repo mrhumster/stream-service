@@ -44,6 +44,20 @@ func (m *MockMinIOClient) EXPECT() *MockMinIOClientMockRecorder {
 	return m.recorder
 }
 
+// AbortMultipartUpload mocks base method.
+func (m *MockMinIOClient) AbortMultipartUpload(ctx context.Context, bucket, object, uploadID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AbortMultipartUpload", ctx, bucket, object, uploadID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AbortMultipartUpload indicates an expected call of AbortMultipartUpload.
+func (mr *MockMinIOClientMockRecorder) AbortMultipartUpload(ctx, bucket, object, uploadID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AbortMultipartUpload", reflect.TypeOf((*MockMinIOClient)(nil).AbortMultipartUpload), ctx, bucket, object, uploadID)
+}
+
 // BucketExists mocks base method.
 func (m *MockMinIOClient) BucketExists(ctx context.Context, bucketName string) (bool, error) {
 	m.ctrl.T.Helper()
@@ -57,6 +71,21 @@ func (m *MockMinIOClient) BucketExists(ctx context.Context, bucketName string) (
 func (mr *MockMinIOClientMockRecorder) BucketExists(ctx, bucketName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BucketExists", reflect.TypeOf((*MockMinIOClient)(nil).BucketExists), ctx, bucketName)
+}
+
+// CompleteMultipartUpload mocks base method.
+func (m *MockMinIOClient) CompleteMultipartUpload(ctx context.Context, bucket, object, uploadID string, parts []minio.CompletePart, opts minio.PutObjectOptions) (minio.UploadInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteMultipartUpload", ctx, bucket, object, uploadID, parts, opts)
+	ret0, _ := ret[0].(minio.UploadInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CompleteMultipartUpload indicates an expected call of CompleteMultipartUpload.
+func (mr *MockMinIOClientMockRecorder) CompleteMultipartUpload(ctx, bucket, object, uploadID, parts, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteMultipartUpload", reflect.TypeOf((*MockMinIOClient)(nil).CompleteMultipartUpload), ctx, bucket, object, uploadID, parts, opts)
 }
 
 // GetObject mocks base method.
@@ -88,6 +117,21 @@ func (mr *MockMinIOClientMockRecorder) MakeBucket(ctx, bucketName, opts any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MakeBucket", reflect.TypeOf((*MockMinIOClient)(nil).MakeBucket), ctx, bucketName, opts)
 }
 
+// NewMultipartUpload mocks base method.
+func (m *MockMinIOClient) NewMultipartUpload(ctx context.Context, bucket, object string, opts minio.PutObjectOptions) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewMultipartUpload", ctx, bucket, object, opts)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// NewMultipartUpload indicates an expected call of NewMultipartUpload.
+func (mr *MockMinIOClientMockRecorder) NewMultipartUpload(ctx, bucket, object, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewMultipartUpload", reflect.TypeOf((*MockMinIOClient)(nil).NewMultipartUpload), ctx, bucket, object, opts)
+}
+
 // PresignedGetObject mocks base method.
 func (m *MockMinIOClient) PresignedGetObject(ctx context.Context, bucketName, objectName string, expires time.Duration, reqParams url.Values) (*url.URL, error) {
 	m.ctrl.T.Helper()
@@ -116,6 +160,21 @@ func (m *MockMinIOClient) PutObject(ctx context.Context, bucketName, objectName 
 func (mr *MockMinIOClientMockRecorder) PutObject(ctx, bucketName, objectName, reader, objectSize, opts any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutObject", reflect.TypeOf((*MockMinIOClient)(nil).PutObject), ctx, bucketName, objectName, reader, objectSize, opts)
+}
+
+// PutObjectPart mocks base method.
+func (m *MockMinIOClient) PutObjectPart(ctx context.Context, bucket, object, uploadID string, partID int, data io.Reader, size int64, opts minio.PutObjectPartOptions) (minio.ObjectPart, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PutObjectPart", ctx, bucket, object, uploadID, partID, data, size, opts)
+	ret0, _ := ret[0].(minio.ObjectPart)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PutObjectPart indicates an expected call of PutObjectPart.
+func (mr *MockMinIOClientMockRecorder) PutObjectPart(ctx, bucket, object, uploadID, partID, data, size, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutObjectPart", reflect.TypeOf((*MockMinIOClient)(nil).PutObjectPart), ctx, bucket, object, uploadID, partID, data, size, opts)
 }
 
 // RemoveObject mocks base method.

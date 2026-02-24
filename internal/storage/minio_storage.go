@@ -11,33 +11,33 @@ import (
 )
 
 type MinIOStorage struct {
-	client MinIOClient
-	bucket string
+	Client MinIOClient
+	Bucket string
 }
 
-func NewMinIOStorage(client MinIOClient, bucket string) *MinIOStorage {
+func NewMinIOStorage(client *minio.Client, bucket string) *MinIOStorage {
 	return &MinIOStorage{
-		client: client,
-		bucket: bucket,
+		Client: NewMinIOAdapter(client),
+		Bucket: bucket,
 	}
 }
 
 func (s *MinIOStorage) GetBucketName() string {
-	return s.bucket
+	return s.Bucket
 }
 
 func (s *MinIOStorage) Upload(ctx context.Context, path string, data io.Reader, size int64) error {
-	exists, err := s.BucketExists(ctx, s.bucket)
+	exists, err := s.BucketExists(ctx, s.Bucket)
 	if err != nil {
 		return fmt.Errorf("failed to check bucket: %w", err)
 	}
 
 	if !exists {
-		if err := s.CreateBucket(ctx, s.bucket); err != nil {
+		if err := s.CreateBucket(ctx, s.Bucket); err != nil {
 			return fmt.Errorf("failed to create bucket: %w", err)
 		}
 	}
-	_, err = s.client.PutObject(ctx, s.bucket, path, data, size, minio.PutObjectOptions{
+	_, err = s.Client.PutObject(ctx, s.Bucket, path, data, size, minio.PutObjectOptions{
 		ContentType: "application/octet-stream",
 	})
 
@@ -49,7 +49,7 @@ func (s *MinIOStorage) Upload(ctx context.Context, path string, data io.Reader, 
 }
 
 func (s *MinIOStorage) Download(ctx context.Context, path string) (io.ReadCloser, error) {
-	obj, err := s.client.GetObject(ctx, s.bucket, path, minio.GetObjectOptions{})
+	obj, err := s.Client.GetObject(ctx, s.Bucket, path, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, s.mapMinIOError(err)
 	}
@@ -57,7 +57,7 @@ func (s *MinIOStorage) Download(ctx context.Context, path string) (io.ReadCloser
 }
 
 func (s *MinIOStorage) Delete(ctx context.Context, path string) error {
-	err := s.client.RemoveObject(ctx, s.bucket, path, minio.RemoveObjectOptions{})
+	err := s.Client.RemoveObject(ctx, s.Bucket, path, minio.RemoveObjectOptions{})
 	if err != nil {
 		return s.mapMinIOError(err)
 	}
@@ -65,7 +65,7 @@ func (s *MinIOStorage) Delete(ctx context.Context, path string) error {
 }
 
 func (s *MinIOStorage) Exists(ctx context.Context, path string) (bool, error) {
-	_, err := s.client.StatObject(ctx, s.bucket, path, minio.StatObjectOptions{})
+	_, err := s.Client.StatObject(ctx, s.Bucket, path, minio.StatObjectOptions{})
 	if err != nil {
 		if minioErr, ok := err.(minio.ErrorResponse); ok {
 			switch minioErr.Code {
@@ -81,7 +81,7 @@ func (s *MinIOStorage) Exists(ctx context.Context, path string) (bool, error) {
 }
 
 func (s *MinIOStorage) BucketExists(ctx context.Context, bucket string) (bool, error) {
-	exists, err := s.client.BucketExists(ctx, bucket)
+	exists, err := s.Client.BucketExists(ctx, bucket)
 	if err != nil {
 		return false, s.mapMinIOError(err)
 	}
@@ -97,7 +97,7 @@ func (s *MinIOStorage) CreateBucket(ctx context.Context, bucket string) error {
 		return ErrAlreadyExists
 	}
 
-	err = s.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
+	err = s.Client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
 	if err != nil {
 		return s.mapMinIOError(err)
 	}
@@ -105,11 +105,50 @@ func (s *MinIOStorage) CreateBucket(ctx context.Context, bucket string) error {
 }
 
 func (s *MinIOStorage) GeneratePresignedURL(ctx context.Context, path, filename string, expire time.Duration) (*url.URL, error) {
-	u, err := s.client.PresignedGetObject(ctx, s.bucket, path, expire, nil)
+	u, err := s.Client.PresignedGetObject(ctx, s.Bucket, path, expire, nil)
 	if err != nil {
 		return nil, ErrGenerateURLFailed
 	}
 	return u, nil
+}
+
+func (s *MinIOStorage) AbortMultipart(ctx context.Context, path, uploadID string) error {
+	return s.Client.AbortMultipartUpload(ctx, s.Bucket, path, uploadID)
+}
+
+func (s *MinIOStorage) InitMultipart(ctx context.Context, path string) (uploadID string, err error) {
+	return s.Client.NewMultipartUpload(ctx, s.Bucket, path, minio.PutObjectOptions{})
+}
+func (s *MinIOStorage) UploadPart(ctx context.Context, path, uploadID string, partNumber int, data io.Reader, size int64) (etag string, err error) {
+	part, err := s.Client.PutObjectPart(ctx, s.Bucket, path, uploadID, partNumber, data, size, minio.PutObjectPartOptions{})
+	if err != nil {
+		return "", err
+	}
+	return part.ETag, nil
+}
+func (s *MinIOStorage) CompleteMultipart(ctx context.Context, path, uploadID string, parts []MultipartPart) error {
+
+	minioParts := make([]minio.CompletePart, len(parts))
+	for i, p := range parts {
+		minioParts[i] = minio.CompletePart{
+			PartNumber: p.PartNumber,
+			ETag:       p.ETag,
+		}
+	}
+	_, err := s.Client.CompleteMultipartUpload(
+		ctx,
+		s.Bucket,
+		path,
+		uploadID,
+		minioParts,
+		minio.PutObjectOptions{},
+	)
+
+	if err != nil {
+		return s.mapMinIOError(err)
+	}
+
+	return nil
 }
 
 func (s *MinIOStorage) mapMinIOError(err error) error {

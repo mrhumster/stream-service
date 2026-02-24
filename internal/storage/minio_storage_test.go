@@ -1,4 +1,4 @@
-package storage
+package storage_test
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/minio/minio-go/v7"
+	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/stream-service/internal/storage/mock"
 	"go.uber.org/mock/gomock"
 )
@@ -74,9 +75,9 @@ func TestMinIOStorage_Upload(t *testing.T) {
 			ctx := context.Background()
 			mockMinIO := mock.NewMockMinIOClient(ctrl)
 			bucket := "test-bucket"
-			storage := &MinIOStorage{
-				client: mockMinIO,
-				bucket: bucket,
+			storage := &storage.MinIOStorage{
+				Client: mockMinIO,
+				Bucket: bucket,
 			}
 
 			key := "test-file.txt"
@@ -124,9 +125,9 @@ func TestMinIOStorage_Download(t *testing.T) {
 	ctx := context.Background()
 	mockMinIO := mock.NewMockMinIOClient(ctrl)
 	bucket := "test-bucket"
-	storage := &MinIOStorage{
-		client: mockMinIO,
-		bucket: bucket,
+	storageImpl := &storage.MinIOStorage{
+		Client: mockMinIO,
+		Bucket: bucket,
 	}
 	key := "test-file.txt"
 	tests := []struct {
@@ -141,7 +142,7 @@ func TestMinIOStorage_Download(t *testing.T) {
 					GetObject(gomock.Any(), bucket, key, gomock.Any()).
 					Return(nil, minio.ErrorResponse{Code: "NoSuchKey"})
 			},
-			expectedError: ErrNotFound,
+			expectedError: storage.ErrNotFound,
 		},
 		{
 			name: "NoSuchBucket error",
@@ -150,7 +151,7 @@ func TestMinIOStorage_Download(t *testing.T) {
 					GetObject(gomock.Any(), bucket, key, gomock.Any()).
 					Return(nil, minio.ErrorResponse{Code: "NoSuchBucket"})
 			},
-			expectedError: ErrBucketNotExist,
+			expectedError: storage.ErrBucketNotExist,
 		},
 		{
 			name: "AccessDenied error",
@@ -159,7 +160,7 @@ func TestMinIOStorage_Download(t *testing.T) {
 					GetObject(gomock.Any(), bucket, key, gomock.Any()).
 					Return(nil, minio.ErrorResponse{Code: "AccessDenied"})
 			},
-			expectedError: ErrPermissionDenied,
+			expectedError: storage.ErrPermissionDenied,
 		},
 	}
 
@@ -167,7 +168,7 @@ func TestMinIOStorage_Download(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setupMock()
 
-			_, err := storage.Download(ctx, key)
+			_, err := storageImpl.Download(ctx, key)
 			if err != tt.expectedError {
 				t.Fatalf("Expected %v, got %v", tt.expectedError, err)
 			}
@@ -182,9 +183,9 @@ func TestMinIOStorage_Exists(t *testing.T) {
 	ctx := context.Background()
 	mockMinIO := mock.NewMockMinIOClient(ctrl)
 	bucket := "test-bucket"
-	storage := &MinIOStorage{
-		client: mockMinIO,
-		bucket: bucket,
+	storageImpl := &storage.MinIOStorage{
+		Client: mockMinIO,
+		Bucket: bucket,
 	}
 	key := "existing-file.txt"
 
@@ -192,7 +193,7 @@ func TestMinIOStorage_Exists(t *testing.T) {
 		mockMinIO.EXPECT().
 			StatObject(gomock.Any(), bucket, key, gomock.Any()).
 			Return(minio.ObjectInfo{}, nil)
-		exists, err := storage.Exists(ctx, key)
+		exists, err := storageImpl.Exists(ctx, key)
 		if err != nil {
 			t.Fatalf("Exists failed: %v", err)
 		}
@@ -207,7 +208,7 @@ func TestMinIOStorage_Exists(t *testing.T) {
 			Return(minio.ObjectInfo{}, minio.ErrorResponse{
 				Code: "NoSuchKey",
 			})
-		exists, err := storage.Exists(ctx, key)
+		exists, err := storageImpl.Exists(ctx, key)
 		if err != nil {
 			t.Fatalf("Exists failed: %v", err)
 		}
@@ -222,8 +223,8 @@ func TestMinIOStorage_Exists(t *testing.T) {
 			Return(minio.ObjectInfo{}, minio.ErrorResponse{
 				Code: "NoSuchBucket",
 			})
-		exists, err := storage.Exists(ctx, key)
-		if err != ErrBucketNotExist {
+		exists, err := storageImpl.Exists(ctx, key)
+		if err != storage.ErrBucketNotExist {
 			t.Fatalf("Expected ErrBucketNotExist, got %v", err)
 		}
 		if exists {
@@ -239,9 +240,9 @@ func TestMinIOStorage_Delete(t *testing.T) {
 	ctx := context.Background()
 	mockMinIO := mock.NewMockMinIOClient(ctrl)
 	bucket := "test-bucket"
-	storage := &MinIOStorage{
-		client: mockMinIO,
-		bucket: bucket,
+	storageImpl := &storage.MinIOStorage{
+		Client: mockMinIO,
+		Bucket: bucket,
 	}
 	key := "file-to-delete.txt"
 
@@ -250,7 +251,7 @@ func TestMinIOStorage_Delete(t *testing.T) {
 			RemoveObject(gomock.Any(), bucket, key, gomock.Any()).
 			Return(nil)
 
-		err := storage.Delete(ctx, key)
+		err := storageImpl.Delete(ctx, key)
 		if err != nil {
 			t.Fatalf("Delete failed: %v", err)
 		}
@@ -263,8 +264,8 @@ func TestMinIOStorage_Delete(t *testing.T) {
 				Code: "NoSuchKey",
 			})
 
-		err := storage.Delete(ctx, key)
-		if err != ErrNotFound {
+		err := storageImpl.Delete(ctx, key)
+		if err != storage.ErrNotFound {
 			t.Fatalf("Expected ErrNotFound, got %v", err)
 		}
 	})
@@ -277,9 +278,9 @@ func TestMinIOStorage_BucketOperations(t *testing.T) {
 	ctx := context.Background()
 	mockMinIO := mock.NewMockMinIOClient(ctrl)
 	bucket := "test-bucket"
-	storage := &MinIOStorage{
-		client: mockMinIO,
-		bucket: bucket,
+	storageImpl := &storage.MinIOStorage{
+		Client: mockMinIO,
+		Bucket: bucket,
 	}
 
 	t.Run("Bucket exists", func(t *testing.T) {
@@ -287,7 +288,7 @@ func TestMinIOStorage_BucketOperations(t *testing.T) {
 			BucketExists(gomock.Any(), bucket).
 			Return(true, nil)
 
-		exists, err := storage.BucketExists(ctx, bucket)
+		exists, err := storageImpl.BucketExists(ctx, bucket)
 		if err != nil {
 			t.Fatalf("BucketExists failed: %v", err)
 		}
@@ -305,7 +306,7 @@ func TestMinIOStorage_BucketOperations(t *testing.T) {
 			MakeBucket(gomock.Any(), bucket, gomock.Any()).
 			Return(nil)
 
-		err := storage.CreateBucket(ctx, bucket)
+		err := storageImpl.CreateBucket(ctx, bucket)
 		if err != nil {
 			t.Fatalf("CreateBucket failed: %v", err)
 		}
@@ -316,8 +317,8 @@ func TestMinIOStorage_BucketOperations(t *testing.T) {
 			BucketExists(gomock.Any(), bucket).
 			Return(true, nil)
 
-		err := storage.CreateBucket(ctx, bucket)
-		if err != ErrAlreadyExists {
+		err := storageImpl.CreateBucket(ctx, bucket)
+		if err != storage.ErrAlreadyExists {
 			t.Fatalf("Expected ErrAlreadyExists, got %v", err)
 		}
 	})
@@ -330,9 +331,9 @@ func TestMinIOStorage_GeneratePresignedURL(t *testing.T) {
 	ctx := context.Background()
 	mockMinIO := mock.NewMockMinIOClient(ctrl)
 	bucket := "test-bucket"
-	storage := &MinIOStorage{
-		client: mockMinIO,
-		bucket: bucket,
+	storageImpl := &storage.MinIOStorage{
+		Client: mockMinIO,
+		Bucket: bucket,
 	}
 
 	tests := []struct {
@@ -376,13 +377,13 @@ func TestMinIOStorage_GeneratePresignedURL(t *testing.T) {
 						return u
 					}(), minio.ErrorResponse{Code: "InternalError"})
 			},
-			expectedError: ErrGenerateURLFailed,
+			expectedError: storage.ErrGenerateURLFailed,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.mockResponse() // set mock in awaitei
-			url, err := storage.GeneratePresignedURL(ctx, tt.objectName, "filename", tt.expires)
+			url, err := storageImpl.GeneratePresignedURL(ctx, tt.objectName, "filename", tt.expires)
 			if err != tt.expectedError {
 				t.Errorf("Expected error %v, got %v", tt.expectedError, err)
 			}
