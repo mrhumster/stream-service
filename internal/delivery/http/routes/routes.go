@@ -48,7 +48,7 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	// CORS
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173", "https://example.com", "https://api.example.com"},
-		AllowMethods:     []string{"GET", "PATH", "POST", "OPTIONS", "PUT", "DELETE"},
+		AllowMethods:     []string{"GET", "PATCH", "POST", "OPTIONS", "PUT", "DELETE"},
 		AllowHeaders:     []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,
 	}))
@@ -83,7 +83,7 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	auth.Use(middleware.AuthMiddleware(tokenService))
 	auth.Use(middleware.Authorize("stream", "read", permissionClient))
 	{
-		auth.GET("/own", middleware.Authorize("stream", "read", permissionClient), streamHandler.ListStreamOwner)
+		auth.GET("/own", streamHandler.ListStreamOwner)
 		auth.POST("/", middleware.Authorize("stream", "write", permissionClient), streamHandler.CreateStream)
 		auth.PATCH("/:id", middleware.Authorize("stream", "write", permissionClient), streamHandler.UpdateStream)
 		auth.DELETE("/:id", middleware.Authorize("stream", "delete", permissionClient), streamHandler.DeleteStream)
