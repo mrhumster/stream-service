@@ -343,5 +343,11 @@ func (h *StreamHandler) handleDownloadError(c *gin.Context, err error) {
 	default:
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("failed to generate download link"))
 	}
-
 }
+
+// TODO:
+// Как это будет выглядеть в хендлере:
+// Тебе придется разделить загрузку на 3 этапа (3 ручки):
+// POST /stream/:id/upload/init -> возвращает uploadID.
+// PUT /stream/:id/upload/part -> принимает uploadID, partNumber и кусок файла.
+// POST /stream/:id/upload/complete -> финализирует запись в БД.

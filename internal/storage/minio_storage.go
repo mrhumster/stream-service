@@ -40,7 +40,6 @@ func (s *MinIOStorage) Upload(ctx context.Context, path string, data io.Reader, 
 	_, err = s.Client.PutObject(ctx, s.Bucket, path, data, size, minio.PutObjectOptions{
 		ContentType: "application/octet-stream",
 	})
-
 	if err != nil {
 		return s.mapMinIOError(err)
 	}
@@ -117,8 +116,15 @@ func (s *MinIOStorage) AbortMultipart(ctx context.Context, path, uploadID string
 }
 
 func (s *MinIOStorage) InitMultipart(ctx context.Context, path string) (uploadID string, err error) {
-	return s.Client.NewMultipartUpload(ctx, s.Bucket, path, minio.PutObjectOptions{})
+	uploadID, err = s.Client.NewMultipartUpload(ctx, s.Bucket, path, minio.PutObjectOptions{
+		ContentType: "video/mp4",
+	})
+	if err != nil {
+		return "", s.mapMinIOError(err)
+	}
+	return uploadID, err
 }
+
 func (s *MinIOStorage) UploadPart(ctx context.Context, path, uploadID string, partNumber int, data io.Reader, size int64) (etag string, err error) {
 	part, err := s.Client.PutObjectPart(ctx, s.Bucket, path, uploadID, partNumber, data, size, minio.PutObjectPartOptions{})
 	if err != nil {
@@ -126,8 +132,8 @@ func (s *MinIOStorage) UploadPart(ctx context.Context, path, uploadID string, pa
 	}
 	return part.ETag, nil
 }
-func (s *MinIOStorage) CompleteMultipart(ctx context.Context, path, uploadID string, parts []MultipartPart) error {
 
+func (s *MinIOStorage) CompleteMultipart(ctx context.Context, path, uploadID string, parts []MultipartPart) error {
 	minioParts := make([]minio.CompletePart, len(parts))
 	for i, p := range parts {
 		minioParts[i] = minio.CompletePart{
@@ -143,7 +149,6 @@ func (s *MinIOStorage) CompleteMultipart(ctx context.Context, path, uploadID str
 		minioParts,
 		minio.PutObjectOptions{},
 	)
-
 	if err != nil {
 		return s.mapMinIOError(err)
 	}

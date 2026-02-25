@@ -60,17 +60,17 @@ func (mr *MockStreamServiceMockRecorder) CanUserAccessStream(ctx, userID, stream
 }
 
 // CompleteStreamUpload mocks base method.
-func (m *MockStreamService) CompleteStreamUpload(ctx context.Context, streamID uuid.UUID) error {
+func (m *MockStreamService) CompleteStreamUpload(ctx context.Context, streamID, userID uuid.UUID, parts []service.PartInfo) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CompleteStreamUpload", ctx, streamID)
+	ret := m.ctrl.Call(m, "CompleteStreamUpload", ctx, streamID, userID, parts)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CompleteStreamUpload indicates an expected call of CompleteStreamUpload.
-func (mr *MockStreamServiceMockRecorder) CompleteStreamUpload(ctx, streamID any) *gomock.Call {
+func (mr *MockStreamServiceMockRecorder) CompleteStreamUpload(ctx, streamID, userID, parts any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteStreamUpload", reflect.TypeOf((*MockStreamService)(nil).CompleteStreamUpload), ctx, streamID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteStreamUpload", reflect.TypeOf((*MockStreamService)(nil).CompleteStreamUpload), ctx, streamID, userID, parts)
 }
 
 // CreateStream mocks base method.
@@ -179,18 +179,18 @@ func (mr *MockStreamServiceMockRecorder) PublishStream(ctx, streamID any) *gomoc
 }
 
 // StartStreamUpload mocks base method.
-func (m *MockStreamService) StartStreamUpload(ctx context.Context, streamID uuid.UUID) (*service.UploadInfo, error) {
+func (m *MockStreamService) StartStreamUpload(ctx context.Context, streamID, userID uuid.UUID) (*service.UploadInfo, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StartStreamUpload", ctx, streamID)
+	ret := m.ctrl.Call(m, "StartStreamUpload", ctx, streamID, userID)
 	ret0, _ := ret[0].(*service.UploadInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // StartStreamUpload indicates an expected call of StartStreamUpload.
-func (mr *MockStreamServiceMockRecorder) StartStreamUpload(ctx, streamID any) *gomock.Call {
+func (mr *MockStreamServiceMockRecorder) StartStreamUpload(ctx, streamID, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartStreamUpload", reflect.TypeOf((*MockStreamService)(nil).StartStreamUpload), ctx, streamID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartStreamUpload", reflect.TypeOf((*MockStreamService)(nil).StartStreamUpload), ctx, streamID, userID)
 }
 
 // UnpublishStream mocks base method.
@@ -234,6 +234,20 @@ func (m *MockStreamService) UpdateStreamStatus(ctx context.Context, streamID uui
 func (mr *MockStreamServiceMockRecorder) UpdateStreamStatus(ctx, streamID, status any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStreamStatus", reflect.TypeOf((*MockStreamService)(nil).UpdateStreamStatus), ctx, streamID, status)
+}
+
+// UploadPart mocks base method.
+func (m *MockStreamService) UploadPart(ctx context.Context, req service.UploadPartRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UploadPart", ctx, req)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UploadPart indicates an expected call of UploadPart.
+func (mr *MockStreamServiceMockRecorder) UploadPart(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadPart", reflect.TypeOf((*MockStreamService)(nil).UploadPart), ctx, req)
 }
 
 // UploadVideo mocks base method.

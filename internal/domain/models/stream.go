@@ -7,8 +7,10 @@ import (
 	"gorm.io/datatypes"
 )
 
-type StreamStatus string
-type StreamVisibility string
+type (
+	StreamStatus     string
+	StreamVisibility string
+)
 
 const (
 	StatusDraft      StreamStatus = "draft"
@@ -16,6 +18,7 @@ const (
 	StatusReady      StreamStatus = "ready"
 	StatusPublished  StreamStatus = "published"
 	StatysError      StreamStatus = "error"
+	StatusUploading  StreamStatus = "uploading"
 
 	VisibilityPublic   StreamVisibility = "public"
 	VisibilityPrivate  StreamVisibility = "private"
@@ -53,6 +56,7 @@ type StreamStorage struct {
 	Bucket   string `json:"bucket"`
 	Key      string `json:"key"`
 	Filename string `json:"filename"`
+	UploadID string `json:"upload_id,omitempty"`
 }
 
 type StreamProcessing struct {

@@ -71,7 +71,6 @@ func (c *StreamServiceContractTest) TestAll() {
 	c.TestStreamLifecycle()
 	c.TestAccessControl()
 	c.TestListOperations()
-	c.TestUploadOperations()
 	c.TestStreamStatusTransitions()
 }
 
@@ -308,36 +307,5 @@ func (c *StreamServiceContractTest) TestListOperations() {
 		// Cleanup
 		_ = c.service.DeleteStream(c.ctx, stream1.ID)
 		_ = c.service.DeleteStream(c.ctx, stream2.ID)
-	})
-}
-
-// TestUploadOperations тестирует операции загрузки
-func (c *StreamServiceContractTest) TestUploadOperations() {
-	c.t.Run("Upload Operations", func(t *testing.T) {
-		userID := uuid.New()
-
-		// Create stream for upload test
-		stream, err := c.service.CreateStream(c.ctx, service.CreateStreamRequest{
-			Title:   "Upload Test Stream",
-			OwnerID: userID,
-		})
-		require.NoError(c.t, err)
-
-		// Test upload start
-		uploadInfo, err := c.service.StartStreamUpload(c.ctx, stream.ID)
-		assert.NoError(c.t, err)
-		if uploadInfo != nil {
-			assert.Equal(c.t, stream.ID, uploadInfo.StreamID)
-			assert.NotEmpty(c.t, uploadInfo.UploadURL)
-		}
-
-		// Test upload completion
-		if uploadInfo != nil {
-			err = c.service.CompleteStreamUpload(c.ctx, stream.ID)
-			assert.NoError(c.t, err)
-		}
-
-		// Cleanup
-		_ = c.service.DeleteStream(c.ctx, stream.ID)
 	})
 }

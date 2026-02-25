@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rsa"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,7 +20,7 @@ type TokenService struct {
 
 func NewTokenService(cfg *config.JWT) (*TokenService, error) {
 	if cfg.AccessPublicKeyUrl == "" {
-		return nil, fmt.Errorf("⚠️ Error Token Service. JWT_ACCESS_PUBLIC_KEY_URL not set.")
+		return nil, errors.New("⚠️ Error Token Service. JWT_ACCESS_PUBLIC_KEY_URL not set")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -48,7 +49,7 @@ func NewTokenService(cfg *config.JWT) (*TokenService, error) {
 
 	fmt.Printf("Received public key (%d bytes):\n%s\n", len(body), string(body))
 
-	accessPublicKey, err := jwt.ParseRSAPublicKeyFromPEM(body)
+	accessPublicKey, _ := jwt.ParseRSAPublicKeyFromPEM(body)
 
 	return &TokenService{
 		accessPublicKey: accessPublicKey,

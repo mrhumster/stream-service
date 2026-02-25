@@ -26,11 +26,27 @@ type StreamService interface {
 	UnpublishStream(ctx context.Context, streamID uuid.UUID) error
 	UpdateStreamStatus(ctx context.Context, streamID uuid.UUID, status models.StreamStatus) error
 
-	StartStreamUpload(ctx context.Context, streamID uuid.UUID) (*UploadInfo, error)
-	CompleteStreamUpload(ctx context.Context, streamID uuid.UUID) error
 	CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error)
 	UploadVideo(ctx context.Context, req UploadVideoRequest) error
 	GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (*GenerateDownloadURLInfo, error)
+
+	UploadPart(ctx context.Context, req UploadPartRequest) error
+	StartStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID) (*UploadInfo, error)
+	CompleteStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID, parts []PartInfo) error
+}
+
+type UploadPartRequest struct {
+	StreamID   uuid.UUID
+	UserID     uuid.UUID
+	UploadID   string
+	PartNumber int
+	Data       io.Reader
+	Size       int64
+}
+
+type PartInfo struct {
+	PartNumber int
+	ETag       string
 }
 
 type GenerateDownloadURLInfo struct {
@@ -56,8 +72,8 @@ type UpdateStreamRequest struct {
 }
 
 type UploadInfo struct {
-	UploadURL string
-	StreamID  uuid.UUID
+	UploadID string
+	StreamID uuid.UUID
 }
 
 type UploadVideoRequest struct {

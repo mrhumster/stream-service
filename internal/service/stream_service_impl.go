@@ -194,53 +194,6 @@ func (s *StreamServiceImpl) UpdateStreamStatus(ctx context.Context, streamID uui
 	return fmt.Errorf("not implemented")
 }
 
-func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid.UUID) (*UploadInfo, error) {
-	stream, err := s.repo.Read(ctx, streamID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("stream not found: %w", err)
-		}
-		return nil, fmt.Errorf("failed to get stream: %w", err)
-	}
-
-	if stream.Status == models.StatusPublished {
-		return nil, fmt.Errorf("cannot upload to published stream")
-	}
-
-	videoKey := fmt.Sprintf("videos/%s/%s/original", stream.OwnerID.String(), streamID.String())
-
-	uploadURL, err := s.storage.GeneratePresignedURL(ctx, videoKey, "filename.avi", 1*time.Hour)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate upload URL: %w", err)
-	}
-
-	storageInfo := models.StreamStorage{
-		Provider: "minio",
-		Key:      videoKey,
-	}
-
-	storageJSON, err := json.Marshal(storageInfo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal storage info: %w", err)
-	}
-
-	stream.Storage = datatypes.JSON(storageJSON)
-	stream.Status = models.StatusProcessing
-
-	if err := s.repo.Update(ctx, stream); err != nil {
-		return nil, fmt.Errorf("failed to update stream: %w", err)
-	}
-	return &UploadInfo{
-		UploadURL: uploadURL.String(),
-		StreamID:  streamID,
-	}, nil
-}
-
-func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID uuid.UUID) error {
-	return fmt.Errorf("not implemented")
-}
-
 func (s *StreamServiceImpl) CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error) {
 	return false, fmt.Errorf("not implemented")
 }
@@ -354,7 +307,6 @@ func (s *StreamServiceImpl) processVideoAsync(streamID uuid.UUID, storageKey, fi
 
 func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (*GenerateDownloadURLInfo, error) {
 	stream, err := s.GetStream(ctx, streamID)
-
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("stream not found")
@@ -383,7 +335,6 @@ func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uu
 	expires := 1 * time.Hour
 
 	url, err := s.storage.GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, expires)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate Download URL: %w", err)
 	}
@@ -396,4 +347,65 @@ func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uu
 	}
 
 	return resp, nil
+}
+
+// Multipart upload methods
+
+func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID) (*UploadInfo, error) {
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("stream not found")
+		}
+		return nil, fmt.Errorf("error getting stream: %w", err)
+	}
+
+	if stream.OwnerID != userID {
+		return nil, fmt.Errorf("forbiddeen: not a owner")
+	}
+
+	if stream.Status != models.StatusDraft {
+		return nil, fmt.Errorf("cannot start upload for stream in status: %s", stream.Status)
+	}
+
+	storageKey := fmt.Sprintf("streams/%s/videos/%s_%s",
+		userID.String(),
+		streamID.String(),
+		uuid.New().String())
+
+	uID, err := s.storage.InitMultipart(ctx, storageKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init storage: %w", err)
+	}
+	storageInfo := models.StreamStorage{
+		Provider: "minio",
+		Bucket:   s.storage.GetBucketName(),
+		Key:      storageKey,
+		UploadID: uID,
+	}
+	storageJSON, err := json.Marshal(storageInfo)
+	if err != nil {
+		_ = s.storage.AbortMultipart(ctx, storageKey, uID)
+		return nil, fmt.Errorf("failed to marshal storage info: %w", err)
+	}
+	stream.Storage = datatypes.JSON(storageJSON)
+	stream.Status = models.StatusUploading
+	stream.UpdatedAt = time.Now()
+
+	err = s.repo.Update(ctx, stream)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update stream: %w", err)
+	}
+	return &UploadInfo{
+		UploadID: uID,
+		StreamID: streamID,
+	}, nil
+}
+
+func (s *StreamServiceImpl) UploadPart(ctx context.Context, req UploadPartRequest) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID, parts []PartInfo) error {
+	return fmt.Errorf("not implemented")
 }

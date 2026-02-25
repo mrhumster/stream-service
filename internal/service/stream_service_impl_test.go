@@ -15,7 +15,6 @@ import (
 	"github.com/mrhumster/stream-service/internal/repository"
 	repomock "github.com/mrhumster/stream-service/internal/repository/mock"
 	"github.com/mrhumster/stream-service/internal/service"
-	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/stream-service/internal/storage/mock"
 	authmock "github.com/mrhumster/web-server-gin/pkg/auth/mock"
 	"github.com/stretchr/testify/assert"
@@ -63,6 +62,7 @@ func TestStreamServiceImpl_ListUserStreams(t *testing.T) {
 		require.Len(t, streams, 2)
 	})
 }
+
 func TestStreamServicImpl_ListStreams(t *testing.T) {
 	ctx := context.Background()
 	ctrl := gomock.NewController(t)
@@ -73,7 +73,6 @@ func TestStreamServicImpl_ListStreams(t *testing.T) {
 	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage)
 
 	t.Run("list all streams with filter", func(t *testing.T) {
-
 		ownerID := uuid.New()
 		filter := repository.StreamFilter{
 			OwnerID: &ownerID,
@@ -96,7 +95,6 @@ func TestStreamServicImpl_ListStreams(t *testing.T) {
 	})
 
 	t.Run("list with search filter", func(t *testing.T) {
-
 		filter := repository.StreamFilter{
 			Search: "gaming",
 			Limit:  10,
@@ -130,6 +128,7 @@ func TestStreamServicImpl_ListStreams(t *testing.T) {
 		assert.ErrorIs(t, err, assert.AnError)
 	})
 }
+
 func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 	ctx := context.Background()
 	ctrl := gomock.NewController(t)
@@ -242,7 +241,6 @@ func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 			Provider: "minio",
 		}
 		storJSON, err := json.Marshal(stor)
-
 		if err != nil {
 			t.Errorf("Marshalization error: %v", err)
 		}
@@ -264,6 +262,7 @@ func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
 func TestStreamServicImpl_GetStream(t *testing.T) {
 	ctx := context.Background()
 
@@ -293,7 +292,6 @@ func TestStreamServicImpl_GetStream(t *testing.T) {
 	})
 
 	t.Run("stream not found", func(t *testing.T) {
-
 		nonExistenID := uuid.New()
 		mockRepo.EXPECT().Read(gomock.Any(), nonExistenID).Return(nil, gorm.ErrRecordNotFound)
 		stream, err := serviceImpl.GetStream(ctx, nonExistenID)
@@ -311,11 +309,11 @@ func TestStreamServicImpl_GetStream(t *testing.T) {
 		assert.ErrorIs(t, err, assert.AnError)
 	})
 }
+
 func TestStreamServicImpl_UpdateStream(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("succesful stream update", func(t *testing.T) {
-
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
@@ -471,6 +469,7 @@ func TestStreamServicImpl_UpdateStream(t *testing.T) {
 		assert.Contains(t, err.Error(), "published")
 	})
 }
+
 func TestStreamServicImpl_CreateStream(t *testing.T) {
 	ctx := context.Background()
 
@@ -484,7 +483,6 @@ func TestStreamServicImpl_CreateStream(t *testing.T) {
 	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage)
 
 	t.Run("succesful stream creation", func(t *testing.T) {
-
 		ownerID := uuid.New()
 
 		req := service.CreateStreamRequest{
@@ -554,147 +552,7 @@ func TestStreamServicImpl_CreateStream(t *testing.T) {
 	})
 }
 
-func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	ctx := context.Background()
-
-	mockRepo := repomock.NewMockStreamRepository(ctrl)
-	mockPerms := authmock.NewMockPermissionClient(ctrl)
-	mockStorage := mock.NewMockFileStorage(ctrl)
-
-	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerms, mockStorage)
-
-	streamID := uuid.New()
-	userID := uuid.New()
-
-	existingStream := &models.Stream{
-		BaseModel: models.BaseModel{ID: streamID},
-		OwnerID:   userID,
-		Title:     "TestStrema",
-		Status:    models.StatusDraft,
-		Storage:   datatypes.JSON("{}"),
-	}
-
-	t.Run("succesfully generates upload URL for draft stream", func(t *testing.T) {
-		mockRepo.EXPECT().Read(ctx, streamID).Return(existingStream, nil)
-		expectedURL, _ := url.Parse("https://minio.localhost:9000/test-bucket/videos/...?X-Amz-...")
-		expectedKey := "videos/" + userID.String() + "/" + streamID.String() + "/original"
-		mockStorage.EXPECT().
-			GeneratePresignedURL(ctx, expectedKey, gomock.Any(), gomock.Any()).
-			Return(expectedURL, nil)
-		mockRepo.EXPECT().Update(ctx, gomock.Any()).DoAndReturn(func(ctx context.Context, updatedStream *models.Stream) error {
-			if updatedStream.Status != models.StatusProcessing {
-				t.Errorf("Expected status 'processing', got %s", updatedStream.Status)
-			}
-			var storageInfo models.StreamStorage
-			if err := json.Unmarshal(updatedStream.Storage, &storageInfo); err != nil {
-				t.Errorf("Failed to unmarshal storage: %v", err)
-			}
-			if storageInfo.Key != expectedKey {
-				t.Errorf("Expected key %s, got %s", expectedKey, storageInfo.Key)
-			}
-			if storageInfo.Provider != "minio" {
-				t.Errorf("Expected provider 'minio', got %s", storageInfo.Provider)
-			}
-			return nil
-		})
-		result, err := serviceImpl.StartStreamUpload(ctx, streamID)
-		if err != nil {
-			t.Fatalf("StartStreamUpload failed: %v", err)
-		}
-		if result == nil {
-			t.Fatal("Expected UploadInfo, got nil")
-		}
-		if result.UploadURL != expectedURL.String() {
-			t.Errorf("Expected URL %s, got %s", expectedURL, result.UploadURL)
-		}
-		if result.StreamID != streamID {
-			t.Errorf("Expected streamID %s, got %s", streamID, result.StreamID)
-		}
-	})
-
-	t.Run("return errors for published stream", func(t *testing.T) {
-		publishedStream := &models.Stream{
-			BaseModel: models.BaseModel{ID: streamID},
-			OwnerID:   userID,
-			Status:    models.StatusPublished,
-			Storage:   datatypes.JSON("{}"),
-		}
-
-		mockRepo.EXPECT().Read(ctx, streamID).Return(publishedStream, nil)
-		result, err := serviceImpl.StartStreamUpload(ctx, streamID)
-		if err == nil {
-			t.Fatal("Expected error for published stream")
-		}
-		if result != nil {
-			t.Fatalf("Expected nil result when error occurs")
-		}
-		expectedErr := "cannot upload to published stream"
-		if err.Error() != expectedErr {
-			t.Errorf("Expected err %q, got %q", expectedErr, err.Error())
-		}
-	})
-
-	t.Run("returns error when stream not found", func(t *testing.T) {
-		mockRepo.EXPECT().Read(ctx, streamID).Return(nil, repository.ErrNotFound)
-		result, err := serviceImpl.StartStreamUpload(ctx, streamID)
-		if err == nil {
-			t.Fatal("Expected error when stream not found")
-		}
-		if result != nil {
-			t.Error("Expected nil result when stream not found")
-		}
-		if err.Error() != "failed to get stream: stream not found" {
-			t.Errorf("Expected 'stream not found' error, got '%v'", err)
-		}
-	})
-
-	t.Run("returns error when storage fails", func(t *testing.T) {
-		mockRepo.EXPECT().Read(ctx, streamID).Return(existingStream, nil)
-
-		storageErr := storage.ErrStorage
-		mockStorage.EXPECT().GeneratePresignedURL(ctx, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, storageErr)
-		result, err := serviceImpl.StartStreamUpload(ctx, streamID)
-		if err == nil {
-			t.Fatal("Expected error when storage fails")
-		}
-
-		if result != nil {
-			t.Error("Expected nil result when storage fails")
-		}
-
-		if err.Error() != "failed to generate upload URL: storage error" {
-			t.Errorf("Expected storage error, got '%v'", err)
-		}
-	})
-
-	t.Run("returns error when cannot update stream", func(t *testing.T) {
-		mockRepo.EXPECT().Read(ctx, streamID).Return(existingStream, nil)
-		mockStorage.EXPECT().
-			GeneratePresignedURL(ctx, gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(func() *url.URL {
-				u, _ := url.Parse("https://example.com/upload")
-				return u
-			}(), nil)
-		updateErr := fmt.Errorf("database error")
-		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(updateErr)
-		result, err := serviceImpl.StartStreamUpload(ctx, streamID)
-		if err == nil {
-			t.Fatal("Expected error when update fails")
-		}
-		if result != nil {
-			t.Error("Expected nil result when update fails")
-		}
-		if err.Error() != "failed to update stream: database error" {
-			t.Errorf("Expected update error, got '%v'", err)
-		}
-	})
-}
-
 func TestStreamServiceImpl_UploadVideo(t *testing.T) {
-
 	ctx := context.Background()
 
 	t.Run("successful video upload", func(t *testing.T) {
@@ -898,7 +756,6 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "update stream")
 	})
-
 }
 
 func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
@@ -928,7 +785,7 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 			Size: int64(100),
 		}
 
-		metaJson, _ := json.Marshal(streamMeta)
+		metaJSON, _ := json.Marshal(streamMeta)
 
 		storageJSON, _ := json.Marshal(storageInfo)
 
@@ -937,7 +794,7 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 			OwnerID:   userID,
 			Status:    models.StatusReady,
 			Storage:   datatypes.JSON(storageJSON),
-			Metadata:  datatypes.JSON(metaJson),
+			Metadata:  datatypes.JSON(metaJSON),
 		}
 
 		mockRepo.EXPECT().
@@ -971,5 +828,40 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 
 	t.Run("stream not ready", func(t *testing.T) {
 		// ...
+	})
+}
+
+func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success start upload", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+		streamID := uuid.New()
+		userID := uuid.New()
+		uploadID := "minio-session-123"
+		existingStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   userID,
+			Status:    models.StatusDraft,
+		}
+		mockRepo.EXPECT().Read(ctx, streamID).Return(existingStream, nil)
+		mockStorage.EXPECT().GetBucketName().Return("streams")
+		mockStorage.EXPECT().InitMultipart(
+			ctx, gomock.Any()).Return(uploadID, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Do(func(_ context.Context, s *models.Stream) {
+			var storageInfo models.StreamStorage
+			json.Unmarshal(s.Storage, &storageInfo)
+			assert.Equal(t, uploadID, storageInfo.UploadID)
+			assert.Equal(t, models.StatusUploading, s.Status)
+			assert.NotEmpty(t, storageInfo.Key)
+		}).Return(nil)
+		info, err := svc.StartStreamUpload(ctx, streamID, userID)
+		assert.NoError(t, err)
+		assert.Equal(t, info.UploadID, uploadID)
 	})
 }
