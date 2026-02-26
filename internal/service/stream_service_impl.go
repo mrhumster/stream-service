@@ -361,7 +361,7 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid
 	}
 
 	if stream.OwnerID != userID {
-		return nil, fmt.Errorf("forbiddeen: not a owner")
+		return nil, fmt.Errorf("forbidden: not a owner")
 	}
 
 	if stream.Status != models.StatusDraft {
@@ -383,17 +383,14 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid
 		Key:      storageKey,
 		UploadID: uID,
 	}
-	storageJSON, err := json.Marshal(storageInfo)
-	if err != nil {
-		_ = s.storage.AbortMultipart(ctx, storageKey, uID)
-		return nil, fmt.Errorf("failed to marshal storage info: %w", err)
-	}
+	storageJSON, _ := json.Marshal(storageInfo)
 	stream.Storage = datatypes.JSON(storageJSON)
 	stream.Status = models.StatusUploading
 	stream.UpdatedAt = time.Now()
 
 	err = s.repo.Update(ctx, stream)
 	if err != nil {
+		_ = s.storage.AbortMultipart(ctx, storageKey, uID)
 		return nil, fmt.Errorf("failed to update stream: %w", err)
 	}
 	return &UploadInfo{
@@ -402,8 +399,45 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid
 	}, nil
 }
 
-func (s *StreamServiceImpl) UploadPart(ctx context.Context, req UploadPartRequest) error {
-	return fmt.Errorf("not implemented")
+func (s *StreamServiceImpl) UploadPart(ctx context.Context, req UploadPartRequest) (*PartInfo, error) {
+	stream, err := s.repo.Read(ctx, req.StreamID)
+	if err != nil {
+		return nil, fmt.Errorf("error read stream from repository: %w", err)
+	}
+
+	if stream.Status != models.StatusUploading {
+		return nil, fmt.Errorf("cannot start upload for stream in status: %s", stream.Status)
+	}
+
+	var storageInfo models.StreamStorage
+	err = json.Unmarshal(stream.Storage, &storageInfo)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshaling storage info: %w", err)
+	}
+
+	if req.UploadID != storageInfo.UploadID {
+		return nil, fmt.Errorf("upload id from request not equal upload id from storage info")
+	}
+
+	if stream.OwnerID != req.UserID {
+		return nil, fmt.Errorf("forbidden: not a owner")
+	}
+
+	etag, err := s.storage.UploadPart(
+		ctx,
+		storageInfo.Key,
+		req.UploadID,
+		req.PartNumber,
+		req.Data,
+		req.Size,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error upload part to strage: %w", err)
+	}
+	return &PartInfo{
+		PartNumber: req.PartNumber,
+		ETag:       etag,
+	}, nil
 }
 
 func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID, parts []PartInfo) error {

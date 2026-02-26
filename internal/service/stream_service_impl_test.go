@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -863,5 +865,397 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		info, err := svc.StartStreamUpload(ctx, streamID, userID)
 		assert.NoError(t, err)
 		assert.Equal(t, info.UploadID, uploadID)
+	})
+
+	t.Run("stream not found error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(nil, gorm.ErrRecordNotFound)
+		_, err := svc.StartStreamUpload(ctx, uuid.New(), uuid.New())
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+	t.Run("repo error propagate", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(nil, errors.New("internal error"))
+		_, err := svc.StartStreamUpload(ctx, uuid.New(), uuid.New())
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "internal error")
+	})
+
+	t.Run("not the owner", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+		expectedStream := &models.Stream{
+			OwnerID: uuid.New(),
+			Title:   "someone else's stream",
+		}
+		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(expectedStream, nil)
+		_, err := svc.StartStreamUpload(ctx, uuid.New(), uuid.New())
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "forbidden: not a owner")
+	})
+
+	t.Run("stream with not right status", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+		userID := uuid.New()
+		expectedStream := &models.Stream{
+			Title:   "Stream already published",
+			Status:  models.StatusPublished,
+			OwnerID: userID,
+		}
+		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(expectedStream, nil)
+
+		_, err := svc.StartStreamUpload(ctx, uuid.New(), userID)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot start upload for stream in status: published")
+	})
+
+	t.Run("failed init storage", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+		userID := uuid.New()
+		expectedStream := &models.Stream{
+			Title:   "Stream already published",
+			Status:  models.StatusDraft,
+			OwnerID: userID,
+		}
+		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(expectedStream, nil)
+		mockStorage.EXPECT().InitMultipart(ctx, gomock.Any()).Return("", errors.New("storage not found"))
+		_, err := svc.StartStreamUpload(ctx, uuid.New(), userID)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to init storage: storage not found")
+	})
+	t.Run("failed to update repo after storage init", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
+
+		userID := uuid.New()
+		streamID := uuid.New()
+		uploadID := "UploadID-123"
+
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			Status:    models.StatusDraft,
+			OwnerID:   userID,
+		}
+		mockRepo.EXPECT().Read(ctx, streamID).Return(expectedStream, nil)
+		mockStorage.EXPECT().InitMultipart(ctx, gomock.Any()).Return(uploadID, nil)
+		mockStorage.EXPECT().GetBucketName().Return("bucketName")
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(errors.New("db connection lost"))
+
+		mockStorage.EXPECT().AbortMultipart(ctx, gomock.Any(), uploadID).Return(nil)
+
+		_, err := svc.StartStreamUpload(ctx, streamID, userID)
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to update stream: db connection lost")
+	})
+}
+
+func TestStreamServicImpl_UploadPart(t *testing.T) {
+	ctx := context.Background()
+	t.Run("successful call", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor)
+		streamID := uuid.New()
+		userID := uuid.New()
+		uploadID := "UploadID-123"
+		data := strings.NewReader("part 1")
+		storageInfo := models.StreamStorage{
+			UploadID: uploadID,
+			Bucket:   "streams",
+			Key:      "key",
+			Filename: "video.mp4",
+			Provider: "minio",
+		}
+		storageJSON, _ := json.Marshal(storageInfo)
+		existingStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			Storage:   datatypes.JSON(storageJSON),
+			OwnerID:   userID,
+			Status:    models.StatusUploading,
+		}
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(existingStream, nil)
+		mockStor.EXPECT().
+			UploadPart(
+				ctx,
+				gomock.Any(),
+				uploadID,
+				1,
+				gomock.Any(),
+				gomock.Any(),
+			).
+			Return("etag", nil)
+		req := service.UploadPartRequest{
+			StreamID:   streamID,
+			UserID:     userID,
+			UploadID:   uploadID,
+			PartNumber: 1,
+			Data:       data,
+		}
+		partInfo, err := svc.UploadPart(ctx, req)
+		assert.NoError(t, err)
+		assert.Equal(t, partInfo.PartNumber, req.PartNumber)
+		assert.Equal(t, partInfo.ETag, "etag")
+	})
+
+	t.Run("it is possible only in state of uploading", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor)
+		streamID := uuid.New()
+		userID := uuid.New()
+		uploadID := "UploadID-123"
+		data := strings.NewReader("part 1")
+		storageInfo := models.StreamStorage{
+			UploadID: uploadID,
+			Bucket:   "streams",
+			Key:      "key",
+			Filename: "video.mp4",
+			Provider: "minio",
+		}
+		storageJSON, _ := json.Marshal(storageInfo)
+		existingStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			Storage:   datatypes.JSON(storageJSON),
+			OwnerID:   userID,
+			Status:    models.StatusDraft,
+		}
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(existingStream, nil)
+		req := service.UploadPartRequest{
+			StreamID:   streamID,
+			UserID:     userID,
+			UploadID:   uploadID,
+			PartNumber: 1,
+			Data:       data,
+		}
+		_, err := svc.UploadPart(ctx, req)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot start upload for stream in status: draft")
+	})
+
+	t.Run("repos error propagate", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor)
+		streamID := uuid.New()
+		userID := uuid.New()
+		uploadID := "UploadID-123"
+		data := strings.NewReader("part 1")
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(nil, fmt.Errorf("not found"))
+		req := service.UploadPartRequest{
+			StreamID:   streamID,
+			UserID:     userID,
+			UploadID:   uploadID,
+			PartNumber: 1,
+			Data:       data,
+		}
+		_, err := svc.UploadPart(ctx, req)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("error Unmarshal", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor)
+		streamID := uuid.New()
+		userID := uuid.New()
+		uploadID := "UploadID-123"
+		data := strings.NewReader("part 1")
+		existingStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			Storage:   datatypes.JSON(``),
+			OwnerID:   userID,
+			Status:    models.StatusUploading,
+		}
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(existingStream, nil)
+		req := service.UploadPartRequest{
+			StreamID:   streamID,
+			UserID:     userID,
+			UploadID:   uploadID,
+			PartNumber: 1,
+			Data:       data,
+		}
+		_, err := svc.UploadPart(ctx, req)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "error unmarshaling storage info")
+	})
+
+	t.Run("Mismatch between request Upload ID and storage Upload ID", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor)
+		streamID := uuid.New()
+		userID := uuid.New()
+		uploadID := "UploadID-123"
+		data := strings.NewReader("part 1")
+		req := service.UploadPartRequest{
+			StreamID:   streamID,
+			UserID:     userID,
+			UploadID:   uploadID,
+			PartNumber: 1,
+			Data:       data,
+		}
+		storageInfo := models.StreamStorage{
+			UploadID: "UploadID-321",
+			Bucket:   "streams",
+			Key:      "key",
+			Filename: "video.mp4",
+			Provider: "minio",
+		}
+		storageJSON, _ := json.Marshal(storageInfo)
+		existingStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			Storage:   datatypes.JSON(storageJSON),
+			OwnerID:   userID,
+			Status:    models.StatusUploading,
+		}
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(existingStream, nil)
+		_, err := svc.UploadPart(ctx, req)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "upload id from request not equal upload id from storage info")
+	})
+	t.Run("not a owner", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor)
+		streamID := uuid.New()
+		userID := uuid.New()
+		uploadID := "UploadID-123"
+		data := strings.NewReader("part 1")
+		req := service.UploadPartRequest{
+			StreamID:   streamID,
+			UserID:     userID,
+			UploadID:   uploadID,
+			PartNumber: 1,
+			Data:       data,
+		}
+		storageInfo := models.StreamStorage{
+			UploadID: uploadID,
+			Bucket:   "streams",
+			Key:      "key",
+			Filename: "video.mp4",
+			Provider: "minio",
+		}
+		storageJSON, _ := json.Marshal(storageInfo)
+		existingStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			Storage:   datatypes.JSON(storageJSON),
+			OwnerID:   uuid.New(),
+			Status:    models.StatusUploading,
+		}
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(existingStream, nil)
+		_, err := svc.UploadPart(ctx, req)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not a owner")
+	})
+	t.Run("storag error propagate", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor)
+		streamID := uuid.New()
+		userID := uuid.New()
+		uploadID := "UploadID-123"
+		data := strings.NewReader("part 1")
+		req := service.UploadPartRequest{
+			StreamID:   streamID,
+			UserID:     userID,
+			UploadID:   uploadID,
+			PartNumber: 1,
+			Data:       data,
+		}
+		storageInfo := models.StreamStorage{
+			UploadID: uploadID,
+			Bucket:   "streams",
+			Key:      "key",
+			Filename: "video.mp4",
+			Provider: "minio",
+		}
+		storageJSON, _ := json.Marshal(storageInfo)
+		existingStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			Storage:   datatypes.JSON(storageJSON),
+			OwnerID:   userID,
+			Status:    models.StatusUploading,
+		}
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(existingStream, nil)
+		mockStor.EXPECT().
+			UploadPart(
+				ctx,
+				storageInfo.Key,
+				uploadID,
+				req.PartNumber,
+				req.Data,
+				gomock.Any(),
+			).
+			Return("", fmt.Errorf("storage not ready"))
+		_, err := svc.UploadPart(ctx, req)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "error upload part to strage: storage not ready")
 	})
 }

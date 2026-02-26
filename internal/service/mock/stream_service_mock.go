@@ -237,11 +237,12 @@ func (mr *MockStreamServiceMockRecorder) UpdateStreamStatus(ctx, streamID, statu
 }
 
 // UploadPart mocks base method.
-func (m *MockStreamService) UploadPart(ctx context.Context, req service.UploadPartRequest) error {
+func (m *MockStreamService) UploadPart(ctx context.Context, req service.UploadPartRequest) (*service.PartInfo, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UploadPart", ctx, req)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(*service.PartInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // UploadPart indicates an expected call of UploadPart.
