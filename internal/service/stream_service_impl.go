@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -445,8 +446,13 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID u
 	if err != nil {
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
+
 	if stream.OwnerID != userID {
 		return fmt.Errorf("forbidden: not a owner")
+	}
+
+	if stream.Status != models.StatusUploading {
+		return fmt.Errorf("cannot start upload for stream in status: %s", stream.Status)
 	}
 
 	var storageInfo models.StreamStorage
@@ -454,6 +460,10 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID u
 	if err != nil {
 		return fmt.Errorf("error unmarshaling storage info: %w", err)
 	}
+
+	sort.Slice(parts, func(i, j int) bool {
+		return parts[i].PartNumber < parts[j].PartNumber
+	})
 
 	err = s.storage.CompleteMultipart(
 		ctx,
@@ -468,9 +478,10 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID u
 	storageInfo.UploadID = ""
 	storageJSON, err := json.Marshal(storageInfo)
 	stream.Storage = datatypes.JSON(storageJSON)
+	stream.UpdatedAt = time.Now()
 	err = s.repo.Update(ctx, stream)
 	if err != nil {
-		return fmt.Errorf("error updating stream in repo")
+		return fmt.Errorf("error updating stream: %w", err)
 	}
 	return nil
 }
