@@ -1259,3 +1259,23 @@ func TestStreamServicImpl_UploadPart(t *testing.T) {
 		assert.Contains(t, err.Error(), "error upload part to strage: storage not ready")
 	})
 }
+
+func TestStreamServicImpl_CompleteStreamUpload(t *testing.T) {
+	ctx := context.Background()
+	t.Run("success call", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor)
+		err := svc.CompleteStreamUpload(
+			ctx,
+			streamID,
+			userID,
+			parts,
+		)
+		assert.NoError(t, err)
+	})
+}
