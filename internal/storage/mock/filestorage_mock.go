@@ -16,7 +16,7 @@ import (
 	reflect "reflect"
 	time "time"
 
-	storage "github.com/mrhumster/stream-service/internal/storage"
+	models "github.com/mrhumster/stream-service/internal/domain/models"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -59,7 +59,7 @@ func (mr *MockFileStorageMockRecorder) AbortMultipart(ctx, path, uploadID any) *
 }
 
 // CompleteMultipart mocks base method.
-func (m *MockFileStorage) CompleteMultipart(ctx context.Context, path, uploadID string, parts []storage.MultipartPart) error {
+func (m *MockFileStorage) CompleteMultipart(ctx context.Context, path, uploadID string, parts []models.MultipartPart) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CompleteMultipart", ctx, path, uploadID, parts)
 	ret0, _ := ret[0].(error)

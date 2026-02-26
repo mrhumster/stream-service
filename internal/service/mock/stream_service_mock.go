@@ -60,7 +60,7 @@ func (mr *MockStreamServiceMockRecorder) CanUserAccessStream(ctx, userID, stream
 }
 
 // CompleteStreamUpload mocks base method.
-func (m *MockStreamService) CompleteStreamUpload(ctx context.Context, streamID, userID uuid.UUID, parts []service.PartInfo) error {
+func (m *MockStreamService) CompleteStreamUpload(ctx context.Context, streamID, userID uuid.UUID, parts []models.MultipartPart) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CompleteStreamUpload", ctx, streamID, userID, parts)
 	ret0, _ := ret[0].(error)
@@ -237,10 +237,10 @@ func (mr *MockStreamServiceMockRecorder) UpdateStreamStatus(ctx, streamID, statu
 }
 
 // UploadPart mocks base method.
-func (m *MockStreamService) UploadPart(ctx context.Context, req service.UploadPartRequest) (*service.PartInfo, error) {
+func (m *MockStreamService) UploadPart(ctx context.Context, req service.UploadPartRequest) (*models.MultipartPart, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UploadPart", ctx, req)
-	ret0, _ := ret[0].(*service.PartInfo)
+	ret0, _ := ret[0].(*models.MultipartPart)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

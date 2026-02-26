@@ -69,3 +69,8 @@ type StreamAnalytics struct {
 	Views int64 `json:"views"`
 	Likes int64 `json:"likes"`
 }
+
+type MultipartPart struct {
+	PartNumber int    `json:"part_number"`
+	ETag       string `json:"etag"`
+}

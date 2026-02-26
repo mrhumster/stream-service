@@ -1270,6 +1270,54 @@ func TestStreamServicImpl_CompleteStreamUpload(t *testing.T) {
 		mockStor := mock.NewMockFileStorage(ctrl)
 
 		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor)
+		streamID := uuid.New()
+		userID := uuid.New()
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "part1",
+			},
+			{
+				PartNumber: 2,
+				ETag:       "part2",
+			},
+		}
+		storageInfo := models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "streams",
+			Key:      "key",
+			Filename: "video.mp4",
+			UploadID: "UploadID-123",
+		}
+		storageJSON, _ := json.Marshal(storageInfo)
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			Title:     "Stream one",
+			Status:    models.StatusUploading,
+			Storage:   datatypes.JSON(storageJSON),
+			OwnerID:   userID,
+		}
+		mockStor.EXPECT().
+			CompleteMultipart(
+				ctx,
+				storageInfo.Key,
+				storageInfo.UploadID,
+				parts,
+			).Do(func(_ context.Context, _, _ string, p []models.MultipartPart) {
+			if p[0].PartNumber != 1 {
+				t.Errorf("parts must be sorted by PartNumber")
+			}
+		}).
+			Return(nil)
+		mockRepo.EXPECT().
+			Read(ctx, streamID).
+			Return(expectedStream, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Do(func(_ context.Context, s *models.Stream) {
+			var updatedStorage models.StreamStorage
+			json.Unmarshal(s.Storage, &updatedStorage)
+			assert.Empty(t, updatedStorage.UploadID)
+			assert.Equal(t, models.StatusProcessing, s.Status)
+		}).Return(nil)
 		err := svc.CompleteStreamUpload(
 			ctx,
 			streamID,

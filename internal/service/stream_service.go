@@ -30,9 +30,9 @@ type StreamService interface {
 	UploadVideo(ctx context.Context, req UploadVideoRequest) error
 	GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (*GenerateDownloadURLInfo, error)
 
-	UploadPart(ctx context.Context, req UploadPartRequest) (*PartInfo, error)
+	UploadPart(ctx context.Context, req UploadPartRequest) (*models.MultipartPart, error)
 	StartStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID) (*UploadInfo, error)
-	CompleteStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID, parts []PartInfo) error
+	CompleteStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID, parts []models.MultipartPart) error
 }
 
 type UploadPartRequest struct {

@@ -399,7 +399,7 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid
 	}, nil
 }
 
-func (s *StreamServiceImpl) UploadPart(ctx context.Context, req UploadPartRequest) (*PartInfo, error) {
+func (s *StreamServiceImpl) UploadPart(ctx context.Context, req UploadPartRequest) (*models.MultipartPart, error) {
 	stream, err := s.repo.Read(ctx, req.StreamID)
 	if err != nil {
 		return nil, fmt.Errorf("error read stream from repository: %w", err)
@@ -434,12 +434,43 @@ func (s *StreamServiceImpl) UploadPart(ctx context.Context, req UploadPartReques
 	if err != nil {
 		return nil, fmt.Errorf("error upload part to strage: %w", err)
 	}
-	return &PartInfo{
+	return &models.MultipartPart{
 		PartNumber: req.PartNumber,
 		ETag:       etag,
 	}, nil
 }
 
-func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID, parts []PartInfo) error {
-	return fmt.Errorf("not implemented")
+func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID, parts []models.MultipartPart) error {
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		return fmt.Errorf("error read stream from repository: %w", err)
+	}
+	if stream.OwnerID != userID {
+		return fmt.Errorf("forbidden: not a owner")
+	}
+
+	var storageInfo models.StreamStorage
+	err = json.Unmarshal(stream.Storage, &storageInfo)
+	if err != nil {
+		return fmt.Errorf("error unmarshaling storage info: %w", err)
+	}
+
+	err = s.storage.CompleteMultipart(
+		ctx,
+		storageInfo.Key,
+		storageInfo.UploadID,
+		parts,
+	)
+	if err != nil {
+		return fmt.Errorf("storage error with Multipart: %w", err)
+	}
+	stream.Status = models.StatusProcessing
+	storageInfo.UploadID = ""
+	storageJSON, err := json.Marshal(storageInfo)
+	stream.Storage = datatypes.JSON(storageJSON)
+	err = s.repo.Update(ctx, stream)
+	if err != nil {
+		return fmt.Errorf("error updating stream in repo")
+	}
+	return nil
 }

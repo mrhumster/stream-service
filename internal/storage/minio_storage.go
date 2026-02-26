@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/minio/minio-go/v7"
+	"github.com/mrhumster/stream-service/internal/domain/models"
 )
 
 type MinIOStorage struct {
@@ -133,7 +134,7 @@ func (s *MinIOStorage) UploadPart(ctx context.Context, path, uploadID string, pa
 	return part.ETag, nil
 }
 
-func (s *MinIOStorage) CompleteMultipart(ctx context.Context, path, uploadID string, parts []MultipartPart) error {
+func (s *MinIOStorage) CompleteMultipart(ctx context.Context, path, uploadID string, parts []models.MultipartPart) error {
 	minioParts := make([]minio.CompletePart, len(parts))
 	for i, p := range parts {
 		minioParts[i] = minio.CompletePart{
