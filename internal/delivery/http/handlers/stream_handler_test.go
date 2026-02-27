@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/mrhumster/stream-service/internal/delivery/http/dto/request"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/service"
@@ -103,7 +104,6 @@ func TestStreamHandler_GetStream(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Contains(t, resp["error"], expectedError)
-
 	})
 
 	t.Run("successfull read stream", func(t *testing.T) {
@@ -138,12 +138,10 @@ func TestStreamHandler_GetStream(t *testing.T) {
 	})
 
 	t.Run("invalid user id return errror", func(t *testing.T) {
-
 	})
 }
 
 func TestStreamHandler_CreateStream(t *testing.T) {
-
 	t.Run("propagation validation error", func(t *testing.T) {
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
@@ -169,7 +167,6 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Contains(t, resp["error"], expectedError)
-
 	})
 	t.Run("propagation service error", func(t *testing.T) {
 		router := setupTestRouter()
@@ -197,7 +194,6 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Contains(t, resp["error"], expectedError)
-
 	})
 
 	t.Run("error bind json", func(t *testing.T) {
@@ -385,7 +381,6 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 	})
 
 	t.Run("Validation error", func(t *testing.T) {
-
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
 			c.Set("userID", "00000000-0000-0000-0000-000000000000")
@@ -408,7 +403,6 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 	})
 
 	t.Run("bad user ID type", func(t *testing.T) {
-
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
 			c.Set("userID", 123456)
@@ -431,7 +425,6 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 	})
 
 	t.Run("bad stream ID type", func(t *testing.T) {
-
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
 			c.Set("userID", "00000000-0000-0000-0000-000000000000")
@@ -453,7 +446,6 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 	})
 
 	t.Run("bad json", func(t *testing.T) {
-
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
 			c.Set("userID", "00000000-0000-0000-0000-000000000000")
@@ -803,7 +795,6 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, w.Code)
 		assert.Contains(t, w.Body.String(), "video file required")
 	})
-
 }
 
 func TestStreamHandler_DownloadStream(t *testing.T) {
@@ -905,7 +896,6 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 	})
 
 	t.Run("direct download", func(t *testing.T) {
-
 		router, mockService, _ := setupTest()
 		streamID := uuid.New()
 		mockService.EXPECT().
@@ -1022,22 +1012,22 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 	t.Run("seccesful downalod of stream list with owner", func(t *testing.T) {
 		router, mockService, _ := setupTest()
 		streams := []*models.Stream{
-			&models.Stream{
+			{
 				Title:   "Stream 1",
 				OwnerID: userID,
 				Status:  models.StatusPublished,
 			},
-			&models.Stream{
+			{
 				Title:   "Stream 2",
 				OwnerID: userID,
 				Status:  models.StatusDraft,
 			},
-			&models.Stream{
+			{
 				Title:   "Stream 3",
 				OwnerID: userID,
 				Status:  models.StatusPublished,
 			},
-			&models.Stream{
+			{
 				Title:   "Stream 4",
 				OwnerID: userID,
 				Status:  models.StatusProcessing,
@@ -1096,5 +1086,46 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, w.Code, http.StatusBadRequest)
 		assert.Contains(t, w.Body.String(), "service error")
+	})
+}
+
+func TestStreamHandler_StreamUpload(t *testing.T) {
+	userID := uuid.New()
+	ctx := context.Background()
+	setupTest := func() (*gin.Engine, *servicemock.MockStreamService, *StreamHandler) {
+		router := setupTestRouter()
+		ctrl := gomock.NewController(t)
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.Use(func(c *gin.Context) {
+			c.Set("userID", userID.String())
+			c.Next()
+		})
+		router.POST("/streams/:id/upload/init", handler.InitUpload)
+		router.PUT("/streams/:id/upload/part", handler.PartUpload)
+		router.POST("/streams/:id/upload/complete", handler.CompleteUpload)
+		return router, mockService, handler
+	}
+	t.Run("successful upload partition", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		w := httptest.NewRecorder()
+		streamID := uuid.New()
+		body := request.StartUploadRequest{
+			FileName:    "video.mp4",
+			TotalSize:   int64(100),
+			ContentType: "video/mp4",
+		}
+		uploadInfo := &service.UploadInfo{
+			UploadID: "UploadID-123",
+			StreamID: streamID,
+		}
+
+		mockService.EXPECT().StartStreamUpload(ctx, streamID, userID).Return(uploadInfo, nil)
+		jsonBody, _ := json.Marshal(body)
+		url := fmt.Sprintf("streams/%s/upload/init", streamID.String())
+		req := httptest.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+		router.ServeHTTP(w, req)
+		assert.Equal(t, w.Code, http.StatusOK)
+		assert.Contains(t, w.Body.String(), "upload_id")
 	})
 }

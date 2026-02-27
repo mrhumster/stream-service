@@ -148,7 +148,6 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 	}
 
 	stream, err := h.service.GetStream(c.Request.Context(), streamIDuuid)
-
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		return
@@ -205,14 +204,12 @@ func (h *StreamHandler) UpdateStream(c *gin.Context) {
 	}
 
 	updateRequest, err := req.ToServiceRequest()
-
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		return
 	}
 
 	updatedStream, err := h.service.UpdateStream(c.Request.Context(), streamID, updateRequest)
-
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		return
@@ -241,7 +238,6 @@ func (h *StreamHandler) DeleteStream(c *gin.Context) {
 	param := c.Param("id")
 
 	streamID, err := uuid.Parse(param)
-
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid stream ID in params"))
 		return
@@ -304,7 +300,6 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 func (h *StreamHandler) DownloadStream(c *gin.Context) {
 	streamID := c.Param("id")
 	streamUUID, err := uuid.Parse(streamID)
-
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
@@ -317,7 +312,6 @@ func (h *StreamHandler) DownloadStream(c *gin.Context) {
 	}
 
 	resp, err := response.NewDownloadResponse(serviceResp)
-
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
@@ -345,9 +339,27 @@ func (h *StreamHandler) handleDownloadError(c *gin.Context, err error) {
 	}
 }
 
-// TODO:
-// Как это будет выглядеть в хендлере:
-// Тебе придется разделить загрузку на 3 этапа (3 ручки):
-// POST /stream/:id/upload/init -> возвращает uploadID.
-// PUT /stream/:id/upload/part -> принимает uploadID, partNumber и кусок файла.
-// POST /stream/:id/upload/complete -> финализирует запись в БД.
+func (h *StreamHandler) InitUpload(c *gin.Context) {
+	streamID := c.Param("id")
+	streamUUID, err := uuid.Parse(streamID)
+	if err != nil {
+		h.handleDownloadError(c, err)
+		return
+	}
+
+	var req request.StartUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusNotFound, response.ErrorResponse("not implement"))
+}
+
+func (h *StreamHandler) PartUpload(c *gin.Context) {
+	c.JSON(http.StatusNotFound, response.ErrorResponse("not implement"))
+}
+
+func (h *StreamHandler) CompleteUpload(c *gin.Context) {
+	c.JSON(http.StatusNotFound, response.ErrorResponse("not implement"))
+}
