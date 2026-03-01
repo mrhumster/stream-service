@@ -6,8 +6,9 @@ WORKDIR /app
 COPY go.mod ./ 
 
 RUN if [ -f go.sum ]; then cp go.sum .; fi
-RUN go mod download
+RUN apk add --no-cache git=latest
 COPY . .
+RUN GOSUMDB=off go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build \
   -ldflags="-w -s -X main.version=$VERSION -X main.buildDate=$BUILD_DATE" \
   -o server ./cmd/server/main.go

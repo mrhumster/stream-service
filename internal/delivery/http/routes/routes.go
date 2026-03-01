@@ -9,11 +9,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/delivery/http/handlers"
-	"github.com/mrhumster/stream-service/internal/delivery/http/middleware"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
 	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/web-server-gin/pkg/auth"
+	"github.com/mrhumster/web-server-gin/pkg/middleware"
 	"gorm.io/gorm"
 )
 
@@ -79,15 +79,15 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	r.GET("/stream/:id", streamHandler.GetStream)
 	r.GET("/stream/:id/download", streamHandler.DownloadStream)
 
-	auth := r.Group("/stream")
-	auth.Use(middleware.AuthMiddleware(tokenService))
-	auth.Use(middleware.Authorize("stream", "read", permissionClient))
+	authGroup := r.Group("/stream")
+	authGroup.Use(middleware.AuthMiddleware(tokenService))
+	authGroup.Use(middleware.Authorize(permissionClient, "stream", "read"))
 	{
-		auth.GET("/own", streamHandler.ListStreamOwner)
-		auth.POST("/", middleware.Authorize("stream", "write", permissionClient), streamHandler.CreateStream)
-		auth.PATCH("/:id", middleware.Authorize("stream", "write", permissionClient), streamHandler.UpdateStream)
-		auth.DELETE("/:id", middleware.Authorize("stream", "delete", permissionClient), streamHandler.DeleteStream)
-		auth.POST("/:id/upload", middleware.Authorize("stream", "write", permissionClient), streamHandler.UploadVideo)
+		authGroup.GET("/own", streamHandler.ListStreamOwner)
+		authGroup.POST("/", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.CreateStream)
+		authGroup.PATCH("/:id", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.UpdateStream)
+		authGroup.DELETE("/:id", middleware.Authorize(permissionClient, "stream", "delete"), streamHandler.DeleteStream)
+		authGroup.POST("/:id/upload", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.UploadVideo)
 	}
 	return r, nil
 }
