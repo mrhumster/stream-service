@@ -352,8 +352,8 @@ func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uu
 
 // Multipart upload methods
 
-func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID) (*UploadInfo, error) {
-	stream, err := s.repo.Read(ctx, streamID)
+func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, req StartUploadRequest) (*UploadInfo, error) {
+	stream, err := s.repo.Read(ctx, req.StreamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("stream not found")
@@ -361,7 +361,7 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid
 		return nil, fmt.Errorf("error getting stream: %w", err)
 	}
 
-	if stream.OwnerID != userID {
+	if stream.OwnerID != req.UserID {
 		return nil, fmt.Errorf("forbidden: not a owner")
 	}
 
@@ -370,8 +370,8 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid
 	}
 
 	storageKey := fmt.Sprintf("streams/%s/videos/%s_%s",
-		userID.String(),
-		streamID.String(),
+		req.UserID.String(),
+		req.StreamID.String(),
 		uuid.New().String())
 
 	uID, err := s.storage.InitMultipart(ctx, storageKey)
@@ -383,9 +383,15 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid
 		Bucket:   s.storage.GetBucketName(),
 		Key:      storageKey,
 		UploadID: uID,
+		Filename: req.Filename,
 	}
-	storageJSON, _ := json.Marshal(storageInfo)
-	stream.Storage = datatypes.JSON(storageJSON)
+
+	metadata := models.StreamMetadata{
+		Size: req.TotalSize,
+	}
+
+	stream.SetMetadata(&metadata)
+	stream.SetStorageInfo(&storageInfo)
 	stream.Status = models.StatusUploading
 	stream.UpdatedAt = time.Now()
 
@@ -395,8 +401,8 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, streamID uuid
 		return nil, fmt.Errorf("failed to update stream: %w", err)
 	}
 	return &UploadInfo{
-		UploadID: uID,
-		StreamID: streamID,
+		UploadID: storageInfo.UploadID,
+		StreamID: stream.ID,
 	}, nil
 }
 

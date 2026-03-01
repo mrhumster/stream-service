@@ -862,7 +862,13 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 			assert.Equal(t, models.StatusUploading, s.Status)
 			assert.NotEmpty(t, storageInfo.Key)
 		}).Return(nil)
-		info, err := svc.StartStreamUpload(ctx, streamID, userID)
+		req := service.StartUploadRequest{
+			StreamID:  streamID,
+			UserID:    userID,
+			Filename:  "video.mp4",
+			TotalSize: int64(100),
+		}
+		info, err := svc.StartStreamUpload(ctx, req)
 		assert.NoError(t, err)
 		assert.Equal(t, info.UploadID, uploadID)
 	})
@@ -875,7 +881,13 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
 		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(nil, gorm.ErrRecordNotFound)
-		_, err := svc.StartStreamUpload(ctx, uuid.New(), uuid.New())
+		req := service.StartUploadRequest{
+			StreamID:  uuid.New(),
+			UserID:    uuid.New(),
+			Filename:  "video.mp4",
+			TotalSize: int64(64),
+		}
+		_, err := svc.StartStreamUpload(ctx, req)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not found")
 	})
@@ -887,7 +899,15 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage)
 		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(nil, errors.New("internal error"))
-		_, err := svc.StartStreamUpload(ctx, uuid.New(), uuid.New())
+
+		req := service.StartUploadRequest{
+			StreamID:  uuid.New(),
+			UserID:    uuid.New(),
+			Filename:  "video.mp4",
+			TotalSize: int64(64),
+		}
+		_, err := svc.StartStreamUpload(ctx, req)
+
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "internal error")
 	})
@@ -904,7 +924,13 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 			Title:   "someone else's stream",
 		}
 		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(expectedStream, nil)
-		_, err := svc.StartStreamUpload(ctx, uuid.New(), uuid.New())
+		req := service.StartUploadRequest{
+			StreamID:  uuid.New(),
+			UserID:    uuid.New(),
+			Filename:  "video.mp4",
+			TotalSize: int64(100),
+		}
+		_, err := svc.StartStreamUpload(ctx, req)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "forbidden: not a owner")
 	})
@@ -923,8 +949,14 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 			OwnerID: userID,
 		}
 		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(expectedStream, nil)
+		req := service.StartUploadRequest{
+			StreamID:  uuid.New(),
+			UserID:    userID,
+			Filename:  "video.mp4",
+			TotalSize: int64(64),
+		}
+		_, err := svc.StartStreamUpload(ctx, req)
 
-		_, err := svc.StartStreamUpload(ctx, uuid.New(), userID)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "cannot start upload for stream in status: published")
 	})
@@ -944,7 +976,13 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		}
 		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(expectedStream, nil)
 		mockStorage.EXPECT().InitMultipart(ctx, gomock.Any()).Return("", errors.New("storage not found"))
-		_, err := svc.StartStreamUpload(ctx, uuid.New(), userID)
+		req := service.StartUploadRequest{
+			StreamID:  uuid.New(),
+			UserID:    userID,
+			Filename:  "video.mp4",
+			TotalSize: int64(100),
+		}
+		_, err := svc.StartStreamUpload(ctx, req)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to init storage: storage not found")
 	})
@@ -973,7 +1011,13 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 
 		mockStorage.EXPECT().AbortMultipart(ctx, gomock.Any(), uploadID).Return(nil)
 
-		_, err := svc.StartStreamUpload(ctx, streamID, userID)
+		req := service.StartUploadRequest{
+			StreamID:  streamID,
+			UserID:    userID,
+			Filename:  "vide.mp4",
+			TotalSize: int64(100),
+		}
+		_, err := svc.StartStreamUpload(ctx, req)
 
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to update stream: db connection lost")

@@ -15,17 +15,13 @@ type CreateStreamRequest struct {
 	Tags        []string                `json:"tags"`
 }
 
-func (r *CreateStreamRequest) ToServiceRequest(ownerID string) (service.CreateStreamRequest, error) {
-	id, err := uuid.Parse(ownerID)
-	if err != nil {
-		return service.CreateStreamRequest{}, fmt.Errorf("stream convert error: %w", err)
-	}
+func (r *CreateStreamRequest) ToServiceRequest(ownerID uuid.UUID) (service.CreateStreamRequest, error) {
 	return service.CreateStreamRequest{
 		Title:       r.Title,
 		Description: r.Description,
 		Visibility:  r.Visibility,
 		Tags:        r.Tags,
-		OwnerID:     id,
+		OwnerID:     ownerID,
 	}, nil
 }
 

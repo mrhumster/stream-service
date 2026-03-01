@@ -11,16 +11,12 @@ import (
 
 type VideoUploadRequest struct {
 	StreamID   uuid.UUID             `json:"-"`
-	UserID     string                `json:"-"`
+	UserID     uuid.UUID             `json:"-"`
 	File       multipart.File        `json:"-"`
 	FileHeader *multipart.FileHeader `json:"-"`
 }
 
 func (r *VideoUploadRequest) ToServiceRequest() (*service.UploadVideoRequest, error) {
-	userUUID, err := uuid.Parse(r.UserID)
-	if err != nil {
-		return nil, NewValidationError("invalid user id format")
-	}
 	contentType := r.FileHeader.Header.Get("Content-Type")
 	if !isValidVideoContentType(contentType) {
 		return nil, NewValidationError("invalid video format. allowed: mp4, webm, mov")
@@ -38,7 +34,7 @@ func (r *VideoUploadRequest) ToServiceRequest() (*service.UploadVideoRequest, er
 
 	return &service.UploadVideoRequest{
 		StreamID: r.StreamID,
-		UserID:   userUUID,
+		UserID:   r.UserID,
 		File:     r.File,
 		FileName: filename,
 		Size:     r.FileHeader.Size,

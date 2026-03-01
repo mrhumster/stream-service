@@ -9,7 +9,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/minio/minio-go/v7 v7.0.98
-	github.com/mrhumster/web-server-gin v1.2.6
+	github.com/mrhumster/web-server-gin v1.2.7
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0
 	gorm.io/datatypes v1.2.7

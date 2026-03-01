@@ -3,9 +3,10 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
-	"time"
 )
 
 func (s *Stream) IsDraft() bool {
@@ -41,6 +42,15 @@ func (s *Stream) Publish() error {
 func (s *Stream) Unpublish() {
 	s.Status = StatusReady
 	s.PublishedAt = nil
+}
+
+func (s *Stream) SetStorageInfo(storageInfo *StreamStorage) error {
+	data, err := json.Marshal(storageInfo)
+	if err != nil {
+		return err
+	}
+	s.Storage = datatypes.JSON(data)
+	return nil
 }
 
 func (s *Stream) GetMetadata() (*StreamMetadata, error) {

@@ -179,18 +179,18 @@ func (mr *MockStreamServiceMockRecorder) PublishStream(ctx, streamID any) *gomoc
 }
 
 // StartStreamUpload mocks base method.
-func (m *MockStreamService) StartStreamUpload(ctx context.Context, streamID, userID uuid.UUID) (*service.UploadInfo, error) {
+func (m *MockStreamService) StartStreamUpload(ctx context.Context, req service.StartUploadRequest) (*service.UploadInfo, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StartStreamUpload", ctx, streamID, userID)
+	ret := m.ctrl.Call(m, "StartStreamUpload", ctx, req)
 	ret0, _ := ret[0].(*service.UploadInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // StartStreamUpload indicates an expected call of StartStreamUpload.
-func (mr *MockStreamServiceMockRecorder) StartStreamUpload(ctx, streamID, userID any) *gomock.Call {
+func (mr *MockStreamServiceMockRecorder) StartStreamUpload(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartStreamUpload", reflect.TypeOf((*MockStreamService)(nil).StartStreamUpload), ctx, streamID, userID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartStreamUpload", reflect.TypeOf((*MockStreamService)(nil).StartStreamUpload), ctx, req)
 }
 
 // UnpublishStream mocks base method.

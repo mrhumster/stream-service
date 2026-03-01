@@ -23,18 +23,7 @@ func NewStreamHandler(service service.StreamService) *StreamHandler {
 }
 
 func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
-	userID, exists := c.Get("userID")
-
-	if !exists {
-		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authorized"))
-		return
-	}
-
-	userUUID, err := uuid.Parse(userID.(string))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("error parsing user id"))
-		return
-	}
+	userUUID := c.MustGet("user").(uuid.UUID)
 
 	var filter repository.StreamFilter
 	streams, total, err := h.service.ListUserStreams(c.Request.Context(), userUUID)
@@ -103,17 +92,7 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 }
 
 func (h *StreamHandler) CreateStream(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
-		return
-	}
-
-	userIDStr, ok := userID.(string)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
-		return
-	}
+	userUUID := c.MustGet("user").(uuid.UUID)
 
 	var req request.CreateStreamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -121,7 +100,7 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 		return
 	}
 
-	serviceReq, err := req.ToServiceRequest(userIDStr)
+	serviceReq, err := req.ToServiceRequest(userUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
 		return
@@ -154,13 +133,7 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 	}
 
 	if stream.Visibility != models.VisibilityPublic {
-		userID, exists := c.Get("userID")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
-			return
-		}
-
-		_, ok := userID.(string)
+		_, ok := c.MustGet("user").(uuid.UUID)
 
 		if !ok {
 			c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
@@ -174,23 +147,8 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 }
 
 func (h *StreamHandler) UpdateStream(c *gin.Context) {
-	userID, exists := c.Get("userID")
-
-	if !exists {
-		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
-		return
-	}
-
-	_, ok := userID.(string)
-
-	if !ok {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
-		return
-	}
-
-	paramID := c.Param("id")
-
-	streamID, err := uuid.Parse(paramID)
+	val := c.Param("id")
+	streamUUID, err := uuid.Parse(val)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid stream ID in params"))
 		return
@@ -209,7 +167,7 @@ func (h *StreamHandler) UpdateStream(c *gin.Context) {
 		return
 	}
 
-	updatedStream, err := h.service.UpdateStream(c.Request.Context(), streamID, updateRequest)
+	updatedStream, err := h.service.UpdateStream(c.Request.Context(), streamUUID, updateRequest)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		return
@@ -221,22 +179,7 @@ func (h *StreamHandler) UpdateStream(c *gin.Context) {
 }
 
 func (h *StreamHandler) DeleteStream(c *gin.Context) {
-	userID, exists := c.Get("userID")
-
-	if !exists {
-		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
-		return
-	}
-
-	_, ok := userID.(string)
-
-	if !ok {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
-		return
-	}
-
 	param := c.Param("id")
-
 	streamID, err := uuid.Parse(param)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid stream ID in params"))
@@ -248,16 +191,7 @@ func (h *StreamHandler) DeleteStream(c *gin.Context) {
 }
 
 func (h *StreamHandler) UploadVideo(c *gin.Context) {
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, response.ErrorResponse("user not authenticated"))
-		return
-	}
-	userIDStr, ok := userID.(string)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID"))
-		return
-	}
+	userUUID := c.MustGet("user").(uuid.UUID)
 	streamID := c.Param("id")
 	streamUUID, err := uuid.Parse(streamID)
 	if err != nil {
@@ -273,7 +207,7 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 
 	uploadReq := &request.VideoUploadRequest{
 		StreamID:   streamUUID,
-		UserID:     userIDStr,
+		UserID:     userUUID,
 		File:       file,
 		FileHeader: fileHeader,
 	}
@@ -340,20 +274,38 @@ func (h *StreamHandler) handleDownloadError(c *gin.Context, err error) {
 }
 
 func (h *StreamHandler) InitUpload(c *gin.Context) {
-	streamID := c.Param("id")
-	streamUUID, err := uuid.Parse(streamID)
+	val := c.Param("id")
+	streamUUID, err := uuid.Parse(val)
 	if err != nil {
-		h.handleDownloadError(c, err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		return
 	}
 
 	var req request.StartUploadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		h.handleDownloadError(c, err)
+		return
+	}
+
+	userUUID := c.MustGet("user").(uuid.UUID)
+
+	serviceReq := req.ToService(streamUUID, userUUID)
+
+	uploadInfo, err := h.service.StartStreamUpload(
+		c.Request.Context(),
+		*serviceReq,
+	)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusNotFound, response.ErrorResponse("not implement"))
+	resp := response.StartUploadResponse{
+		StreamID: uploadInfo.StreamID.String(),
+		UploadID: uploadInfo.UploadID,
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *StreamHandler) PartUpload(c *gin.Context) {
