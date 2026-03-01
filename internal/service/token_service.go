@@ -11,7 +11,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/mrhumster/stream-service/config"
-	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/web-server-gin/pkg/dto"
 )
 
@@ -58,7 +57,7 @@ func NewTokenService(cfg *config.JWT) (*TokenService, error) {
 }
 
 func (s *TokenService) ValidateAccessToken(tokenString string) (*dto.AccessClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &models.AccessClaims{}, func(token *jwt.Token) (any, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &dto.AccessClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
