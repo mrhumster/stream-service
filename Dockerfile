@@ -1,12 +1,11 @@
 FROM golang:1.25-alpine AS builder
-ARG VERSION=0.1
-ARG BUILD_DATE=07.11.2025
+ARG VERSION=1.1.2
+ARG BUILD_DATE=02.03.2026
 
 WORKDIR /app
 COPY go.mod ./ 
 
 RUN if [ -f go.sum ]; then cp go.sum .; fi
-RUN apk add --no-cache git
 COPY . .
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build \
