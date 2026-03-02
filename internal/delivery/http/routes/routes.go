@@ -29,7 +29,10 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 		err error
 	)
 
-	r := gin.Default()
+	r := gin.New()
+	r.Use(middleware.StructuredLog())
+	r.Use(gin.Recovery())
+
 	switch mode {
 	case ModeTest:
 		gin.SetMode(gin.TestMode)
@@ -76,8 +79,8 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	})
 
 	r.GET("/stream", streamHandler.ListStreamPublic)
-	r.GET("/stream/:id", streamHandler.GetStream)
-	r.GET("/stream/:id/download", streamHandler.DownloadStream)
+	r.GET("/stream/:id", middleware.OptionalAuthMiddleware(tokenService), streamHandler.GetStream)
+	r.GET("/stream/:id/download", middleware.OptionalAuthMiddleware(tokenService), streamHandler.DownloadStream)
 
 	authGroup := r.Group("/stream")
 	authGroup.Use(middleware.AuthMiddleware(tokenService))

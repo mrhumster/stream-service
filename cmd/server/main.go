@@ -23,12 +23,9 @@ func main() {
 	}
 
 	fileMinIOStorage, err := storage.NewMinIOStorageFromConfig(cfg.MinIO)
-
 	if err != nil {
 		log.Fatalf("❌  Error create file storage: %v", err)
 	}
-
-	ctx := context.Background()
 
 	db, err := database.SetupDatabase(cfg)
 	if err != nil {
@@ -42,7 +39,6 @@ func main() {
 	}
 
 	r, err := routes.SetupRoutes(db, mode, permissionClient, fileMinIOStorage)
-
 	if err != nil {
 		log.Fatalf("❌ Error gin route: %v", err)
 	}
