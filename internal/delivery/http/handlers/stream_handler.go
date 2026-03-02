@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -309,7 +310,35 @@ func (h *StreamHandler) InitUpload(c *gin.Context) {
 }
 
 func (h *StreamHandler) PartUpload(c *gin.Context) {
-	c.JSON(http.StatusNotFound, response.ErrorResponse("not implement"))
+	userUUID := c.MustGet("user").(uuid.UUID)
+	val := c.Param("id")
+	streamUUID, err := uuid.Parse(val)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+	var req request.UploadPartRequest
+	if err = c.ShouldBind(&req); err != nil {
+		fmt.Printf("Binding error: %v\n", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+	reqService, err := req.ToService(streamUUID, userUUID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	part, err := h.service.UploadPart(c.Request.Context(), *reqService)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+	resp := response.PartUploadResponse{
+		PartNumber: part.PartNumber,
+		ETag:       part.ETag,
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *StreamHandler) CompleteUpload(c *gin.Context) {

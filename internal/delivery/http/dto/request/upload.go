@@ -1,6 +1,8 @@
 package request
 
 import (
+	"mime/multipart"
+
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/service"
 )
@@ -18,4 +20,26 @@ func (s *StartUploadRequest) ToService(streamID, userID uuid.UUID) *service.Star
 		Filename:  s.FileName,
 		TotalSize: s.TotalSize,
 	}
+}
+
+type UploadPartRequest struct {
+	UploadID   string                `form:"uploadID" binding:"required"`
+	Partnumber int                   `form:"partNumber" binding:"required,gt=0"`
+	Video      *multipart.FileHeader `form:"video" binding:"required"`
+}
+
+func (r *UploadPartRequest) ToService(streamUUID, userUUID uuid.UUID) (*service.UploadPartRequest, error) {
+	file, err := r.Video.Open()
+	if err != nil {
+		return nil, err
+	}
+
+	return &service.UploadPartRequest{
+		StreamID:   streamUUID,
+		UserID:     userUUID,
+		UploadID:   r.UploadID,
+		PartNumber: r.Partnumber,
+		Data:       file,
+		Size:       r.Video.Size,
+	}, nil
 }

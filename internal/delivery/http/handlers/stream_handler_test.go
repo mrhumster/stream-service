@@ -1038,6 +1038,77 @@ func TestStreamHandler_StreamUpload(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "upload_id")
 	})
 
-	t.Run("succesfull upload part", func(t *testing.T) {
+	t.Run("init upload bad stream uuid", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		streamID := "1234"
+
+		body := request.StartUploadRequest{
+			FileName:    "video.mp4",
+			TotalSize:   int64(100),
+			ContentType: "video/mp4",
+		}
+		jsonBody, _ := json.Marshal(body)
+		url := fmt.Sprintf("/streams/%s/upload/init", streamID)
+		req := httptest.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+		router.ServeHTTP(w, req)
+		assert.Equal(t, w.Code, http.StatusBadRequest)
+		assert.Contains(t, w.Body.String(), "invalid UUID")
+	})
+
+	t.Run("init upload error bind json", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		streamID := uuid.New()
+		url := fmt.Sprintf("/streams/%s/upload/init", streamID)
+		req := httptest.NewRequest("POST", url, bytes.NewBuffer([]byte{'s'}))
+		router.ServeHTTP(w, req)
+		assert.Equal(t, w.Code, http.StatusBadRequest)
+		assert.Contains(t, w.Body.String(), "invalid character")
+	})
+
+	t.Run("init upload service error", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		w := httptest.NewRecorder()
+		streamID := uuid.New()
+		body := request.StartUploadRequest{
+			FileName:    "video.mp4",
+			TotalSize:   int64(100),
+			ContentType: "video/mp4",
+		}
+
+		serviceReq := body.ToService(streamID, userID)
+
+		mockService.EXPECT().
+			StartStreamUpload(
+				ctx,
+				*serviceReq).
+			Return(nil, fmt.Errorf("service error"))
+		jsonBody, _ := json.Marshal(body)
+		url := fmt.Sprintf("/streams/%s/upload/init", streamID.String())
+		req := httptest.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+		router.ServeHTTP(w, req)
+		assert.Equal(t, w.Code, http.StatusInternalServerError)
+		assert.Contains(t, w.Body.String(), "service error")
+	})
+
+	t.Run("part upload successfull", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		_ = writer.WriteField("uploadID", "UploadID-123")
+		_ = writer.WriteField("partNumber", "1")
+		part, _ := writer.CreateFormFile("video", "chunk.mp4")
+		part.Write([]byte("fake-video-data"))
+		writer.Close()
+		mockService.EXPECT().UploadPart(ctx, gomock.Any()).Return(&models.MultipartPart{
+			PartNumber: 1, ETag: "qwerty",
+		}, nil)
+		url := fmt.Sprintf("/streams/%s/upload/part", uuid.New())
+		req := httptest.NewRequest("PUT", url, body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
 	})
 }
