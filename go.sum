@@ -117,8 +117,6 @@ github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/reflect2 v1.0.2 h1:xBagoLtFs94CBntxluKeaWgTMpvLxC4ur3nMaC9Gz0M=
 github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
-github.com/mrhumster/web-server-gin v1.2.11 h1:7PXc6C9clNqfC0/2b+Xex2TL0ozwmtbcTJ36T/Kp3g0=
-github.com/mrhumster/web-server-gin v1.2.11/go.mod h1:0b7Lwro/WbWuRbUFmwl/PtUwzqJuHUH30QpbI7RtjUA=
 github.com/mrhumster/web-server-gin v1.2.12 h1:ujwXGft9ZtoisEmyzmYhZv9xTwXZlu4cdf3tLw2J4C4=
 github.com/mrhumster/web-server-gin v1.2.12/go.mod h1:0b7Lwro/WbWuRbUFmwl/PtUwzqJuHUH30QpbI7RtjUA=
 github.com/pelletier/go-toml/v2 v2.2.4 h1:mye9XuhQ6gvn5h28+VilKrrPoQVanw5PMw/TB0t5Ec4=
