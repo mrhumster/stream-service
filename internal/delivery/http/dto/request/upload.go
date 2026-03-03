@@ -1,6 +1,7 @@
 package request
 
 import (
+	"fmt"
 	"mime/multipart"
 
 	"github.com/google/uuid"
@@ -32,6 +33,14 @@ func (r *UploadPartRequest) ToService(streamUUID, userUUID uuid.UUID) (*service.
 	file, err := r.Video.Open()
 	if err != nil {
 		return nil, err
+	}
+
+	if streamUUID == uuid.Nil {
+		return nil, fmt.Errorf("StreamUUID can not be nil")
+	}
+
+	if userUUID == uuid.Nil {
+		return nil, fmt.Errorf("UserUUID can not be nil")
 	}
 
 	return &service.UploadPartRequest{
