@@ -323,6 +323,7 @@ func (h *StreamHandler) PartUpload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		return
 	}
+	fmt.Printf("File Name: %s, Size: %d\n", req.Video.Filename, req.Video.Size)
 	reqService, err := req.ToService(streamUUID, userUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
