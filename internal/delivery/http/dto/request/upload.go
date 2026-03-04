@@ -5,6 +5,7 @@ import (
 	"mime/multipart"
 
 	"github.com/google/uuid"
+	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/service"
 )
 
@@ -50,5 +51,25 @@ func (r *UploadPartRequest) ToService(streamUUID, userUUID uuid.UUID) (*service.
 		PartNumber: r.Partnumber,
 		Data:       file,
 		Size:       r.Video.Size,
+	}, nil
+}
+
+type CompleteUploadRequest struct {
+	Parts []models.MultipartPart `json:"parts" binding:"required,min=1,dive"`
+}
+
+func (r *CompleteUploadRequest) ToService(streamUUID, userUUID uuid.UUID) (*service.CompleteStreamUploadRequest, error) {
+	if streamUUID == uuid.Nil {
+		return nil, fmt.Errorf("StreamUUID can not be nil")
+	}
+
+	if userUUID == uuid.Nil {
+		return nil, fmt.Errorf("UserUUID can not be nil")
+	}
+
+	return &service.CompleteStreamUploadRequest{
+		UserID:   userUUID,
+		StreamID: streamUUID,
+		Parts:    r.Parts,
 	}, nil
 }

@@ -32,7 +32,13 @@ type StreamService interface {
 
 	UploadPart(ctx context.Context, req UploadPartRequest) (*models.MultipartPart, error)
 	StartStreamUpload(ctx context.Context, req StartUploadRequest) (*UploadInfo, error)
-	CompleteStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID, parts []models.MultipartPart) error
+	CompleteStreamUpload(ctx context.Context, req CompleteStreamUploadRequest) error
+}
+
+type CompleteStreamUploadRequest struct {
+	StreamID uuid.UUID
+	UserID   uuid.UUID
+	Parts    []models.MultipartPart
 }
 
 type UploadPartRequest struct {

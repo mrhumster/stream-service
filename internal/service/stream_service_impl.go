@@ -447,13 +447,13 @@ func (s *StreamServiceImpl) UploadPart(ctx context.Context, req UploadPartReques
 	}, nil
 }
 
-func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID uuid.UUID, userID uuid.UUID, parts []models.MultipartPart) error {
-	stream, err := s.repo.Read(ctx, streamID)
+func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req CompleteStreamUploadRequest) error {
+	stream, err := s.repo.Read(ctx, req.StreamID)
 	if err != nil {
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
 
-	if stream.OwnerID != userID {
+	if stream.OwnerID != req.UserID {
 		return fmt.Errorf("forbidden: not a owner")
 	}
 
@@ -467,22 +467,22 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, streamID u
 		return fmt.Errorf("error unmarshaling storage info: %w", err)
 	}
 
-	sort.Slice(parts, func(i, j int) bool {
-		return parts[i].PartNumber < parts[j].PartNumber
+	sort.Slice(req.Parts, func(i, j int) bool {
+		return req.Parts[i].PartNumber < req.Parts[j].PartNumber
 	})
 
 	err = s.storage.CompleteMultipart(
 		ctx,
 		storageInfo.Key,
 		storageInfo.UploadID,
-		parts,
+		req.Parts,
 	)
 	if err != nil {
 		return fmt.Errorf("storage error with Multipart: %w", err)
 	}
 	stream.Status = models.StatusProcessing
 	storageInfo.UploadID = ""
-	storageJSON, err := json.Marshal(storageInfo)
+	storageJSON, _ := json.Marshal(storageInfo)
 	stream.Storage = datatypes.JSON(storageJSON)
 	stream.UpdatedAt = time.Now()
 	err = s.repo.Update(ctx, stream)

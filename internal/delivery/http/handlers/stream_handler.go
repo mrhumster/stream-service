@@ -342,5 +342,34 @@ func (h *StreamHandler) PartUpload(c *gin.Context) {
 }
 
 func (h *StreamHandler) CompleteUpload(c *gin.Context) {
-	c.JSON(http.StatusNotFound, response.ErrorResponse("not implement"))
+	userUUID := c.MustGet("user").(uuid.UUID)
+	val := c.Param("id")
+	streamUUID, err := uuid.Parse(val)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	var req request.CompleteUploadRequest
+	if err = c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	reqService, err := req.ToService(streamUUID, userUUID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+	if err := h.service.CompleteStreamUpload(c.Request.Context(), *reqService); err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	if err = h.service.UpdateStreamStatus(c.Request.Context(), streamUUID, models.StatusProcessing); err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }

@@ -1362,12 +1362,12 @@ func TestStreamServicImpl_CompleteStreamUpload(t *testing.T) {
 			assert.Empty(t, updatedStorage.UploadID)
 			assert.Equal(t, models.StatusProcessing, s.Status)
 		}).Return(nil)
-		err := svc.CompleteStreamUpload(
-			ctx,
-			streamID,
-			userID,
-			parts,
-		)
+		req := service.CompleteStreamUploadRequest{
+			StreamID: streamID,
+			UserID:   userID,
+			Parts:    parts,
+		}
+		err := svc.CompleteStreamUpload(ctx, req)
 		assert.NoError(t, err)
 	})
 }

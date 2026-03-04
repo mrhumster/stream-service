@@ -60,17 +60,17 @@ func (mr *MockStreamServiceMockRecorder) CanUserAccessStream(ctx, userID, stream
 }
 
 // CompleteStreamUpload mocks base method.
-func (m *MockStreamService) CompleteStreamUpload(ctx context.Context, streamID, userID uuid.UUID, parts []models.MultipartPart) error {
+func (m *MockStreamService) CompleteStreamUpload(ctx context.Context, req service.CompleteStreamUploadRequest) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CompleteStreamUpload", ctx, streamID, userID, parts)
+	ret := m.ctrl.Call(m, "CompleteStreamUpload", ctx, req)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CompleteStreamUpload indicates an expected call of CompleteStreamUpload.
-func (mr *MockStreamServiceMockRecorder) CompleteStreamUpload(ctx, streamID, userID, parts any) *gomock.Call {
+func (mr *MockStreamServiceMockRecorder) CompleteStreamUpload(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteStreamUpload", reflect.TypeOf((*MockStreamService)(nil).CompleteStreamUpload), ctx, streamID, userID, parts)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteStreamUpload", reflect.TypeOf((*MockStreamService)(nil).CompleteStreamUpload), ctx, req)
 }
 
 // CreateStream mocks base method.

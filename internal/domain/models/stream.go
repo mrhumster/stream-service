@@ -71,6 +71,6 @@ type StreamAnalytics struct {
 }
 
 type MultipartPart struct {
-	PartNumber int    `json:"part_number"`
-	ETag       string `json:"etag"`
+	PartNumber int    `json:"part_number" binding:"required,gt=0"`
+	ETag       string `json:"etag" binding:"required"`
 }

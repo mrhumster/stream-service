@@ -1004,9 +1004,9 @@ func TestStreamHandler_StreamUpload(t *testing.T) {
 			c.Set("user", userID)
 			c.Next()
 		})
+		router.POST("/streams/:id/upload/complete", handler.CompleteUpload)
 		router.POST("/streams/:id/upload/init", handler.InitUpload)
 		router.PUT("/streams/:id/upload/part", handler.PartUpload)
-		router.POST("/streams/:id/upload/complete", handler.CompleteUpload)
 		return router, mockService, handler
 	}
 	t.Run("successful upload partition", func(t *testing.T) {
@@ -1168,6 +1168,124 @@ func TestStreamHandler_StreamUpload(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "service error")
+	})
+	t.Run("complete upload successfull", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().CompleteStreamUpload(ctx, gomock.Any()).Return(nil)
+		mockService.EXPECT().UpdateStreamStatus(ctx, gomock.Any(), models.StatusProcessing).Return(nil)
+		w := httptest.NewRecorder()
+		streamID := uuid.New()
+		url := fmt.Sprintf("/streams/%s/upload/complete", streamID.String())
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "tag1",
+			},
+			{
+				PartNumber: 2,
+				ETag:       "tag2",
+			},
+		}
+		body := request.CompleteUploadRequest{
+			Parts: parts,
+		}
+		bodyJSON, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyJSON))
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNoContent, w.Code)
+	})
+	t.Run("complete upload bad stream uuid", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		url := fmt.Sprintf("/streams/%s/upload/complete", "111")
+		req := httptest.NewRequest("POST", url, bytes.NewBuffer([]byte(`s`)))
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "invalid UUID")
+	})
+	t.Run("complete upload bad bind json", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		url := fmt.Sprintf("/streams/%s/upload/complete", uuid.New())
+		req := httptest.NewRequest("POST", url, bytes.NewBuffer([]byte(`s`)))
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "invalid character")
+	})
+	t.Run("complete upload validation error", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		url := fmt.Sprintf("/streams/%s/upload/complete", uuid.Nil)
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "tag1",
+			},
+			{
+				PartNumber: 2,
+				ETag:       "tag2",
+			},
+		}
+		body := request.CompleteUploadRequest{
+			Parts: parts,
+		}
+		bodyJSON, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyJSON))
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "StreamUUID can not be nil")
+	})
+	t.Run("complete upload service error CompleteStreamUpload", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().CompleteStreamUpload(ctx, gomock.Any()).Return(fmt.Errorf("service error"))
+		w := httptest.NewRecorder()
+		streamID := uuid.New()
+		url := fmt.Sprintf("/streams/%s/upload/complete", streamID.String())
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "tag1",
+			},
+			{
+				PartNumber: 2,
+				ETag:       "tag2",
+			},
+		}
+		body := request.CompleteUploadRequest{
+			Parts: parts,
+		}
+		bodyJSON, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyJSON))
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), "service error")
+	})
+
+	t.Run("complete upload service error UpdateStreamStatus", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().CompleteStreamUpload(ctx, gomock.Any()).Return(nil)
+		mockService.EXPECT().UpdateStreamStatus(ctx, gomock.Any(), models.StatusProcessing).Return(fmt.Errorf("service error"))
+		w := httptest.NewRecorder()
+		streamID := uuid.New()
+		url := fmt.Sprintf("/streams/%s/upload/complete", streamID.String())
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "tag1",
+			},
+			{
+				PartNumber: 2,
+				ETag:       "tag2",
+			},
+		}
+		body := request.CompleteUploadRequest{
+			Parts: parts,
+		}
+		bodyJSON, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyJSON))
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
 		assert.Contains(t, w.Body.String(), "service error")
 	})
 }
