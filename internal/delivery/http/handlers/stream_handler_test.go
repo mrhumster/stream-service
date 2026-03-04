@@ -1173,7 +1173,6 @@ func TestStreamHandler_StreamUpload(t *testing.T) {
 	t.Run("complete upload successfull", func(t *testing.T) {
 		router, mockService, _ := setupTest()
 		mockService.EXPECT().CompleteStreamUpload(ctx, gomock.Any()).Return(nil)
-		mockService.EXPECT().UpdateStreamStatus(ctx, gomock.Any(), models.StatusProcessing).Return(nil)
 		w := httptest.NewRecorder()
 		streamID := uuid.New()
 		url := fmt.Sprintf("/streams/%s/upload/complete", streamID.String())
@@ -1239,33 +1238,6 @@ func TestStreamHandler_StreamUpload(t *testing.T) {
 	t.Run("complete upload service error CompleteStreamUpload", func(t *testing.T) {
 		router, mockService, _ := setupTest()
 		mockService.EXPECT().CompleteStreamUpload(ctx, gomock.Any()).Return(fmt.Errorf("service error"))
-		w := httptest.NewRecorder()
-		streamID := uuid.New()
-		url := fmt.Sprintf("/streams/%s/upload/complete", streamID.String())
-		parts := []models.MultipartPart{
-			{
-				PartNumber: 1,
-				ETag:       "tag1",
-			},
-			{
-				PartNumber: 2,
-				ETag:       "tag2",
-			},
-		}
-		body := request.CompleteUploadRequest{
-			Parts: parts,
-		}
-		bodyJSON, _ := json.Marshal(body)
-		req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyJSON))
-		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusInternalServerError, w.Code)
-		assert.Contains(t, w.Body.String(), "service error")
-	})
-
-	t.Run("complete upload service error UpdateStreamStatus", func(t *testing.T) {
-		router, mockService, _ := setupTest()
-		mockService.EXPECT().CompleteStreamUpload(ctx, gomock.Any()).Return(nil)
-		mockService.EXPECT().UpdateStreamStatus(ctx, gomock.Any(), models.StatusProcessing).Return(fmt.Errorf("service error"))
 		w := httptest.NewRecorder()
 		streamID := uuid.New()
 		url := fmt.Sprintf("/streams/%s/upload/complete", streamID.String())

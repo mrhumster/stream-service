@@ -184,15 +184,39 @@ func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUI
 }
 
 func (s *StreamServiceImpl) PublishStream(ctx context.Context, streamID uuid.UUID) error {
-	return fmt.Errorf("not implemented")
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		return fmt.Errorf("error read stream from repo: %w", err)
+	}
+	stream.Status = models.StatusPublished
+	if err = s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	return nil
 }
 
 func (s *StreamServiceImpl) UnpublishStream(ctx context.Context, streamID uuid.UUID) error {
-	return fmt.Errorf("not implemented")
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		return fmt.Errorf("error read stream from repo: %w", err)
+	}
+	stream.Status = models.StatusDraft
+	if err = s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	return nil
 }
 
 func (s *StreamServiceImpl) UpdateStreamStatus(ctx context.Context, streamID uuid.UUID, status models.StreamStatus) error {
-	return fmt.Errorf("not implemented")
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		return fmt.Errorf("error read stream from repo: %w", err)
+	}
+	stream.Status = status
+	if err = s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	return nil
 }
 
 func (s *StreamServiceImpl) CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error) {
@@ -471,23 +495,20 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 		return req.Parts[i].PartNumber < req.Parts[j].PartNumber
 	})
 
-	err = s.storage.CompleteMultipart(
-		ctx,
-		storageInfo.Key,
-		storageInfo.UploadID,
-		req.Parts,
-	)
-	if err != nil {
+	if err = s.storage.CompleteMultipart(ctx, storageInfo.Key, storageInfo.UploadID, req.Parts); err != nil {
 		return fmt.Errorf("storage error with Multipart: %w", err)
 	}
-	stream.Status = models.StatusProcessing
+
 	storageInfo.UploadID = ""
-	storageJSON, _ := json.Marshal(storageInfo)
-	stream.Storage = datatypes.JSON(storageJSON)
-	stream.UpdatedAt = time.Now()
-	err = s.repo.Update(ctx, stream)
-	if err != nil {
-		return fmt.Errorf("error updating stream: %w", err)
+	stream.Status = models.StatusProcessing
+
+	if err = stream.SetStorageInfo(&storageInfo); err != nil {
+		return err
 	}
+
+	if err = s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error with update stream in repo: %w", err)
+	}
+
 	return nil
 }

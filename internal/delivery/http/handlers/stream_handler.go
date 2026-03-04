@@ -323,7 +323,6 @@ func (h *StreamHandler) PartUpload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		return
 	}
-	fmt.Printf("File Name: %s, Size: %d\n", req.Video.Filename, req.Video.Size)
 	reqService, err := req.ToService(streamUUID, userUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
@@ -363,11 +362,6 @@ func (h *StreamHandler) CompleteUpload(c *gin.Context) {
 		return
 	}
 	if err := h.service.CompleteStreamUpload(c.Request.Context(), *reqService); err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
-		return
-	}
-
-	if err = h.service.UpdateStreamStatus(c.Request.Context(), streamUUID, models.StatusProcessing); err != nil {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
 		return
 	}
