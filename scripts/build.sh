@@ -1,7 +1,7 @@
 #!/bin/bash
 VER=$1
 if [ -z "$1" ]; then
-  VER=$(git rev-parse HEAD)
+  VER=$(git describe --tags --always)
 fi
 PROJECTDIR=/home/xomrkob/projects/stream-service/
 echo "🔨 docker build..."
