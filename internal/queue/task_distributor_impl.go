@@ -21,6 +21,7 @@ func NewAsyncDistributor(redisOpt asynq.RedisClientOpt) TaskDistributor {
 }
 
 func (d *AsyncDistributor) DistributeVideoTranscoding(ctx context.Context, streamUUID uuid.UUID, inputPath string) error {
+	slog.Info("🚀 new task")
 	payload, err := json.Marshal(VideoTranscodingPayload{
 		StreamUUID: streamUUID,
 		InputPath:  inputPath,

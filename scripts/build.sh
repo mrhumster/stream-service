@@ -34,8 +34,10 @@ echo "👷🏻‍♂️ k8s update image..."
 kubectl -n go-app set image deployment/stream stream=xomrkob/stream:$VER
 
 if [ $? -eq 0 ]; then
-  echo "🟢 Image update  success"
+  echo "🟢 Image update success: ver=${VER}"
 else
   echo "🔴 K8s update failed. Exited."
   exit 1
 fi
+kubectl -n go-app rollout restart deployment/stream
+kubectl -n go-app rollout status deployment/stream
