@@ -57,14 +57,14 @@ func main() {
 	}()
 
 	srv := &http.Server{
-		Addr:         cfg.ServerAddr,
+		Addr:         cfg.Server.ServerAddr,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 	go func() {
-		log.Printf("🚀 Server starting on %s\n", cfg.ServerAddr)
+		log.Printf("🚀 Server starting on %s\n", cfg.Server.ServerAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal("🔴 Server error: ", err)
 			httpErr <- err

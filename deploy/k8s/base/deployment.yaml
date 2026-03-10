@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: stream
-          image: xomrkob/stream:0.1.1-b114e8e96938535259258fa2ff2192aa38d02696
+          image: xomrkob/stream:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -76,6 +76,13 @@ spec:
                 secretKeyRef:
                   name: minio-credentials
                   key: MINIO_SECRET_KEY
+            - name: REDIS_ADDR
+              value: casbin-redis-master:6379
+            - name: REDIS_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: casbin-redis
+                  key: redis-password
 
           resources:
             requests:

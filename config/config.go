@@ -8,10 +8,16 @@ import (
 )
 
 type Config struct {
-	Server
-	Database
-	JWT
-	MinIO
+	Server   Server
+	Database Database
+	JWT      JWT
+	MinIO    MinIO
+	Redis    Redis
+}
+
+type Redis struct {
+	Addr     string
+	Password string
 }
 
 type Server struct {
@@ -70,13 +76,16 @@ func LoadConfig() (*Config, error) {
 			UseSSL:          useSSL,
 			Region:          getEnv("MINIO_REGION", "ru-east-1"),
 		},
+		Redis: Redis{
+			Addr:     getEnv("REDIS_ADDR", "localhost"),
+			Password: getEnv("REDIS_PASS", ""),
+		},
 	}, nil
 }
 
 func TestConfig() (*Config, error) {
 	return &Config{
 		Database: Database{
-
 			Host:     os.Getenv("DB_HOST"),
 			Port:     os.Getenv("DB_PORT"),
 			User:     os.Getenv("DB_USER"),
@@ -96,13 +105,13 @@ func TestConfig() (*Config, error) {
 
 func (config *Config) GetDsn() string {
 	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=%s",
-		config.Host,
-		config.User,
-		config.Password,
-		config.Name,
-		config.Port,
-		config.SslMode,
-		config.TimeZone)
+		config.Database.Host,
+		config.Database.User,
+		config.Database.Password,
+		config.Database.Name,
+		config.Database.Port,
+		config.Database.SslMode,
+		config.Database.TimeZone)
 }
 
 func getEnv(key, defaultValue string) string {

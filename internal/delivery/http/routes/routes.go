@@ -7,8 +7,10 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/hibiken/asynq"
 	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/delivery/http/handlers"
+	"github.com/mrhumster/stream-service/internal/queue"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
 	"github.com/mrhumster/stream-service/internal/storage"
@@ -65,8 +67,15 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 		return nil, fmt.Errorf("⚠️ Error setup routes: %w", err)
 	}
 
+	redisOpt := asynq.RedisClientOpt{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       2,
+	}
+
 	database := repository.NewGormStreamRepository(db)
-	streamService := service.NewStreamServiceImpl(database, permissionClient, storage)
+	asyncDistributor := queue.NewAsyncDistributor(redisOpt)
+	streamService := service.NewStreamServiceImpl(database, permissionClient, storage, asyncDistributor)
 	streamHandler := handlers.NewStreamHandler(streamService)
 
 	r.GET("/stream/health", func(c *gin.Context) {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
+	"github.com/mrhumster/stream-service/internal/queue"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/web-server-gin/pkg/auth"
@@ -22,13 +23,15 @@ type StreamServiceImpl struct {
 	repo             repository.StreamRepository
 	permissionClient auth.PermissionClient
 	storage          storage.FileStorage
+	queue            queue.TaskDistributor
 }
 
-func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage) *StreamServiceImpl {
+func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor) *StreamServiceImpl {
 	return &StreamServiceImpl{
 		repo:             repo,
 		permissionClient: perm,
 		storage:          stor,
+		queue:            queue,
 	}
 }
 
