@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -511,6 +512,10 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error with update stream in repo: %w", err)
+	}
+
+	if err = s.queue.DistributeVideoTranscoding(ctx, stream.ID, storageInfo.Key); err != nil {
+		slog.Error("failed to enqueue transcoding task for", "stream", stream.ID, "error", err)
 	}
 
 	return nil
