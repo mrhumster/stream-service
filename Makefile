@@ -4,7 +4,14 @@ DEPLOYMENT := stream
 VERSION ?= $(shell git describe --tags --always || echo "latest")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-.PHONY: all build push deploy clean
+MINIO_ROOT_USER=$(shell kubectl -n $(NAMESPACE) get secret minio-credentials -o jsonpath='{.data.MINIO_ROOT_USER}' 2>/dev/null | base64 -d)
+MINIO_ROOT_PASS=$(shell kubectl -n $(NAMESPACE) get secret minio-credentials -o jsonpath='{.data.MINIO_ROOT_PASSWORD}' 2>/dev/null | base64 -d)
+MINIO_USER_KEY=$(shell kubectl -n $(NAMESPACE) get secret minio-credentials -o jsonpath='{.data.MINIO_ACCESS_KEY}' 2>/dev/null | base64 -d)
+MINIO_USER_SECRET=$(shell kubectl -n $(NAMESPACE) get secret minio-credentials -o jsonpath='{.data.MINIO_SECRET_KEY}' 2>/dev/null | base64 -d)
+
+MINIO_BUCKET=go-app-bucket
+
+.PHONY: all build push deploy init-minio clean
 
 all: build push deploy
 
@@ -33,5 +40,12 @@ test:
 logs:
 	kubectl -n $(NAMESPACE) logs -f -l app=stream
 
-
-
+init-minio:
+	$(eval MINIO_POD=$(shell kubectl get pods -n $(NAMESPACE) -l app=minio -o jsonpath='{.items[0].metadata.name}'))
+	@echo "Config MinIO in POD $(MINIO_POD)..."
+	@kubectl exec -n $(NAMESPACE) $(MINIO_POD) -- /bin/sh -c "\
+		mc alias set local http://localhost:9000 $(MINIO_ROOT_USER) $(MINIO_ROOT_PASS) && \
+		mc admin user add local $(MINIO_USER_KEY) $(MINIO_USER_SECRET) || true && \
+		mc admin policy attach local readwrite --user=$(MINIO_USER_KEY) && \
+		mc mb local/$(MINIO_BUCKET) || true"
+	@echo "Done! Used key: $(MINIO_USER_KEY)"
