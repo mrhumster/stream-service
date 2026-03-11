@@ -35,6 +35,6 @@ func (d *AsyncDistributor) DistributeVideoTranscoding(ctx context.Context, strea
 	if err != nil {
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
-	slog.Info("Enqueue task: ", "id", info.ID, "queue", info.Queue)
+	slog.Info("📩 Enqueue task:", "id", info.ID, "queue", info.Queue)
 	return nil
 }

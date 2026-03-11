@@ -27,7 +27,7 @@ spec:
             - name: DOMAIN
               value: api.example.com
             - name: DB_HOST
-              value: potgresql-postgresql
+              value: postgresql
             - name: DB_PORT
               value: "5432"
             - name: DB_NAME

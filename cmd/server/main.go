@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,6 +18,16 @@ import (
 )
 
 func main() {
+	opts := &slog.HandlerOptions{
+		Level:     slog.LevelDebug,
+		AddSource: true,
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
+
+	slog.SetDefault(logger)
+	slog.Info("Start Stream service", "version", "1.2.14")
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("❌  Error load config: %v", err)
