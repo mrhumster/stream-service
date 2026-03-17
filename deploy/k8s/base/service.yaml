@@ -5,7 +5,7 @@ metadata:
   namespace: go-app
 spec:
   selector:
-    app: stream
+    app: stream-service
   ports:
     - name: http
       port: 80

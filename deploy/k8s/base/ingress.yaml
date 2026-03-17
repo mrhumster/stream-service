@@ -9,10 +9,6 @@ metadata:
     cert-manager.io/issuer: "ca-issuer"
     nginx.ingress.kubernetes.io/client-max-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-body-size: "1024m"
-    nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "https://*.example.com"
-    nginx.ingress.kubernetes.io/cors-allow-methods: "PUT, GET, POST, OPTIONS, DELETE"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-Amz-Content-Sha256,X-Amz-Date,X-Amz-Algorithm,X-Amz-Credential,X-Amz-SignedHeaders,X-Amz-Expires"
 spec:
   tls:
     - hosts:

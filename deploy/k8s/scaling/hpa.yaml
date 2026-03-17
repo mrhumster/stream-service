@@ -4,12 +4,12 @@ metadata:
   name: stream-hpa
   namespace: go-app
   labels:
-    app: stream
+    app: stream-service
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: stream
+    name: stream-service
   minReplicas: 2
   maxReplicas: 5
   metrics:

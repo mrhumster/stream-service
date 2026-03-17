@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: stream
+  name: stream-service
   namespace: go-app
   labels:
-    app: stream
+    app: stream-service
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: stream
+      app: stream-service
   template:
     metadata:
       labels:
-        app: stream
+        app: stream-service
     spec:
       containers:
         - name: stream
