@@ -9,13 +9,12 @@ import (
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
 	"github.com/mrhumster/stream-service/internal/service"
 
-	"github.com/mrhumster/web-server-gin/pkg/auth"
-	"github.com/mrhumster/web-server-gin/pkg/middleware"
+	"github.com/mrhumster/identity-service/pkg/auth"
+	"github.com/mrhumster/identity-service/pkg/middleware"
 )
 
 func AuthMiddleware(tokenService *service.TokenService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-
 		token := extractToken(c.Request)
 		claims, err := tokenService.ValidateAccessToken(token)
 		if err != nil {

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/mrhumster/identity-service/pkg/dto"
 	"github.com/mrhumster/stream-service/config"
-	"github.com/mrhumster/web-server-gin/pkg/dto"
 )
 
 type TokenService struct {

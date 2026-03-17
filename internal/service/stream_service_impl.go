@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mrhumster/identity-service/pkg/auth"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/queue"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/storage"
-	"github.com/mrhumster/web-server-gin/pkg/auth"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )

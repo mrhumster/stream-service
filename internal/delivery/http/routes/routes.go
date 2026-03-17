@@ -8,14 +8,14 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
+	"github.com/mrhumster/identity-service/pkg/auth"
+	"github.com/mrhumster/identity-service/pkg/middleware"
 	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/delivery/http/handlers"
 	"github.com/mrhumster/stream-service/internal/queue"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
 	"github.com/mrhumster/stream-service/internal/storage"
-	"github.com/mrhumster/web-server-gin/pkg/auth"
-	"github.com/mrhumster/web-server-gin/pkg/middleware"
 	"gorm.io/gorm"
 )
 

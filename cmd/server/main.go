@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mrhumster/identity-service/pkg/auth"
 	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/database"
 	"github.com/mrhumster/stream-service/internal/delivery/http/routes"
 	"github.com/mrhumster/stream-service/internal/storage"
-	"github.com/mrhumster/web-server-gin/pkg/auth"
 )
 
 func main() {
@@ -26,7 +26,7 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
 
 	slog.SetDefault(logger)
-	slog.Info("Start Stream service", "version", "1.2.14")
+	slog.Info("Start Stream service", "version", "v0.1.0")
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
