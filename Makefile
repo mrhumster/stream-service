@@ -1,6 +1,6 @@
 IMAGE_NAME := xomrkob/stream
 NAMESPACE := go-app
-DEPLOYMENT := stream
+DEPLOYMENT := stream-service
 VERSION ?= $(shell git describe --tags --always || echo "latest")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -41,9 +41,9 @@ logs:
 	kubectl -n $(NAMESPACE) logs -f -l app=stream
 
 init-minio:
-	$(eval MINIO_POD=$(shell kubectl get pods -n $(NAMESPACE) -l app=minio -o jsonpath='{.items[0].metadata.name}'))
-	@echo "Config MinIO in POD $(MINIO_POD)..."
-	@kubectl exec -n $(NAMESPACE) $(MINIO_POD) -- /bin/sh -c "\
+	@MINIO_POD=$$(kubectl get pods -n go-app -l app=minio -o jsonpath='{.items[0].metadata.name}'); \
+	echo "Config MinIO in POD $$MINIO_POD..."; \
+	kubectl exec -n $(NAMESPACE) $$MINIO_POD -- /bin/sh -c "\
 		mc alias set local http://localhost:9000 $(MINIO_ROOT_USER) $(MINIO_ROOT_PASS) && \
 		mc admin user add local $(MINIO_USER_KEY) $(MINIO_USER_SECRET) || true && \
 		mc admin policy attach local readwrite --user=$(MINIO_USER_KEY) && \
