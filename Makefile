@@ -1,4 +1,5 @@
 IMAGE_NAME := xomrkob/stream
+MODULE_NAME := github.com/mrhumster/stream-service
 NAMESPACE := go-app
 DEPLOYMENT := stream-service
 VERSION ?= $(shell git describe --tags --always || echo "latest")
@@ -11,7 +12,10 @@ MINIO_USER_SECRET=$(shell kubectl -n $(NAMESPACE) get secret minio-credentials -
 
 MINIO_BUCKET=go-app-bucket
 
-.PHONY: all build push deploy init-minio clean
+PROTO_DIR := proto/stream
+GEN_DIR := gen/go
+
+.PHONY: all build push deploy init-minio clean proto
 
 all: build push deploy
 
@@ -49,3 +53,13 @@ init-minio:
 		mc admin policy attach local readwrite --user=$(MINIO_USER_KEY) && \
 		mc mb local/$(MINIO_BUCKET) || true"
 	@echo "Done! Used key: $(MINIO_USER_KEY)"
+
+proto:
+	@echo "Generate protoc"
+	mkdir -p $(GEN_DIR)
+	protoc --proto_path=$(PROTO_DIR) \
+		--go_out=. --go-grpc_out=. \
+		--go_opt=module=$(MODULE_NAME) \
+		--go-grpc_opt=module=$(MODULE_NAME) \
+		$(PROTO_DIR)/*.proto
+	@echo "Proto file generated in $(GEN_DIR)"
