@@ -63,3 +63,10 @@ proto:
 		--go-grpc_opt=module=$(MODULE_NAME) \
 		$(PROTO_DIR)/*.proto
 	@echo "Proto file generated in $(GEN_DIR)"
+
+copy-proto-in-transcoder:
+	@echo "Make dir"
+	mkdir -p ../transcoder-service/proto/stream/ 
+	@echo "Copying..."
+	cp ./proto/stream/*.proto ../transcoder-service/proto/stream/
+	ls -lh ../transcoder-service/proto/stream/*.proto
