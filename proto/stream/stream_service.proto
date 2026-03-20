@@ -22,12 +22,10 @@ service StreamService {
 message UpdateStreamStatusRequest {
   string stream_uuid = 1;
   Status status = 2;
-  string error = 3;
 }
 
 message UpdateStreamStatusResponse {
   bool updated = 1;
-  string error = 2;
 }
 
 message UpdateStreamMetadataRequest {
@@ -40,7 +38,6 @@ message UpdateStreamMetadataRequest {
 
 message UpdateStreamMetadataResponse {
   bool updated = 1;
-  string error = 2;
 }
 
 message UpdateStreamProcessingRequest {
@@ -52,5 +49,4 @@ message UpdateStreamProcessingRequest {
 
 message UpdateStreamProcessingResponse {
   bool updated = 1;
-  string error = 2;
 }

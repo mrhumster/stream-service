@@ -222,6 +222,34 @@ func (mr *MockStreamServiceMockRecorder) UpdateStream(ctx, id, req any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStream", reflect.TypeOf((*MockStreamService)(nil).UpdateStream), ctx, id, req)
 }
 
+// UpdateStreamMetadata mocks base method.
+func (m *MockStreamService) UpdateStreamMetadata(ctx context.Context, req *service.UpdateStreamMetadataRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateStreamMetadata", ctx, req)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateStreamMetadata indicates an expected call of UpdateStreamMetadata.
+func (mr *MockStreamServiceMockRecorder) UpdateStreamMetadata(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStreamMetadata", reflect.TypeOf((*MockStreamService)(nil).UpdateStreamMetadata), ctx, req)
+}
+
+// UpdateStreamProcessing mocks base method.
+func (m *MockStreamService) UpdateStreamProcessing(ctx context.Context, req *service.UpdateStreamProcessingRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateStreamProcessing", ctx, req)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateStreamProcessing indicates an expected call of UpdateStreamProcessing.
+func (mr *MockStreamServiceMockRecorder) UpdateStreamProcessing(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStreamProcessing", reflect.TypeOf((*MockStreamService)(nil).UpdateStreamProcessing), ctx, req)
+}
+
 // UpdateStreamStatus mocks base method.
 func (m *MockStreamService) UpdateStreamStatus(ctx context.Context, streamID uuid.UUID, status models.StreamStatus) error {
 	m.ctrl.T.Helper()

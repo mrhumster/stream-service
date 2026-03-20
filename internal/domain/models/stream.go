@@ -17,7 +17,7 @@ const (
 	StatusProcessing StreamStatus = "processing"
 	StatusReady      StreamStatus = "ready"
 	StatusPublished  StreamStatus = "published"
-	StatysError      StreamStatus = "error"
+	StatusError      StreamStatus = "error"
 	StatusUploading  StreamStatus = "uploading"
 
 	VisibilityPublic   StreamVisibility = "public"

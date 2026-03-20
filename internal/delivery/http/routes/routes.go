@@ -25,7 +25,7 @@ const (
 	ModeRelease = "RELEASE"
 )
 
-func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClient, storage storage.FileStorage) (*gin.Engine, error) {
+func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClient, storage storage.FileStorage) (*gin.Engine, service.StreamService, error) {
 	var (
 		cfg *config.Config
 		err error
@@ -59,12 +59,12 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	}))
 
 	if err != nil {
-		return nil, fmt.Errorf("⚠️ Error setup routes: %w", err)
+		return nil, nil, fmt.Errorf("⚠️ Error setup routes: %w", err)
 	}
 
 	tokenService, err := service.NewTokenService(&cfg.JWT)
 	if err != nil {
-		return nil, fmt.Errorf("⚠️ Error setup routes: %w", err)
+		return nil, nil, fmt.Errorf("⚠️ Error setup routes: %w", err)
 	}
 
 	redisOpt := asynq.RedisClientOpt{
@@ -104,5 +104,5 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 		authGroup.PUT("/:id/upload/part", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.PartUpload)
 		authGroup.POST("/:id/upload/complete", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.CompleteUpload)
 	}
-	return r, nil
+	return r, streamService, nil
 }

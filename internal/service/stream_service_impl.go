@@ -520,3 +520,31 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 
 	return nil
 }
+
+func (s *StreamServiceImpl) UpdateStreamMetadata(ctx context.Context, req *UpdateStreamMetadataRequest) error {
+	stream, err := s.repo.Read(ctx, req.StreamUUID)
+	if err != nil {
+		return fmt.Errorf("error read stream from repository: %w", err)
+	}
+	if err := stream.SetMetadata(&req.Metadata); err != nil {
+		return fmt.Errorf("error setting metadata to model: %w", err)
+	}
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	return nil
+}
+
+func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *UpdateStreamProcessingRequest) error {
+	stream, err := s.repo.Read(ctx, req.StreamUUID)
+	if err != nil {
+		return fmt.Errorf("error read stream from repository: %w", err)
+	}
+	if err := stream.UpdateProcessing(req.Processing.Progress, req.Processing.Steps, req.Processing.Error); err != nil {
+		return fmt.Errorf("error update processing: %w", err)
+	}
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	return nil
+}

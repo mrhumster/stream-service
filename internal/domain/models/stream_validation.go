@@ -35,7 +35,7 @@ func (s *Stream) Validate() error {
 
 func (s *Stream) validateStatus() error {
 	switch s.Status {
-	case StatusDraft, StatusProcessing, StatusPublished, StatusReady, StatysError:
+	case StatusDraft, StatusProcessing, StatusPublished, StatusReady, StatusError:
 		return nil
 	default:
 		return ErrInvalidStatus

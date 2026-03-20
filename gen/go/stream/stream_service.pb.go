@@ -83,7 +83,6 @@ type UpdateStreamStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	StreamUuid    string                 `protobuf:"bytes,1,opt,name=stream_uuid,json=streamUuid,proto3" json:"stream_uuid,omitempty"`
 	Status        Status                 `protobuf:"varint,2,opt,name=status,proto3,enum=stream.Status" json:"status,omitempty"`
-	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -132,17 +131,9 @@ func (x *UpdateStreamStatusRequest) GetStatus() Status {
 	return Status_STATUS_DRAFT
 }
 
-func (x *UpdateStreamStatusRequest) GetError() string {
-	if x != nil {
-		return x.Error
-	}
-	return ""
-}
-
 type UpdateStreamStatusResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Updated       bool                   `protobuf:"varint,1,opt,name=updated,proto3" json:"updated,omitempty"`
-	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -182,13 +173,6 @@ func (x *UpdateStreamStatusResponse) GetUpdated() bool {
 		return x.Updated
 	}
 	return false
-}
-
-func (x *UpdateStreamStatusResponse) GetError() string {
-	if x != nil {
-		return x.Error
-	}
-	return ""
 }
 
 type UpdateStreamMetadataRequest struct {
@@ -270,7 +254,6 @@ func (x *UpdateStreamMetadataRequest) GetResolution() string {
 type UpdateStreamMetadataResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Updated       bool                   `protobuf:"varint,1,opt,name=updated,proto3" json:"updated,omitempty"`
-	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -310,13 +293,6 @@ func (x *UpdateStreamMetadataResponse) GetUpdated() bool {
 		return x.Updated
 	}
 	return false
-}
-
-func (x *UpdateStreamMetadataResponse) GetError() string {
-	if x != nil {
-		return x.Error
-	}
-	return ""
 }
 
 type UpdateStreamProcessingRequest struct {
@@ -390,7 +366,6 @@ func (x *UpdateStreamProcessingRequest) GetError() string {
 type UpdateStreamProcessingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Updated       bool                   `protobuf:"varint,1,opt,name=updated,proto3" json:"updated,omitempty"`
-	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -432,26 +407,17 @@ func (x *UpdateStreamProcessingResponse) GetUpdated() bool {
 	return false
 }
 
-func (x *UpdateStreamProcessingResponse) GetError() string {
-	if x != nil {
-		return x.Error
-	}
-	return ""
-}
-
 var File_stream_service_proto protoreflect.FileDescriptor
 
 const file_stream_service_proto_rawDesc = "" +
 	"\n" +
-	"\x14stream_service.proto\x12\x06stream\"z\n" +
+	"\x14stream_service.proto\x12\x06stream\"d\n" +
 	"\x19UpdateStreamStatusRequest\x12\x1f\n" +
 	"\vstream_uuid\x18\x01 \x01(\tR\n" +
 	"streamUuid\x12&\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x0e.stream.StatusR\x06status\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"L\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x0e.stream.StatusR\x06status\"6\n" +
 	"\x1aUpdateStreamStatusResponse\x12\x18\n" +
-	"\aupdated\x18\x01 \x01(\bR\aupdated\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\"\xa6\x01\n" +
+	"\aupdated\x18\x01 \x01(\bR\aupdated\"\xa6\x01\n" +
 	"\x1bUpdateStreamMetadataRequest\x12\x1f\n" +
 	"\vstream_uuid\x18\x01 \x01(\tR\n" +
 	"streamUuid\x12\x1a\n" +
@@ -460,19 +426,17 @@ const file_stream_service_proto_rawDesc = "" +
 	"\x06format\x18\x04 \x01(\tR\x06format\x12\x1e\n" +
 	"\n" +
 	"resolution\x18\x05 \x01(\tR\n" +
-	"resolution\"N\n" +
+	"resolution\"8\n" +
 	"\x1cUpdateStreamMetadataResponse\x12\x18\n" +
-	"\aupdated\x18\x01 \x01(\bR\aupdated\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\"\x88\x01\n" +
+	"\aupdated\x18\x01 \x01(\bR\aupdated\"\x88\x01\n" +
 	"\x1dUpdateStreamProcessingRequest\x12\x1f\n" +
 	"\vstream_uuid\x18\x01 \x01(\tR\n" +
 	"streamUuid\x12\x1a\n" +
 	"\bprogress\x18\x02 \x01(\x05R\bprogress\x12\x14\n" +
 	"\x05steps\x18\x03 \x03(\tR\x05steps\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error\"P\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\":\n" +
 	"\x1eUpdateStreamProcessingResponse\x12\x18\n" +
-	"\aupdated\x18\x01 \x01(\bR\aupdated\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error*\x81\x01\n" +
+	"\aupdated\x18\x01 \x01(\bR\aupdated*\x81\x01\n" +
 	"\x06Status\x12\x10\n" +
 	"\fSTATUS_DRAFT\x10\x00\x12\x15\n" +
 	"\x11STATUS_PROCESSING\x10\x01\x12\x10\n" +

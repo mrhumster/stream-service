@@ -183,7 +183,7 @@ func (c *StreamServiceContractTest) TestStreamStatusTransitions() {
 		}
 
 		// Test error status
-		err = c.service.UpdateStreamStatus(c.ctx, stream.ID, models.StatysError)
+		err = c.service.UpdateStreamStatus(c.ctx, stream.ID, models.StatusError)
 		assert.NoError(c.t, err)
 
 		// Cleanup

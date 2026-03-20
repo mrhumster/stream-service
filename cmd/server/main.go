@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,9 +13,12 @@ import (
 
 	"github.com/mrhumster/identity-service/pkg/auth"
 	"github.com/mrhumster/stream-service/config"
+	"github.com/mrhumster/stream-service/gen/go/stream"
 	"github.com/mrhumster/stream-service/internal/database"
+	grpcHandle "github.com/mrhumster/stream-service/internal/delivery/grpc"
 	"github.com/mrhumster/stream-service/internal/delivery/http/routes"
 	"github.com/mrhumster/stream-service/internal/storage"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -49,12 +53,13 @@ func main() {
 		log.Fatalf("❌ Permission gRPC client: %v", err)
 	}
 
-	r, err := routes.SetupRoutes(db, mode, permissionClient, fileMinIOStorage)
+	r, svc, err := routes.SetupRoutes(db, mode, permissionClient, fileMinIOStorage)
 	if err != nil {
 		log.Fatalf("❌ Error gin route: %v", err)
 	}
 
 	httpErr := make(chan error, 1)
+	grpcErr := make(chan error, 1)
 
 	defer func() {
 		log.Println("🟡 Closing database pool...")
@@ -67,18 +72,40 @@ func main() {
 		}
 	}()
 
-	srv := &http.Server{
+	httpServer := &http.Server{
 		Addr:         cfg.Server.ServerAddr,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
+
+	grpcHandle := grpcHandle.NewStreamGRPCServer(svc)
+
+	grpcServer := grpc.NewServer()
+	stream.RegisterStreamServiceServer(grpcServer, grpcHandle)
+
 	go func() {
+		// HTTP serve
 		log.Printf("🚀 Server starting on %s\n", cfg.Server.ServerAddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal("🔴 Server error: ", err)
 			httpErr <- err
+		}
+	}()
+
+	go func() {
+		// gRPC serve
+		lis, err := net.Listen("tcp", ":50051")
+		if err != nil {
+			log.Fatalf("🔴 Failed to listen: %v", err)
+		}
+
+		log.Printf("🛰️ gRPC server listened at %v", lis.Addr())
+
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatalf("🔴 Failed to serve: %v", err)
+			grpcErr <- err
 		}
 	}()
 
@@ -90,9 +117,6 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("🔴 Server shutdown error: ", err)
-	}
-
-	log.Println("🟢 Server stoped")
+	httpServer.Shutdown(ctx)
+	grpcServer.GracefulStop()
 }
