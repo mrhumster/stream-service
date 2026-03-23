@@ -368,3 +368,15 @@ func (h *StreamHandler) CompleteUpload(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+func (h *StreamHandler) GetHLS(c *gin.Context) {
+	val := c.Param("id")
+	streamUUID, err := uuid.Parse(val)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	file_path := c.Param("file")
+	c.JSON(http.StatusOK, gin.H{"file_path": file_path, "stream": streamUUID})
+}
