@@ -87,12 +87,13 @@ func (mr *MockFileStorageMockRecorder) Delete(ctx, path any) *gomock.Call {
 }
 
 // Download mocks base method.
-func (m *MockFileStorage) Download(ctx context.Context, path string) (io.ReadCloser, error) {
+func (m *MockFileStorage) Download(ctx context.Context, path string) (io.ReadCloser, int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Download", ctx, path)
 	ret0, _ := ret[0].(io.ReadCloser)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // Download indicates an expected call of Download.

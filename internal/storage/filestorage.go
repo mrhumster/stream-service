@@ -12,7 +12,7 @@ import (
 
 type FileStorage interface {
 	Upload(ctx context.Context, path string, data io.Reader, size int64) error
-	Download(ctx context.Context, path string) (io.ReadCloser, error)
+	Download(ctx context.Context, path string) (io.ReadCloser, int64, error)
 	Delete(ctx context.Context, path string) error
 	Exists(ctx context.Context, path string) (bool, error)
 	GeneratePresignedURL(ctx context.Context, path, filename string, expires time.Duration) (*url.URL, error)

@@ -42,7 +42,7 @@ func TestFileStorageInterface(t *testing.T) {
 
 		mockStorage.EXPECT().
 			Download(ctx, key).
-			Return(io.NopCloser(bytes.NewReader(content)), nil)
+			Return(io.NopCloser(bytes.NewReader(content)), int64(100), nil)
 
 		err := mockStorage.Upload(ctx, key, bytes.NewReader(content), int64(len(content)))
 		if err != nil {
@@ -57,7 +57,7 @@ func TestFileStorageInterface(t *testing.T) {
 			t.Fatal("File should exist")
 		}
 
-		reader, err := mockStorage.Download(ctx, key)
+		reader, _, err := mockStorage.Download(ctx, key)
 		if err != nil {
 			t.Fatalf("Download failed: %v", err)
 		}
@@ -103,9 +103,9 @@ func TestFileStorageInterface(t *testing.T) {
 
 		mockStorage.EXPECT().
 			Download(ctx, key).
-			Return(nil, storage.ErrNotFound)
+			Return(nil, int64(0), storage.ErrNotFound)
 
-		_, err := mockStorage.Download(ctx, key)
+		_, _, err := mockStorage.Download(ctx, key)
 		if err != storage.ErrNotFound {
 			t.Fatalf("Expected ErrNotFound, got %v", err)
 		}

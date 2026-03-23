@@ -376,7 +376,19 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		return
 	}
-
-	file_path := c.Param("file")
-	c.JSON(http.StatusOK, gin.H{"file_path": file_path, "stream": streamUUID})
+	fileName := c.Param("file")
+	if fileName == "" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("filename can't must be empty"))
+	}
+	req := &service.GetFileByKeyRequest{
+		StreamUUID: streamUUID,
+		FileName:   fileName,
+	}
+	res, err := h.service.GetFileByKey(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		return
+	}
+	defer res.Content.Close()
+	c.DataFromReader(http.StatusOK, res.Size, res.ContentType, res.Content, nil)
 }

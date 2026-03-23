@@ -48,12 +48,16 @@ func (s *MinIOStorage) Upload(ctx context.Context, path string, data io.Reader, 
 	return nil
 }
 
-func (s *MinIOStorage) Download(ctx context.Context, path string) (io.ReadCloser, error) {
+func (s *MinIOStorage) Download(ctx context.Context, path string) (io.ReadCloser, int64, error) {
 	obj, err := s.Client.GetObject(ctx, s.Bucket, path, minio.GetObjectOptions{})
 	if err != nil {
-		return nil, s.mapMinIOError(err)
+		return nil, int64(0), s.mapMinIOError(err)
 	}
-	return obj, nil
+	fileStat, err := obj.Stat()
+	if err != nil {
+		return nil, int64(0), s.mapMinIOError(err)
+	}
+	return obj, fileStat.Size, nil
 }
 
 func (s *MinIOStorage) Delete(ctx context.Context, path string) error {

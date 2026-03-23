@@ -36,6 +36,19 @@ type StreamService interface {
 
 	UpdateStreamMetadata(ctx context.Context, req *UpdateStreamMetadataRequest) error
 	UpdateStreamProcessing(ctx context.Context, req *UpdateStreamProcessingRequest) error
+
+	GetFileByKey(ctx context.Context, req *GetFileByKeyRequest) (*GetFileByKeyResponse, error)
+}
+
+type GetFileByKeyRequest struct {
+	StreamUUID uuid.UUID
+	FileName   string
+}
+
+type GetFileByKeyResponse struct {
+	Content     io.ReadCloser
+	ContentType string
+	Size        int64
 }
 
 type UpdateStreamProcessingRequest struct {

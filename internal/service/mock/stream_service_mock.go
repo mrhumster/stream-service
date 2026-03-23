@@ -117,6 +117,21 @@ func (mr *MockStreamServiceMockRecorder) GenerateDownloadURL(ctx, streamID any) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateDownloadURL", reflect.TypeOf((*MockStreamService)(nil).GenerateDownloadURL), ctx, streamID)
 }
 
+// GetFileByKey mocks base method.
+func (m *MockStreamService) GetFileByKey(ctx context.Context, req *service.GetFileByKeyRequest) (*service.GetFileByKeyResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFileByKey", ctx, req)
+	ret0, _ := ret[0].(*service.GetFileByKeyResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFileByKey indicates an expected call of GetFileByKey.
+func (mr *MockStreamServiceMockRecorder) GetFileByKey(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFileByKey", reflect.TypeOf((*MockStreamService)(nil).GetFileByKey), ctx, req)
+}
+
 // GetStream mocks base method.
 func (m *MockStreamService) GetStream(ctx context.Context, id uuid.UUID) (*models.Stream, error) {
 	m.ctrl.T.Helper()

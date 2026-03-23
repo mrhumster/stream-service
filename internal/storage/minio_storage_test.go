@@ -168,7 +168,7 @@ func TestMinIOStorage_Download(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setupMock()
 
-			_, err := storageImpl.Download(ctx, key)
+			_, _, err := storageImpl.Download(ctx, key)
 			if err != tt.expectedError {
 				t.Fatalf("Expected %v, got %v", tt.expectedError, err)
 			}

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"path"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -547,4 +549,35 @@ func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *Upd
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
 	return nil
+}
+
+func getContentType(fileName string) string {
+	switch {
+	case strings.HasSuffix(fileName, ".m3u8"):
+		return "application/x-mpegURL"
+	case strings.HasSuffix(fileName, ".ts"):
+		return "video/MP2T"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+func (s *StreamServiceImpl) GetFileByKey(ctx context.Context, req *GetFileByKeyRequest) (*GetFileByKeyResponse, error) {
+	stream, err := s.GetStream(ctx, req.StreamUUID)
+	if err != nil {
+		return nil, fmt.Errorf("error get stream from repository: %w", err)
+	}
+	if stream.Status != models.StatusReady {
+		return nil, fmt.Errorf("you can't watch a stream with the status %s", stream.Status)
+	}
+	path := path.Join("processed", req.StreamUUID.String(), req.FileName)
+	content, size, err := s.storage.Download(ctx, path)
+	if err != nil {
+		return nil, fmt.Errorf("error download file from storage: %w", err)
+	}
+	return &GetFileByKeyResponse{
+		Content:     content,
+		ContentType: getContentType(req.FileName),
+		Size:        size,
+	}, nil
 }
