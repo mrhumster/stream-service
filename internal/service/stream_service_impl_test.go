@@ -1333,28 +1333,262 @@ func TestStreamServicImpl_UploadPart(t *testing.T) {
 }
 
 func TestStreamServiceImpl_PublishStream(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockRepo := repomock.NewMockStreamRepository(ctrl)
-	mockAuth := authmock.NewMockPermissionClient(ctrl)
-	mockStor := mock.NewMockFileStorage(ctrl)
-	mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+	t.Run("success published stream", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
 
-	svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue)
-	streamUUID := uuid.New()
-	stream := &models.Stream{
-		BaseModel: models.BaseModel{
-			ID: streamUUID,
-		},
-		Title:  "unpublished stream",
-		Status: models.StatusDraft,
-	}
-	mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
-	mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
-		Do(func(ctx context.Context, s *models.Stream) {
-			assert.Equal(t, stream.Status, models.StatusPublished)
-		}).
-		Return(nil)
-	ctx := context.Background()
-	err := svc.PublishStream(ctx, streamUUID)
-	require.NoError(t, err)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		streamUUID := uuid.New()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:  "unpublished stream",
+			Status: models.StatusDraft,
+		}
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
+		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
+			Do(func(ctx context.Context, s *models.Stream) {
+				assert.Equal(t, stream.Status, models.StatusPublished)
+			}).
+			Return(nil)
+		ctx := context.Background()
+		err := svc.PublishStream(ctx, streamUUID)
+		require.NoError(t, err)
+	})
+
+	t.Run("read repo error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		streamUUID := uuid.New()
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(nil, fmt.Errorf("read error"))
+		ctx := context.Background()
+		err := svc.PublishStream(ctx, streamUUID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "read error")
+	})
+	t.Run("update stream error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		streamUUID := uuid.New()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:  "unpublished stream",
+			Status: models.StatusDraft,
+		}
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
+		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
+			Do(func(ctx context.Context, s *models.Stream) {
+				assert.Equal(t, stream.Status, models.StatusPublished)
+			}).
+			Return(fmt.Errorf("update error"))
+		ctx := context.Background()
+		err := svc.PublishStream(ctx, streamUUID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update error")
+	})
+}
+
+func TestStreamServiceImpl_UnpublishStream(t *testing.T) {
+	t.Run("success unpublished stream", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		streamUUID := uuid.New()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:  "published stream",
+			Status: models.StatusPublished,
+		}
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
+		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
+			Do(func(ctx context.Context, s *models.Stream) {
+				assert.Equal(t, stream.Status, models.StatusDraft)
+			}).
+			Return(nil)
+		ctx := context.Background()
+		err := svc.UnpublishStream(ctx, streamUUID)
+		require.NoError(t, err)
+	})
+
+	t.Run("read repo error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		streamUUID := uuid.New()
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(nil, fmt.Errorf("read error"))
+		ctx := context.Background()
+		err := svc.UnpublishStream(ctx, streamUUID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "read error")
+	})
+	t.Run("update stream error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		streamUUID := uuid.New()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:  "unpublished stream",
+			Status: models.StatusDraft,
+		}
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
+		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
+			Do(func(ctx context.Context, s *models.Stream) {
+				assert.Equal(t, stream.Status, models.StatusPublished)
+			}).
+			Return(fmt.Errorf("update error"))
+		ctx := context.Background()
+		err := svc.UnpublishStream(ctx, streamUUID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update error")
+	})
+}
+
+func TestStreamServiceImpl_UpdateStreamStatus(t *testing.T) {
+	t.Run("success update stream status", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		streamUUID := uuid.New()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:  "published stream",
+			Status: models.StatusPublished,
+		}
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
+		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
+			Do(func(ctx context.Context, s *models.Stream) {
+				assert.Equal(t, stream.Status, models.StatusError)
+			}).
+			Return(nil)
+		ctx := context.Background()
+		err := svc.UpdateStreamStatus(ctx, streamUUID, models.StatusError)
+		require.NoError(t, err)
+	})
+
+	t.Run("read repo error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		streamUUID := uuid.New()
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(nil, fmt.Errorf("read error"))
+		ctx := context.Background()
+		err := svc.UpdateStreamStatus(ctx, streamUUID, models.StatusError)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "read error")
+	})
+	t.Run("update stream error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		streamUUID := uuid.New()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:  "unpublished stream",
+			Status: models.StatusDraft,
+		}
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
+		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
+			Do(func(ctx context.Context, s *models.Stream) {
+				assert.Equal(t, stream.Status, models.StatusError)
+			}).
+			Return(fmt.Errorf("update error"))
+		ctx := context.Background()
+		err := svc.UpdateStreamStatus(ctx, streamUUID, models.StatusError)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update error")
+	})
 }
