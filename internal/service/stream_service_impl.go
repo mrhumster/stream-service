@@ -289,51 +289,7 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 		_ = s.storage.Delete(ctx, storageKey)
 		return fmt.Errorf("failed to update stream: %w", err)
 	}
-
-	// more interesting
-	// TODO: in this part, you can work with channels and gorutines
-	//	go s.processVideoAsync(req.StreamID, storageKey, req.FileName, req.Size)
 	return nil
-}
-
-func (s *StreamServiceImpl) processVideoAsync(streamID uuid.UUID, storageKey, filename string, size int64) {
-	ctx := context.Background()
-
-	stream, err := s.repo.Read(ctx, streamID)
-	if err != nil {
-		log.Printf("Failed to get stream for processing: %v", err)
-		return
-	}
-
-	// TODO: Реальная обработка видео с ffmpeg
-	// Пока просто имитируем и обновляем дополнительные метаданные
-
-	time.Sleep(2 * time.Second)
-
-	var metadata models.StreamMetadata
-	if err := json.Unmarshal(stream.Metadata, &metadata); err != nil {
-		metadata = models.StreamMetadata{}
-	}
-
-	metadata.Duration = 3600
-	metadata.Format = ""
-	metadata.Resolution = "1920x1080" // Должно определяться из видео
-
-	metadataJSON, err := json.Marshal(metadata)
-	if err != nil {
-		log.Printf("Failed to marshal metadata: %v", err)
-		return
-	}
-
-	stream.Metadata = datatypes.JSON(metadataJSON)
-	stream.Status = models.StatusReady
-	stream.UpdatedAt = time.Now()
-
-	if err := s.repo.Update(ctx, stream); err != nil {
-		log.Printf("Failed to update stream after processing: %v", err)
-	}
-
-	log.Printf("Video processing completed for stream %s", streamID)
 }
 
 func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (*GenerateDownloadURLInfo, error) {

@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -952,15 +954,15 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 	})
 
 	t.Run("only auth user can make request", func(t *testing.T) {
-		router_without_userID := setupTestRouter()
+		routerWithoutUserID := setupTestRouter()
 		controller := gomock.NewController(t)
 		defer controller.Finish()
 		mockServide := servicemock.NewMockStreamService(controller)
 		handler := NewStreamHandler(mockServide)
-		router_without_userID.GET("/streams", handler.ListStreamOwner)
+		routerWithoutUserID.GET("/streams", handler.ListStreamOwner)
 		req := httptest.NewRequest("GET", "/streams", nil)
 		w := httptest.NewRecorder()
-		router_without_userID.ServeHTTP(w, req)
+		routerWithoutUserID.ServeHTTP(w, req)
 		require.Equal(t, w.Code, http.StatusInternalServerError)
 	})
 
@@ -1259,5 +1261,89 @@ func TestStreamHandler_StreamUpload(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 		assert.Contains(t, w.Body.String(), "service error")
+	})
+}
+
+func TestStreamHandler_GetHLS(t *testing.T) {
+	userID := uuid.New()
+	setupTest := func() (*gin.Engine, *servicemock.MockStreamService, *StreamHandler) {
+		router := setupTestRouter()
+		ctrl := gomock.NewController(t)
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService)
+		router.Use(func(c *gin.Context) {
+			c.Set("user", userID)
+			c.Next()
+		})
+		router.GET("/streams/:id/hls/*file", handler.GetHLS)
+		return router, mockService, handler
+	}
+	t.Run("success get hls", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		streamUUID := uuid.New()
+		file := "0x00, 0x01, 0x02, 0x03"
+		content := io.NopCloser(strings.NewReader(file))
+		filename := "/index.m3u8"
+
+		svcReq := &service.GetFileByKeyRequest{
+			StreamUUID: streamUUID,
+			FileName:   filename,
+		}
+		svcRes := &service.GetFileByKeyResponse{
+			Content:     content,
+			ContentType: "application/x-mpegURL",
+			Size:        int64(len(file)),
+		}
+		mockService.EXPECT().
+			GetFileByKey(gomock.Any(), svcReq).
+			Return(svcRes, nil)
+		url := fmt.Sprintf("/streams/%s/hls/index.m3u8", streamUUID)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", url, nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "application/x-mpegURL", w.Header().Get("Content-Type"))
+		assert.Equal(t, []byte(file), w.Body.Bytes())
+	})
+
+	t.Run("stream uuid parse error", func(t *testing.T) {
+		router, _, _ := setupTest()
+		streamUUID := "bad-uuid-format"
+		url := fmt.Sprintf("/streams/%s/hls/index.m3u8", streamUUID)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", url, nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "invalid UUID")
+	})
+
+	t.Run("file cannot be empty error", func(t *testing.T) {
+		router, _, _ := setupTest()
+		streamUUID := uuid.New()
+		url := fmt.Sprintf("/streams/%s/hls/", streamUUID)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", url, nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, w.Body.String(), "filename cannot be empty")
+	})
+	t.Run("service error propagation", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		streamUUID := uuid.New()
+		filename := "/index.m3u8"
+
+		svcReq := &service.GetFileByKeyRequest{
+			StreamUUID: streamUUID,
+			FileName:   filename,
+		}
+		mockService.EXPECT().
+			GetFileByKey(gomock.Any(), svcReq).
+			Return(nil, fmt.Errorf("file not found"))
+		url := fmt.Sprintf("/streams/%s/hls/index.m3u8", streamUUID)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", url, nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		assert.Contains(t, w.Body.String(), "file not found")
 	})
 }

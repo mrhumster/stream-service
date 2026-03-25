@@ -1331,3 +1331,30 @@ func TestStreamServicImpl_UploadPart(t *testing.T) {
 		assert.Contains(t, err.Error(), "error upload part to strage: storage not ready")
 	})
 }
+
+func TestStreamServiceImpl_PublishStream(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockRepo := repomock.NewMockStreamRepository(ctrl)
+	mockAuth := authmock.NewMockPermissionClient(ctrl)
+	mockStor := mock.NewMockFileStorage(ctrl)
+	mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+	svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue)
+	streamUUID := uuid.New()
+	stream := &models.Stream{
+		BaseModel: models.BaseModel{
+			ID: streamUUID,
+		},
+		Title:  "unpublished stream",
+		Status: models.StatusDraft,
+	}
+	mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
+	mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
+		Do(func(ctx context.Context, s *models.Stream) {
+			assert.Equal(t, stream.Status, models.StatusPublished)
+		}).
+		Return(nil)
+	ctx := context.Background()
+	err := svc.PublishStream(ctx, streamUUID)
+	require.NoError(t, err)
+}
