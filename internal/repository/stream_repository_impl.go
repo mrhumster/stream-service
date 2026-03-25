@@ -34,6 +34,7 @@ func (r *GormStreamRepository) Read(ctx context.Context, id uuid.UUID) (*models.
 	}
 	return stream, nil
 }
+
 func (r *GormStreamRepository) Update(ctx context.Context, stream *models.Stream) error {
 	if stream.ID == uuid.Nil {
 		return fmt.Errorf("stream ID can't be nil")
@@ -48,6 +49,7 @@ func (r *GormStreamRepository) Update(ctx context.Context, stream *models.Stream
 	}
 	return nil
 }
+
 func (r *GormStreamRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	var existing *models.Stream
 	if err := r.db.WithContext(ctx).First(&existing, "id = ?", id).Error; err != nil {
@@ -118,10 +120,7 @@ func (r *GormStreamRepository) GetByOwner(ctx context.Context, ownerID uuid.UUID
 func (r *GormStreamRepository) Exists(ctx context.Context, id uuid.UUID) bool {
 	var stream *models.Stream
 	result := r.db.WithContext(ctx).First(&stream, id)
-	if result.Error != nil {
-		return false
-	}
-	return true
+	return result.Error != nil
 }
 
 func (r *GormStreamRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status models.StreamStatus) error {

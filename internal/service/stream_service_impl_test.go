@@ -1491,12 +1491,12 @@ func TestStreamServiceImpl_UnpublishStream(t *testing.T) {
 				ID: streamUUID,
 			},
 			Title:  "unpublished stream",
-			Status: models.StatusDraft,
+			Status: models.StatusPublished,
 		}
 		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
 		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
 			Do(func(ctx context.Context, s *models.Stream) {
-				assert.Equal(t, stream.Status, models.StatusPublished)
+				assert.Equal(t, stream.Status, models.StatusDraft)
 			}).
 			Return(fmt.Errorf("update error"))
 		ctx := context.Background()
@@ -1590,5 +1590,76 @@ func TestStreamServiceImpl_UpdateStreamStatus(t *testing.T) {
 		err := svc.UpdateStreamStatus(ctx, streamUUID, models.StatusError)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "update error")
+	})
+}
+
+func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
+	t.Run("success complete", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "1234",
+			},
+		}
+		svcReq := service.CompleteStreamUploadRequest{
+			StreamID: streamUUID,
+			UserID:   userUUID,
+			Parts:    parts,
+		}
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusUploading,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+			UploadID: "upload-id-739",
+		}
+		err := expectedStream.SetStorageInfo(storageInfo)
+		assert.NoError(t, err)
+		mockRepo.EXPECT().
+			Read(gomock.Any(), streamUUID).
+			Return(expectedStream, nil)
+
+		mockStor.EXPECT().
+			CompleteMultipart(
+				gomock.Any(),
+				storageInfo.Key,
+				storageInfo.UploadID,
+				parts).
+			Return(nil)
+		mockRepo.EXPECT().
+			Update(
+				gomock.Any(),
+				gomock.Any()).
+			Return(nil)
+		mockQueue.EXPECT().
+			DistributeVideoTranscoding(
+				gomock.Any(),
+				streamUUID,
+				storageInfo.Key).
+			Return(nil)
+		err = svc.CompleteStreamUpload(ctx, svcReq)
+		require.NoError(t, err)
 	})
 }

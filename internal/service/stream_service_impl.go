@@ -433,7 +433,11 @@ func (s *StreamServiceImpl) UploadPart(ctx context.Context, req UploadPartReques
 	}, nil
 }
 
-func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req CompleteStreamUploadRequest) error {
+func (s *StreamServiceImpl) CompleteStreamUpload(
+	ctx context.Context,
+	req CompleteStreamUploadRequest,
+) error {
+	// Glues together the parts of the file and sends them to the queue for processing
 	stream, err := s.repo.Read(ctx, req.StreamID)
 	if err != nil {
 		return fmt.Errorf("error read stream from repository: %w", err)
@@ -457,7 +461,12 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 		return req.Parts[i].PartNumber < req.Parts[j].PartNumber
 	})
 
-	if err = s.storage.CompleteMultipart(ctx, storageInfo.Key, storageInfo.UploadID, req.Parts); err != nil {
+	if err = s.storage.CompleteMultipart(
+		ctx,
+		storageInfo.Key,
+		storageInfo.UploadID,
+		req.Parts,
+	); err != nil {
 		return fmt.Errorf("storage error with Multipart: %w", err)
 	}
 
@@ -472,7 +481,11 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 		return fmt.Errorf("error with update stream in repo: %w", err)
 	}
 
-	if err = s.queue.DistributeVideoTranscoding(ctx, stream.ID, storageInfo.Key); err != nil {
+	if err = s.queue.DistributeVideoTranscoding(
+		ctx,
+		stream.ID,
+		storageInfo.Key,
+	); err != nil {
 		slog.Error("failed to enqueue transcoding task for", "stream", stream.ID, "error", err)
 	}
 
