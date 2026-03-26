@@ -1662,4 +1662,345 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 		err = svc.CompleteStreamUpload(ctx, svcReq)
 		require.NoError(t, err)
 	})
+
+	t.Run("repository read error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "1234",
+			},
+		}
+		svcReq := service.CompleteStreamUploadRequest{
+			StreamID: streamUUID,
+			UserID:   userUUID,
+			Parts:    parts,
+		}
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusUploading,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+			UploadID: "upload-id-739",
+		}
+		err := expectedStream.SetStorageInfo(storageInfo)
+		assert.NoError(t, err)
+		mockRepo.EXPECT().
+			Read(gomock.Any(), streamUUID).
+			Return(nil, fmt.Errorf("repo read error"))
+
+		err = svc.CompleteStreamUpload(ctx, svcReq)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "repo read error")
+	})
+	t.Run("not owner error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "1234",
+			},
+		}
+		svcReq := service.CompleteStreamUploadRequest{
+			StreamID: streamUUID,
+			UserID:   userUUID,
+			Parts:    parts,
+		}
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: uuid.New(),
+			Status:  models.StatusUploading,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+			UploadID: "upload-id-739",
+		}
+		err := expectedStream.SetStorageInfo(storageInfo)
+		assert.NoError(t, err)
+		mockRepo.EXPECT().
+			Read(gomock.Any(), streamUUID).
+			Return(expectedStream, nil)
+		err = svc.CompleteStreamUpload(ctx, svcReq)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "forbidden: not a owner")
+	})
+	t.Run("not ready status error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "1234",
+			},
+		}
+		svcReq := service.CompleteStreamUploadRequest{
+			StreamID: streamUUID,
+			UserID:   userUUID,
+			Parts:    parts,
+		}
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusDraft,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+			UploadID: "upload-id-739",
+		}
+		err := expectedStream.SetStorageInfo(storageInfo)
+		assert.NoError(t, err)
+		mockRepo.EXPECT().
+			Read(gomock.Any(), streamUUID).
+			Return(expectedStream, nil)
+		err = svc.CompleteStreamUpload(ctx, svcReq)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot start upload for stream in status: draft")
+	})
+	t.Run("complete multipart error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "1234",
+			},
+		}
+		svcReq := service.CompleteStreamUploadRequest{
+			StreamID: streamUUID,
+			UserID:   userUUID,
+			Parts:    parts,
+		}
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusUploading,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+			UploadID: "upload-id-739",
+		}
+		err := expectedStream.SetStorageInfo(storageInfo)
+		assert.NoError(t, err)
+		mockRepo.EXPECT().
+			Read(gomock.Any(), streamUUID).
+			Return(expectedStream, nil)
+
+		mockStor.EXPECT().
+			CompleteMultipart(
+				gomock.Any(),
+				storageInfo.Key,
+				storageInfo.UploadID,
+				parts).
+			Return(fmt.Errorf("complete error"))
+		err = svc.CompleteStreamUpload(ctx, svcReq)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "complete error")
+	})
+	t.Run("update repo error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "1234",
+			},
+		}
+		svcReq := service.CompleteStreamUploadRequest{
+			StreamID: streamUUID,
+			UserID:   userUUID,
+			Parts:    parts,
+		}
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusUploading,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+			UploadID: "upload-id-739",
+		}
+		err := expectedStream.SetStorageInfo(storageInfo)
+		assert.NoError(t, err)
+		mockRepo.EXPECT().
+			Read(gomock.Any(), streamUUID).
+			Return(expectedStream, nil)
+
+		mockStor.EXPECT().
+			CompleteMultipart(
+				gomock.Any(),
+				storageInfo.Key,
+				storageInfo.UploadID,
+				parts).
+			Return(nil)
+		mockRepo.EXPECT().
+			Update(
+				gomock.Any(),
+				gomock.Any()).
+			Return(fmt.Errorf("update repo error"))
+		err = svc.CompleteStreamUpload(ctx, svcReq)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "update repo error")
+	})
+	t.Run("queue error propagate", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		parts := []models.MultipartPart{
+			{
+				PartNumber: 1,
+				ETag:       "1234",
+			},
+		}
+		svcReq := service.CompleteStreamUploadRequest{
+			StreamID: streamUUID,
+			UserID:   userUUID,
+			Parts:    parts,
+		}
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusUploading,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+			UploadID: "upload-id-739",
+		}
+		err := expectedStream.SetStorageInfo(storageInfo)
+		assert.NoError(t, err)
+		mockRepo.EXPECT().
+			Read(gomock.Any(), streamUUID).
+			Return(expectedStream, nil)
+
+		mockStor.EXPECT().
+			CompleteMultipart(
+				gomock.Any(),
+				storageInfo.Key,
+				storageInfo.UploadID,
+				parts).
+			Return(nil)
+		mockRepo.EXPECT().
+			Update(
+				gomock.Any(),
+				gomock.Any()).
+			Return(nil)
+		mockQueue.EXPECT().
+			DistributeVideoTranscoding(
+				gomock.Any(),
+				streamUUID,
+				storageInfo.Key).
+			Return(fmt.Errorf("queue error"))
+		err = svc.CompleteStreamUpload(ctx, svcReq)
+		require.NoError(t, err)
+	})
 }

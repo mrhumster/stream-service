@@ -352,7 +352,6 @@ func TestGormStreamRepository_Update_Extra(t *testing.T) {
 		err := repo2.Update(ctx, stream)
 		assert.Error(t, err)
 		require.Contains(t, err.Error(), "database connection lost")
-
 	})
 }
 
@@ -441,5 +440,4 @@ func TestGormStreamRepository_IncremetViews(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "database connection lost")
 	})
-
 }

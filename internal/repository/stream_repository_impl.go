@@ -120,7 +120,10 @@ func (r *GormStreamRepository) GetByOwner(ctx context.Context, ownerID uuid.UUID
 func (r *GormStreamRepository) Exists(ctx context.Context, id uuid.UUID) bool {
 	var stream *models.Stream
 	result := r.db.WithContext(ctx).First(&stream, id)
-	return result.Error != nil
+	if result.Error != nil {
+		return false
+	}
+	return true
 }
 
 func (r *GormStreamRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status models.StreamStatus) error {

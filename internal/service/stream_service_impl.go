@@ -474,7 +474,7 @@ func (s *StreamServiceImpl) CompleteStreamUpload(
 	stream.Status = models.StatusProcessing
 
 	if err = stream.SetStorageInfo(&storageInfo); err != nil {
-		return err
+		return fmt.Errorf("error with set storage info: %w", err)
 	}
 
 	if err = s.repo.Update(ctx, stream); err != nil {
