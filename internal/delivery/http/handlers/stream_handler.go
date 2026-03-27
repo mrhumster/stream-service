@@ -168,7 +168,7 @@ func (h *StreamHandler) UpdateStream(c *gin.Context) {
 		return
 	}
 
-	updatedStream, err := h.service.UpdateStream(c.Request.Context(), streamUUID, updateRequest)
+	updatedStream, err := h.service.UpdateStream(c.Request.Context(), streamUUID, *updateRequest)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		return

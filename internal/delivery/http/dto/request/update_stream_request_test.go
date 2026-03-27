@@ -1,10 +1,12 @@
 package request
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func strPtr(s string) *string {
@@ -41,6 +43,13 @@ func TestUpdateStreamRequest_Validate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "title to long",
+			request: UpdateStreamRequest{
+				Title: strPtr(strings.Repeat("a", 257)),
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -53,4 +62,24 @@ func TestUpdateStreamRequest_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateStreamRequest_ToServiceRequest(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		updReq := UpdateStreamRequest{
+			Title: strPtr("title"),
+		}
+		svcReq, err := updReq.ToServiceRequest()
+		require.NoError(t, err)
+		assert.NotNil(t, svcReq)
+	})
+
+	t.Run("validate error", func(t *testing.T) {
+		updReq := UpdateStreamRequest{
+			Title: strPtr(""),
+		}
+		svcReq, err := updReq.ToServiceRequest()
+		require.Error(t, err)
+		assert.Nil(t, svcReq)
+	})
 }

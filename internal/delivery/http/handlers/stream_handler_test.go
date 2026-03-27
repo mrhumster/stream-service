@@ -164,6 +164,27 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
+
+	t.Run("propagation validation error to service req", func(t *testing.T) {
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", uuid.Nil)
+			c.Next()
+		})
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		handler := NewStreamHandler(mockService)
+		router.POST("/streams", handler.CreateStream)
+		reqBody := `{"Title": "Title", "Visibility": "public"}`
+		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
 	t.Run("propagation service error", func(t *testing.T) {
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {

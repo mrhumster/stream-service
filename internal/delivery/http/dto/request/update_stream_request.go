@@ -34,11 +34,11 @@ func (r *UpdateStreamRequest) Validate() error {
 	return nil
 }
 
-func (r *UpdateStreamRequest) ToServiceRequest() (service.UpdateStreamRequest, error) {
+func (r *UpdateStreamRequest) ToServiceRequest() (*service.UpdateStreamRequest, error) {
 	if err := r.Validate(); err != nil {
-		return service.UpdateStreamRequest{}, fmt.Errorf("validate failed: %w", err)
+		return nil, fmt.Errorf("validate failed: %w", err)
 	}
-	return service.UpdateStreamRequest{
+	return &service.UpdateStreamRequest{
 		Title:       r.Title,
 		Description: r.Description,
 		Visibility:  r.Visibility,
