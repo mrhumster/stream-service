@@ -107,7 +107,7 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 		return
 	}
 
-	stream, err := h.service.CreateStream(c.Request.Context(), serviceReq)
+	stream, err := h.service.CreateStream(c.Request.Context(), *serviceReq)
 	if err != nil {
 		// TODO: Реализовать разделение ошибок (validation, not found, internal)
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))

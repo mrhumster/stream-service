@@ -15,8 +15,14 @@ type CreateStreamRequest struct {
 	Tags        []string                `json:"tags"`
 }
 
-func (r *CreateStreamRequest) ToServiceRequest(ownerID uuid.UUID) (service.CreateStreamRequest, error) {
-	return service.CreateStreamRequest{
+func (r *CreateStreamRequest) ToServiceRequest(ownerID uuid.UUID) (*service.CreateStreamRequest, error) {
+	if err := r.Validate(); err != nil {
+		return nil, fmt.Errorf("validate error: %w", err)
+	}
+	if ownerID == uuid.Nil {
+		return nil, fmt.Errorf("owner uuid can not be nil")
+	}
+	return &service.CreateStreamRequest{
 		Title:       r.Title,
 		Description: r.Description,
 		Visibility:  r.Visibility,
