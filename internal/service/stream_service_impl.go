@@ -125,6 +125,7 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 }
 
 func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) error {
+	slog.Info("start deleting", "stream id", id)
 	stream, err := s.repo.Read(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -149,8 +150,11 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 				return fmt.Errorf("error delete stream file from storage: %w", err)
 			}
 		}
+		slog.Info("stream info", "status", stream.Status)
 		if stream.Status == models.StatusReady {
-			err = s.storage.DeleteFolder(ctx, fmt.Sprintf("/processed/%s", stream.ID))
+			dirPath := fmt.Sprintf("processed/%s", id)
+			slog.Info("stream processed", "path", dirPath)
+			err = s.storage.DeleteFolder(ctx, dirPath)
 			if err != nil {
 				slog.Error("failed to delete object", "error", err)
 			}
