@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -33,8 +34,12 @@ func (d *AsyncDistributor) DistributeVideoTranscoding(ctx context.Context, strea
 	}
 
 	task := asynq.NewTask(TaskVideoTranscoding, payload, asynq.MaxRetry(3))
-	info, err := d.client.EnqueueContext(ctx, task)
+	info, err := d.client.EnqueueContext(ctx, task, asynq.TaskID(streamUUID.String()))
 	if err != nil {
+		if errors.Is(err, asynq.ErrDuplicateTask) {
+			slog.Warn("task already equeued", "uuid", streamUUID)
+			return nil, nil
+		}
 		return nil, fmt.Errorf("failed to enqueue task: %w", err)
 	}
 	slog.Info("📩 Enqueue task:", "id", info.ID, "queue", info.Queue)
