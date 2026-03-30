@@ -164,6 +164,7 @@ func (s *MinIOStorage) CompleteMultipart(ctx context.Context, path, uploadID str
 }
 
 func (s *MinIOStorage) DeleteFolder(ctx context.Context, dirPath string) error {
+	slog.Warn("start delete folder", "dir path", dirPath)
 	prefix := dirPath
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"

@@ -160,7 +160,6 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 			}
 		}
 	}
-	slog.Info("🤯 STREAM", "Processing", stream.Processing, "status", stream.Status, "ID", stream.ID)
 
 	if stream.Processing != nil {
 		var processing models.StreamProcessing
