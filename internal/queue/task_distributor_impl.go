@@ -24,7 +24,6 @@ func NewAsyncDistributor(redisOpt asynq.RedisClientOpt) TaskDistributor {
 }
 
 func (d *AsyncDistributor) DistributeVideoTranscoding(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
-	slog.Info("🚀 new task")
 	payload, err := json.Marshal(VideoTranscodingPayload{
 		StreamUUID: streamUUID,
 		InputPath:  inputPath,
@@ -42,12 +41,12 @@ func (d *AsyncDistributor) DistributeVideoTranscoding(ctx context.Context, strea
 		}
 		return nil, fmt.Errorf("failed to enqueue task: %w", err)
 	}
-	slog.Info("📩 Enqueue task:", "id", info.ID, "queue", info.Queue)
+	slog.Info("enqueue task:", "id", info.ID, "queue", info.Queue)
 	return &info.ID, nil
 }
 
 func (d *AsyncDistributor) TerminateTask(ctx context.Context, taskID string) error {
-	slog.Info("❌ terminate task", "TaskID", taskID)
+	slog.Info("terminate task", "TaskID", taskID)
 	err := d.inspector.CancelProcessing(taskID)
 	if err != nil {
 		err = d.inspector.DeleteTask("default", taskID)
