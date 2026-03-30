@@ -146,7 +146,7 @@ func (r *GormStreamRepository) UpdateProcessing(ctx context.Context, id uuid.UUI
 	if result.Error != nil {
 		return fmt.Errorf("stream id not found")
 	}
-	if err := stream.UpdateProcessing(processing.Progress, processing.Steps, processing.Error); err != nil {
+	if err := stream.UpdateProcessing(processing.Progress, processing.Steps, processing.Error, processing.TaskID); err != nil {
 		return fmt.Errorf("update stream processing error: %w", err)
 	}
 	result = r.db.WithContext(ctx).Save(stream)

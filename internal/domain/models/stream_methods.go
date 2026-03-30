@@ -87,11 +87,12 @@ func (s *Stream) SetAnalitics(analitics *StreamAnalytics) error {
 	return nil
 }
 
-func (s *Stream) UpdateProcessing(process int, steps []string, errMsg *string) error {
+func (s *Stream) UpdateProcessing(process int, steps []string, errMsg *string, taskID *string) error {
 	processing := StreamProcessing{
 		Progress: process,
 		Steps:    steps,
 		Error:    errMsg,
+		TaskID:   taskID,
 	}
 	data, err := json.Marshal(processing)
 	if err != nil {

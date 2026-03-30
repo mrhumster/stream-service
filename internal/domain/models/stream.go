@@ -63,6 +63,7 @@ type StreamProcessing struct {
 	Progress int      `json:"progress"`
 	Steps    []string `json:"steps"`
 	Error    *string  `json:"error"`
+	TaskID   *string  `json:"task_id"`
 }
 
 type StreamAnalytics struct {

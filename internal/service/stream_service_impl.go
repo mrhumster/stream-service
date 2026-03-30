@@ -511,7 +511,7 @@ func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *Upd
 	if err != nil {
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
-	if err := stream.UpdateProcessing(req.Processing.Progress, req.Processing.Steps, req.Processing.Error); err != nil {
+	if err := stream.UpdateProcessing(req.Processing.Progress, req.Processing.Steps, req.Processing.Error, req.Processing.TaskID); err != nil {
 		return fmt.Errorf("error update processing: %w", err)
 	}
 	if err := s.repo.Update(ctx, stream); err != nil {
