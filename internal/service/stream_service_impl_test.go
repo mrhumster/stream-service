@@ -1700,7 +1700,7 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 		assert.NoError(t, err)
 		mockRepo.EXPECT().
 			Read(gomock.Any(), streamUUID).
-			Return(expectedStream, nil)
+			Return(expectedStream, nil).Times(1)
 
 		mockStor.EXPECT().
 			CompleteMultipart(
@@ -1721,6 +1721,15 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 				streamUUID,
 				storageInfo.Key).
 			Return(&taskID, nil)
+		mockRepo.EXPECT().
+			Read(gomock.Any(), streamUUID).
+			Return(expectedStream, nil)
+
+		mockRepo.EXPECT().
+			Update(
+				gomock.Any(),
+				gomock.Any()).
+			Return(nil)
 		err = svc.CompleteStreamUpload(ctx, svcReq)
 		require.NoError(t, err)
 	})

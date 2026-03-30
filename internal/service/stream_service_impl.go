@@ -517,7 +517,19 @@ func (s *StreamServiceImpl) CompleteStreamUpload(
 		slog.Error("failed to enqueue transcoding task for", "stream", stream.ID, "error", err)
 	}
 
-	slog.Info("send transcoder task", "TaskID", taskID)
+	slog.Info("send transcoder task", "TaskID", *taskID)
+
+	if err := s.UpdateStreamProcessing(ctx, &UpdateStreamProcessingRequest{
+		StreamUUID: req.StreamID,
+		Processing: models.StreamProcessing{
+			Progress: 0,
+			Steps:    []string{"convertation"},
+			Error:    nil,
+			TaskID:   taskID,
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to update processing: %w", err)
+	}
 	return nil
 }
 
