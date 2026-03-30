@@ -21,4 +21,5 @@ type FileStorage interface {
 	CompleteMultipart(ctx context.Context, path, uploadID string, parts []models.MultipartPart) error
 	AbortMultipart(ctx context.Context, path, uploadID string) error
 	GetBucketName() string
+	DeleteFolder(ctx context.Context, dirPath string) error
 }

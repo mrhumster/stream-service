@@ -103,6 +103,20 @@ func (mr *MockMinIOClientMockRecorder) GetObject(ctx, bucketName, objectName, op
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetObject", reflect.TypeOf((*MockMinIOClient)(nil).GetObject), ctx, bucketName, objectName, opts)
 }
 
+// ListObjects mocks base method.
+func (m *MockMinIOClient) ListObjects(ctx context.Context, dirPath string, opt minio.ListObjectsOptions) <-chan minio.ObjectInfo {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListObjects", ctx, dirPath, opt)
+	ret0, _ := ret[0].(<-chan minio.ObjectInfo)
+	return ret0
+}
+
+// ListObjects indicates an expected call of ListObjects.
+func (mr *MockMinIOClientMockRecorder) ListObjects(ctx, dirPath, opt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListObjects", reflect.TypeOf((*MockMinIOClient)(nil).ListObjects), ctx, dirPath, opt)
+}
+
 // MakeBucket mocks base method.
 func (m *MockMinIOClient) MakeBucket(ctx context.Context, bucketName string, opts minio.MakeBucketOptions) error {
 	m.ctrl.T.Helper()
@@ -189,6 +203,20 @@ func (m *MockMinIOClient) RemoveObject(ctx context.Context, bucketName, objectNa
 func (mr *MockMinIOClientMockRecorder) RemoveObject(ctx, bucketName, objectName, opts any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveObject", reflect.TypeOf((*MockMinIOClient)(nil).RemoveObject), ctx, bucketName, objectName, opts)
+}
+
+// RemoveObjects mocks base method.
+func (m *MockMinIOClient) RemoveObjects(ctx context.Context, bucketName string, objectsCh <-chan minio.ObjectInfo, opts minio.RemoveObjectsOptions) <-chan minio.RemoveObjectError {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveObjects", ctx, bucketName, objectsCh, opts)
+	ret0, _ := ret[0].(<-chan minio.RemoveObjectError)
+	return ret0
+}
+
+// RemoveObjects indicates an expected call of RemoveObjects.
+func (mr *MockMinIOClientMockRecorder) RemoveObjects(ctx, bucketName, objectsCh, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveObjects", reflect.TypeOf((*MockMinIOClient)(nil).RemoveObjects), ctx, bucketName, objectsCh, opts)
 }
 
 // StatObject mocks base method.

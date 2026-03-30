@@ -149,6 +149,28 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 				return fmt.Errorf("error delete stream file from storage: %w", err)
 			}
 		}
+		if stream.Status == models.StatusReady {
+			err = s.storage.DeleteFolder(ctx, fmt.Sprintf("/processed/%s", stream.ID))
+			if err != nil {
+				slog.Error("failed to delete object", "error", err)
+			}
+		}
+	}
+
+	if stream.Processing != nil {
+		var processing models.StreamProcessing
+		err = json.Unmarshal(stream.Processing, &processing)
+		if err != nil {
+			return fmt.Errorf("umarshaling processing error: %w", err)
+		}
+		if processing.TaskID != nil && stream.Status == models.StatusProcessing {
+			if err = s.queue.TerminateTask(ctx, *processing.TaskID); err != nil {
+				slog.Error("terminate task",
+					"stream uuid", stream.ID,
+					"task id", processing.TaskID,
+					"error", err.Error())
+			}
+		}
 	}
 
 	if err := s.repo.Delete(ctx, id); err != nil {
@@ -481,14 +503,16 @@ func (s *StreamServiceImpl) CompleteStreamUpload(
 		return fmt.Errorf("error with update stream in repo: %w", err)
 	}
 
-	if err = s.queue.DistributeVideoTranscoding(
+	taskID, err := s.queue.DistributeVideoTranscoding(
 		ctx,
 		stream.ID,
 		storageInfo.Key,
-	); err != nil {
+	)
+	if err != nil {
 		slog.Error("failed to enqueue transcoding task for", "stream", stream.ID, "error", err)
 	}
 
+	slog.Info("send transcoder task", "TaskID", taskID)
 	return nil
 }
 

@@ -154,7 +154,7 @@ func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 			Description: "Drasft",
 			Title:       "Stream test",
 			OwnerID:     ownerID,
-			Status:      models.StatusDraft,
+			Status:      models.StatusProcessing,
 		}
 
 		streamForDelete.ID = generatedStreamID
@@ -193,7 +193,6 @@ func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 		).
 			Return(true, nil).
 			Times(1)
-
 		err := serviceImpl.DeleteStream(ctx, generatedStreamID)
 		require.NoError(t, err)
 	})
@@ -267,6 +266,67 @@ func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 		p.EXPECT().RemovePolicy(gomock.Any(), userID.String(), "stream/"+streamID.String(), "delete").Return(true, nil)
 		s.EXPECT().Delete(gomock.Any(), stor.Key).Return(nil)
 		err = srv.DeleteStream(ctx, streamID)
+		require.NoError(t, err)
+	})
+	t.Run("successful delete with terminate task", func(t *testing.T) {
+		ownerID := uuid.New()
+		generatedStreamID := uuid.New()
+
+		taskID := "task-id"
+		streamProcessing := models.StreamProcessing{
+			Progress: 50,
+			Steps:    []string{"convertation"},
+			Error:    nil,
+			TaskID:   &taskID,
+		}
+		streamProcessingJSON, _ := json.Marshal(streamProcessing)
+
+		streamForDelete := &models.Stream{
+			Description: "Drasft",
+			Title:       "Stream test",
+			OwnerID:     ownerID,
+			Status:      models.StatusProcessing,
+		}
+
+		streamForDelete.ID = generatedStreamID
+
+		streamForDelete.Processing = datatypes.JSON(streamProcessingJSON)
+		mockRepo.EXPECT().
+			Read(gomock.Any(), generatedStreamID).
+			Return(streamForDelete, nil)
+
+		mockRepo.EXPECT().
+			Delete(gomock.Any(), generatedStreamID).
+			Return(nil)
+
+		mockPermissionClient.EXPECT().
+			RemovePolicy(
+				gomock.Any(),
+				ownerID.String(),
+				fmt.Sprintf("stream/%s", generatedStreamID.String()),
+				"write",
+			).
+			Return(true, nil).
+			Times(1)
+
+		mockPermissionClient.EXPECT().RemovePolicy(
+			gomock.Any(),
+			ownerID.String(),
+			fmt.Sprintf("stream/%s", generatedStreamID.String()),
+			"read",
+		).
+			Return(true, nil).
+			Times(1)
+		mockPermissionClient.EXPECT().RemovePolicy(
+			gomock.Any(),
+			ownerID.String(),
+			fmt.Sprintf("stream/%s", generatedStreamID.String()),
+			"delete",
+		).
+			Return(true, nil).
+			Times(1)
+		mockQueue.EXPECT().TerminateTask(gomock.Any(), gomock.Any()).Return(nil)
+		err := serviceImpl.DeleteStream(ctx, generatedStreamID)
 		require.NoError(t, err)
 	})
 }
@@ -1654,12 +1714,13 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 				gomock.Any(),
 				gomock.Any()).
 			Return(nil)
+		taskID := "task-1"
 		mockQueue.EXPECT().
 			DistributeVideoTranscoding(
 				gomock.Any(),
 				streamUUID,
 				storageInfo.Key).
-			Return(nil)
+			Return(&taskID, nil)
 		err = svc.CompleteStreamUpload(ctx, svcReq)
 		require.NoError(t, err)
 	})
@@ -2000,7 +2061,7 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 				gomock.Any(),
 				streamUUID,
 				storageInfo.Key).
-			Return(fmt.Errorf("queue error"))
+			Return(nil, fmt.Errorf("queue error"))
 		err = svc.CompleteStreamUpload(ctx, svcReq)
 		require.NoError(t, err)
 	})
@@ -2022,12 +2083,14 @@ func TestStreamServiceImpl_UpdateStreamProcessing(t *testing.T) {
 		ctx := context.Background()
 		streamUUID := uuid.New()
 		userUUID := uuid.New()
+		taskID := "task-id"
 		svcReq := &service.UpdateStreamProcessingRequest{
 			StreamUUID: streamUUID,
 			Processing: models.StreamProcessing{
 				Progress: int(100),
 				Steps:    []string{"convert"},
 				Error:    nil,
+				TaskID:   &taskID,
 			},
 		}
 		expectedStream := &models.Stream{
@@ -2056,6 +2119,7 @@ func TestStreamServiceImpl_UpdateStreamProcessing(t *testing.T) {
 				gomock.Any()).
 			Do(func(ctx context.Context, stream *models.Stream) {
 				require.Contains(t, stream.Processing.String(), "100")
+				require.Contains(t, stream.Processing.String(), "task-id")
 			}).
 			Return(nil)
 		err = svc.UpdateStreamProcessing(ctx, svcReq)

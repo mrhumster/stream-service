@@ -86,6 +86,20 @@ func (mr *MockFileStorageMockRecorder) Delete(ctx, path any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockFileStorage)(nil).Delete), ctx, path)
 }
 
+// DeleteFolder mocks base method.
+func (m *MockFileStorage) DeleteFolder(ctx context.Context, dirPath string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteFolder", ctx, dirPath)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteFolder indicates an expected call of DeleteFolder.
+func (mr *MockFileStorageMockRecorder) DeleteFolder(ctx, dirPath any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteFolder", reflect.TypeOf((*MockFileStorage)(nil).DeleteFolder), ctx, dirPath)
+}
+
 // Download mocks base method.
 func (m *MockFileStorage) Download(ctx context.Context, path string) (io.ReadCloser, int64, error) {
 	m.ctrl.T.Helper()

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -158,6 +160,25 @@ func (s *MinIOStorage) CompleteMultipart(ctx context.Context, path, uploadID str
 		return s.mapMinIOError(err)
 	}
 
+	return nil
+}
+
+func (s *MinIOStorage) DeleteFolder(ctx context.Context, dirPath string) error {
+	prefix := dirPath
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+		objectCh := s.Client.ListObjects(ctx, s.Bucket, minio.ListObjectsOptions{
+			Prefix:    prefix,
+			Recursive: true,
+		})
+		errorCh := s.Client.RemoveObjects(ctx, s.Bucket, objectCh, minio.RemoveObjectsOptions{})
+		for err := range errorCh {
+			if err.Err != nil {
+				slog.Error("failed to delete object", "error", err)
+				return fmt.Errorf("failed to delete object %s: %w", err.ObjectName, err.Err)
+			}
+		}
+	}
 	return nil
 }
 

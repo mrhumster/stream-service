@@ -64,3 +64,11 @@ func (a *minioAdapter) CompleteMultipartUpload(ctx context.Context, bucket, obje
 func (a *minioAdapter) AbortMultipartUpload(ctx context.Context, bucket, object, uploadID string) error {
 	return a.core.AbortMultipartUpload(ctx, bucket, object, uploadID)
 }
+
+func (a *minioAdapter) ListObjects(ctx context.Context, bucketName string, opts minio.ListObjectsOptions) <-chan minio.ObjectInfo {
+	return a.client.ListObjects(ctx, bucketName, opts)
+}
+
+func (a *minioAdapter) RemoveObjects(ctx context.Context, bucketName string, objectsCh <-chan minio.ObjectInfo, opts minio.RemoveObjectsOptions) <-chan minio.RemoveObjectError {
+	return a.client.RemoveObjects(ctx, bucketName, objectsCh, opts)
+}

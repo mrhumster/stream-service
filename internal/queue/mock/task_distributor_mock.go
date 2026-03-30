@@ -42,15 +42,30 @@ func (m *MockTaskDistributor) EXPECT() *MockTaskDistributorMockRecorder {
 }
 
 // DistributeVideoTranscoding mocks base method.
-func (m *MockTaskDistributor) DistributeVideoTranscoding(ctx context.Context, streamUUID uuid.UUID, inputPath string) error {
+func (m *MockTaskDistributor) DistributeVideoTranscoding(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DistributeVideoTranscoding", ctx, streamUUID, inputPath)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(*string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // DistributeVideoTranscoding indicates an expected call of DistributeVideoTranscoding.
 func (mr *MockTaskDistributorMockRecorder) DistributeVideoTranscoding(ctx, streamUUID, inputPath any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DistributeVideoTranscoding", reflect.TypeOf((*MockTaskDistributor)(nil).DistributeVideoTranscoding), ctx, streamUUID, inputPath)
+}
+
+// TerminateTask mocks base method.
+func (m *MockTaskDistributor) TerminateTask(ctx context.Context, taskID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TerminateTask", ctx, taskID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// TerminateTask indicates an expected call of TerminateTask.
+func (mr *MockTaskDistributorMockRecorder) TerminateTask(ctx, taskID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TerminateTask", reflect.TypeOf((*MockTaskDistributor)(nil).TerminateTask), ctx, taskID)
 }
