@@ -315,6 +315,30 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 		_ = s.storage.Delete(ctx, storageKey)
 		return fmt.Errorf("failed to update stream: %w", err)
 	}
+
+	taskID, err := s.queue.DistributeVideoTranscoding(
+		ctx,
+		stream.ID,
+		storageInfo.Key,
+	)
+	if err != nil {
+		slog.Error("failed to enqueue transcoding task for", "stream", stream.ID, "error", err)
+	}
+
+	slog.Info("send transcoder task", "TaskID", *taskID)
+
+	if err := s.UpdateStreamProcessing(ctx, &UpdateStreamProcessingRequest{
+		StreamUUID: req.StreamID,
+		Processing: models.StreamProcessing{
+			Progress: 0,
+			Steps:    []string{"convertation"},
+			Error:    nil,
+			TaskID:   taskID,
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to update processing: %w", err)
+	}
+
 	return nil
 }
 
@@ -459,10 +483,7 @@ func (s *StreamServiceImpl) UploadPart(ctx context.Context, req UploadPartReques
 	}, nil
 }
 
-func (s *StreamServiceImpl) CompleteStreamUpload(
-	ctx context.Context,
-	req CompleteStreamUploadRequest,
-) error {
+func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req CompleteStreamUploadRequest) error {
 	// Glues together the parts of the file and sends them to the queue for processing
 	stream, err := s.repo.Read(ctx, req.StreamID)
 	if err != nil {
