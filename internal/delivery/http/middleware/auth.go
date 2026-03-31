@@ -32,14 +32,13 @@ func AuthMiddleware(tokenService *service.TokenService) gin.HandlerFunc {
 
 func extractToken(r *http.Request) string {
 	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return ""
+	if authHeader != "" {
+		parts := strings.Split(authHeader, " ")
+		if len(parts) == 2 || parts[0] == "Bearer" {
+			return parts[1]
+		}
 	}
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 || parts[0] != "Bearer" {
-		return ""
-	}
-	return parts[1]
+	return r.URL.Query().Get("token")
 }
 
 func Authorize(obj string, act string, client auth.PermissionClient) gin.HandlerFunc {
