@@ -569,6 +569,11 @@ func (s *StreamServiceImpl) UpdateStreamMetadata(ctx context.Context, req *Updat
 
 func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *UpdateStreamProcessingRequest) error {
 	stream, err := s.repo.Read(ctx, req.StreamUUID)
+	if req.Processing.TaskID == nil {
+		var currentProcessing models.StreamProcessing
+		json.Unmarshal(stream.Processing, &currentProcessing)
+		req.Processing.TaskID = currentProcessing.TaskID
+	}
 	if err != nil {
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
