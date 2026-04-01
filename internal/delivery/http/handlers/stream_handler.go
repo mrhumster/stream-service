@@ -13,14 +13,19 @@ import (
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
+	"github.com/mrhumster/stream-service/internal/wss"
 )
 
 type StreamHandler struct {
 	service service.StreamService
+	hub     *wss.Hub
 }
 
-func NewStreamHandler(service service.StreamService) *StreamHandler {
-	return &StreamHandler{service: service}
+func NewStreamHandler(service service.StreamService, wssHub *wss.Hub) *StreamHandler {
+	return &StreamHandler{
+		service: service,
+		hub:     wssHub,
+	}
 }
 
 func (h *StreamHandler) ListStreamOwner(c *gin.Context) {

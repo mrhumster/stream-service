@@ -44,7 +44,7 @@ func TestStreamHandler_GetStream(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockService := servicemock.NewMockStreamService(ctrl)
-	handler := NewStreamHandler(mockService)
+	handler := NewStreamHandler(mockService, nil)
 	router.GET("/streams/:id", handler.GetStream)
 
 	t.Run("invalid user ID type", func(t *testing.T) {
@@ -59,7 +59,7 @@ func TestStreamHandler_GetStream(t *testing.T) {
 		mockService.EXPECT().GetStream(gomock.Any(), gomock.Any()).Return(&models.Stream{
 			Visibility: models.VisibilityPrivate,
 		}, nil)
-		handler1 := NewStreamHandler(mockService)
+		handler1 := NewStreamHandler(mockService, nil)
 		r1.GET("/streams/:id", handler1.GetStream)
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", uuid.New()), nil)
 		w := httptest.NewRecorder()
@@ -75,7 +75,7 @@ func TestStreamHandler_GetStream(t *testing.T) {
 		mockService.EXPECT().GetStream(gomock.Any(), gomock.Any()).Return(&models.Stream{
 			Visibility: models.VisibilityPrivate,
 		}, nil)
-		handler1 := NewStreamHandler(mockService)
+		handler1 := NewStreamHandler(mockService, nil)
 		r1.GET("/streams/:id", handler1.GetStream)
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", uuid.New()), nil)
 		w := httptest.NewRecorder()
@@ -95,7 +95,7 @@ func TestStreamHandler_GetStream(t *testing.T) {
 		expectedError := "expected error"
 		mockService := servicemock.NewMockStreamService(ctrl1)
 		mockService.EXPECT().GetStream(gomock.Any(), gomock.Any()).Return(nil, errors.New(expectedError))
-		handler1 := NewStreamHandler(mockService)
+		handler1 := NewStreamHandler(mockService, nil)
 		r1.GET("/streams/:id", handler1.GetStream)
 		streamID := uuid.New()
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", streamID), nil)
@@ -155,7 +155,7 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
 
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.POST("/streams", handler.CreateStream)
 		reqBody := `{"Title": "Title", "Visibility": "public"}`
 		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
@@ -175,7 +175,7 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
 
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.POST("/streams", handler.CreateStream)
 		reqBody := `{"Title": "Title", "Visibility": "public"}`
 		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
@@ -197,7 +197,7 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		expectedError := "title cannot be empty"
 		mockService.EXPECT().CreateStream(gomock.Any(), gomock.Any()).Return(nil, errors.New(expectedError))
 
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.POST("/streams", handler.CreateStream)
 		reqBody := `{"Title": "Title", "Visibility": "public"}`
 		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
@@ -222,7 +222,7 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.POST("/streams", handler.CreateStream)
 		reqBody := `{"Title": Test Stream, "Visibility": "public"}`
 		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
@@ -241,7 +241,7 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.POST("/streams", handler.CreateStream)
 		reqBody := `{"Title": Test Stream, "Visibility": "public"}`
 		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
@@ -255,7 +255,7 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.POST("/streams", handler.CreateStream)
 		reqBody := `{"Title": "Test Stream", "Visibility": "public"}`
 		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
@@ -274,7 +274,7 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.POST("/streams", handler.CreateStream)
 		reqBody := `{"Title": "Test Stream", "Visibility": "public"}`
 		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
@@ -294,7 +294,7 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.POST("/streams", handler.CreateStream)
 
 		expecetedStream := &models.Stream{
@@ -331,7 +331,7 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.POST("/streams", handler.CreateStream)
 
 		reqBody := `{"Title": "", "Visibility": "public"}`
@@ -355,7 +355,7 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.PATCH("/streams/:id", handler.UpdateStream)
 		existiongStream := uuid.New()
 		updatedStream := &models.Stream{
@@ -391,7 +391,7 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.PATCH("/streams/:id", handler.UpdateStream)
 		existiongStream := uuid.New()
 		reqBody := `{"Title": "", "Visibility": "public", "Description": "Updated description"}`
@@ -413,7 +413,7 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.PATCH("/streams/:id", handler.UpdateStream)
 		reqBody := `{"Title": "", "Visibility": "public", "Description": "Updated description"}`
 		req := httptest.NewRequest("PATCH", "/streams/bad-stream-id", bytes.NewBufferString(reqBody))
@@ -434,7 +434,7 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.PATCH("/streams/:id", handler.UpdateStream)
 		existiongStream := uuid.New()
 		reqBody := `{"Title": "", "Visibility": public, "Description": "Updated description"}`
@@ -450,7 +450,7 @@ func TestStreamHandler_UpdateStream(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
@@ -491,7 +491,7 @@ func TestStreamHandler_DeleteStream(t *testing.T) {
 
 		mockService := servicemock.NewMockStreamService(ctrl)
 		router := setupTestRouter()
-		handlers := NewStreamHandler(mockService)
+		handlers := NewStreamHandler(mockService, nil)
 		router.DELETE("/streams/:id", handlers.DeleteStream)
 		existingStreamID := uuid.New()
 		mockService.EXPECT().DeleteStream(gomock.Any(), existingStreamID).Return(nil)
@@ -508,7 +508,7 @@ func TestStreamHandler_DeleteStream(t *testing.T) {
 
 		mockService := servicemock.NewMockStreamService(ctrl)
 		router := setupTestRouter()
-		handlers := NewStreamHandler(mockService)
+		handlers := NewStreamHandler(mockService, nil)
 		router.DELETE("/streams/:id", handlers.DeleteStream)
 		existingStreamID := "invalid-uuid-struct"
 		req := httptest.NewRequest("DELETE", fmt.Sprintf("/streams/%s", existingStreamID), nil)
@@ -528,7 +528,7 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handlers := NewStreamHandler(mockService)
+		handlers := NewStreamHandler(mockService, nil)
 		userID := uuid.New()
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
@@ -567,7 +567,7 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
 			c.Set("user", uuid.New())
@@ -595,7 +595,7 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handlers := NewStreamHandler(mockService)
+		handlers := NewStreamHandler(mockService, nil)
 		userID := uuid.New()
 		streamID := uuid.New()
 		router := setupTestRouter()
@@ -628,7 +628,7 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handlers := NewStreamHandler(mockService)
+		handlers := NewStreamHandler(mockService, nil)
 		streamID := uuid.New()
 		router := setupTestRouter()
 		router.POST("/stream/:id/upload", handlers.UploadVideo)
@@ -649,7 +649,7 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handlers := NewStreamHandler(mockService)
+		handlers := NewStreamHandler(mockService, nil)
 		streamID := uuid.New()
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
@@ -675,7 +675,7 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handlers := NewStreamHandler(mockService)
+		handlers := NewStreamHandler(mockService, nil)
 		streamID := "123455"
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
@@ -701,7 +701,7 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handlers := NewStreamHandler(mockService)
+		handlers := NewStreamHandler(mockService, nil)
 		streamID := uuid.New()
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
@@ -734,7 +734,7 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 		})
 		ctrl := gomock.NewController(t)
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.GET("/streams/:id/download", handler.DownloadStream)
 		return router, mockService, handler
 	}
@@ -852,7 +852,7 @@ func TestStreamHandler_ListStreamPublic(t *testing.T) {
 		router := setupTestRouter()
 		ctrl := gomock.NewController(t)
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.GET("/streams", handler.ListStreamPublic)
 		return router, mockService, handler
 	}
@@ -928,7 +928,7 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 		router := setupTestRouter()
 		ctrl := gomock.NewController(t)
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.Use(func(c *gin.Context) {
 			c.Set("user", userID)
 			c.Next()
@@ -978,8 +978,8 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 		routerWithoutUserID := setupTestRouter()
 		controller := gomock.NewController(t)
 		defer controller.Finish()
-		mockServide := servicemock.NewMockStreamService(controller)
-		handler := NewStreamHandler(mockServide)
+		mockService := servicemock.NewMockStreamService(controller)
+		handler := NewStreamHandler(mockService, nil)
 		routerWithoutUserID.GET("/streams", handler.ListStreamOwner)
 		req := httptest.NewRequest("GET", "/streams", nil)
 		w := httptest.NewRecorder()
@@ -991,7 +991,7 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
 			c.Set("user", "1234asdasw")
@@ -1022,7 +1022,7 @@ func TestStreamHandler_StreamUpload(t *testing.T) {
 		router := setupTestRouter()
 		ctrl := gomock.NewController(t)
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.Use(func(c *gin.Context) {
 			c.Set("user", userID)
 			c.Next()
@@ -1291,7 +1291,7 @@ func TestStreamHandler_GetHLS(t *testing.T) {
 		router := setupTestRouter()
 		ctrl := gomock.NewController(t)
 		mockService := servicemock.NewMockStreamService(ctrl)
-		handler := NewStreamHandler(mockService)
+		handler := NewStreamHandler(mockService, nil)
 		router.Use(func(c *gin.Context) {
 			c.Set("user", userID)
 			c.Next()

@@ -18,6 +18,7 @@ import (
 	"github.com/mrhumster/stream-service/internal/queue"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/storage"
+	"github.com/mrhumster/stream-service/internal/wss"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -27,14 +28,16 @@ type StreamServiceImpl struct {
 	permissionClient auth.PermissionClient
 	storage          storage.FileStorage
 	queue            queue.TaskDistributor
+	hub              *wss.Hub
 }
 
-func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor) *StreamServiceImpl {
+func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor, wssHub *wss.Hub) *StreamServiceImpl {
 	return &StreamServiceImpl{
 		repo:             repo,
 		permissionClient: perm,
 		storage:          stor,
 		queue:            queue,
+		hub:              wssHub,
 	}
 }
 
@@ -537,8 +540,6 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 		slog.Error("failed to enqueue transcoding task for", "stream", stream.ID, "error", err)
 	}
 
-	slog.Info("send transcoder task", "TaskID", *taskID)
-
 	if err := s.UpdateStreamProcessing(ctx, &UpdateStreamProcessingRequest{
 		StreamUUID: req.StreamID,
 		Processing: models.StreamProcessing{
@@ -569,14 +570,15 @@ func (s *StreamServiceImpl) UpdateStreamMetadata(ctx context.Context, req *Updat
 
 func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *UpdateStreamProcessingRequest) error {
 	stream, err := s.repo.Read(ctx, req.StreamUUID)
+	if err != nil {
+		return fmt.Errorf("error read stream from repository: %w", err)
+	}
 	if req.Processing.TaskID == nil {
 		var currentProcessing models.StreamProcessing
 		json.Unmarshal(stream.Processing, &currentProcessing)
 		req.Processing.TaskID = currentProcessing.TaskID
 	}
-	if err != nil {
-		return fmt.Errorf("error read stream from repository: %w", err)
-	}
+
 	if err := stream.UpdateProcessing(req.Processing.Progress, req.Processing.Steps, req.Processing.Error, req.Processing.TaskID); err != nil {
 		return fmt.Errorf("error update processing: %w", err)
 	}

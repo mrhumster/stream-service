@@ -16,6 +16,7 @@ import (
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
 	"github.com/mrhumster/stream-service/internal/storage"
+	"github.com/mrhumster/stream-service/internal/wss"
 	"gorm.io/gorm"
 )
 
@@ -73,10 +74,11 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 		DB:       2,
 	}
 
+	hub := wss.NewHub()
 	database := repository.NewGormStreamRepository(db)
 	asyncDistributor := queue.NewAsyncDistributor(redisOpt)
-	streamService := service.NewStreamServiceImpl(database, permissionClient, storage, asyncDistributor)
-	streamHandler := handlers.NewStreamHandler(streamService)
+	streamService := service.NewStreamServiceImpl(database, permissionClient, storage, asyncDistributor, hub)
+	streamHandler := handlers.NewStreamHandler(streamService, hub)
 
 	r.GET("/stream/health", func(c *gin.Context) {
 		if _, err := db.DB(); err != nil {
