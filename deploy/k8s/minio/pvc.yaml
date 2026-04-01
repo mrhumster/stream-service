@@ -11,5 +11,6 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
+      storage: 20Gi
   storageClassName: hostpath
+  volumeName: pvc-632668b5-ecf5-4603-ab0e-b1301274b786
