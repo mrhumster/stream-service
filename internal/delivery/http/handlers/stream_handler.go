@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/request"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
 	"github.com/mrhumster/stream-service/internal/domain/models"
@@ -25,6 +26,31 @@ func NewStreamHandler(service service.StreamService, wssHub *wss.Hub) *StreamHan
 	return &StreamHandler{
 		service: service,
 		hub:     wssHub,
+	}
+}
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+func (h *StreamHandler) HandleWS(c *gin.Context) {
+	userUUID := c.MustGet("user").(uuid.UUID)
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+
+	h.hub.Register(userUUID, conn)
+
+	defer func() {
+		h.hub.Unregister(userUUID, conn)
+		conn.Close()
+	}()
+
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			break
+		}
 	}
 }
 

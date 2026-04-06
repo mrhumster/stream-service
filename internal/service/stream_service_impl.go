@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/mrhumster/identity-service/pkg/auth"
 	"github.com/mrhumster/stream-service/internal/domain/models"
@@ -585,6 +586,15 @@ func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *Upd
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
+
+	s.hub.SendProgress(stream.OwnerID, gin.H{
+		"type": "VIDEO_PROGRESS",
+		"payload": gin.H{
+			"stream_id": req.StreamUUID,
+			"progress":  req.Processing.Progress,
+			"status":    "processing",
+		},
+	})
 	return nil
 }
 

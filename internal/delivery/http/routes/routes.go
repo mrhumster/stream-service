@@ -93,6 +93,7 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	r.GET("/stream/:id", middleware.OptionalAuthMiddleware(tokenService), streamHandler.GetStream)
 	r.GET("/stream/:id/download", middleware.OptionalAuthMiddleware(tokenService), streamHandler.DownloadStream)
 	r.GET("/stream/:id/hls/*file", middleware.OptionalAuthMiddleware(tokenService), streamHandler.GetHLS)
+	r.GET("/stream/ws/updates", middleware.AuthMiddleware(tokenService), streamHandler.HandleWS)
 
 	authGroup := r.Group("/stream")
 	authGroup.Use(middleware.AuthMiddleware(tokenService))
