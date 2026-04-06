@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,6 +36,7 @@ var upgrader = websocket.Upgrader{
 
 func (h *StreamHandler) HandleWS(c *gin.Context) {
 	userUUID := c.MustGet("user").(uuid.UUID)
+	slog.Debug("Auth HANDLE WS", "user", userUUID)
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		return

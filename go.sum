@@ -135,10 +135,6 @@ github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/reflect2 v1.0.2 h1:xBagoLtFs94CBntxluKeaWgTMpvLxC4ur3nMaC9Gz0M=
 github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
-github.com/mrhumster/identity-service v0.1.1 h1:CjpnY5m+R1qVj6Pk6iRJ8sJA57Sn3AFPK04yNHsspK0=
-github.com/mrhumster/identity-service v0.1.1/go.mod h1:DXCH1fcGS2G2kh0pu6c6P9YY7fUnlBHK5j+X7IPgFWw=
-github.com/mrhumster/identity-service v0.1.2 h1:5jBoymS/Mu+3YtNsIw1Na50BL1oHs7YA2QRjiFXJ0wo=
-github.com/mrhumster/identity-service v0.1.2/go.mod h1:DXCH1fcGS2G2kh0pu6c6P9YY7fUnlBHK5j+X7IPgFWw=
 github.com/mrhumster/identity-service v0.1.3 h1:vD8vv4bdSpmvon2VSS0wcWmHfW4Ah7Q1iA4Q3kNFdAU=
 github.com/mrhumster/identity-service v0.1.3/go.mod h1:DXCH1fcGS2G2kh0pu6c6P9YY7fUnlBHK5j+X7IPgFWw=
 github.com/pelletier/go-toml/v2 v2.2.4 h1:mye9XuhQ6gvn5h28+VilKrrPoQVanw5PMw/TB0t5Ec4=
