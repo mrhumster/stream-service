@@ -587,14 +587,16 @@ func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *Upd
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
 
-	s.hub.SendProgress(stream.OwnerID, gin.H{
-		"type": "VIDEO_PROGRESS",
-		"payload": gin.H{
-			"stream_id": req.StreamUUID,
-			"progress":  req.Processing.Progress,
-			"status":    "processing",
-		},
-	})
+	if s.hub != nil {
+		s.hub.SendProgress(stream.OwnerID, gin.H{
+			"type": "VIDEO_PROGRESS",
+			"payload": gin.H{
+				"stream_id": req.StreamUUID,
+				"progress":  req.Processing.Progress,
+				"status":    "processing",
+			},
+		})
+	}
 	return nil
 }
 
