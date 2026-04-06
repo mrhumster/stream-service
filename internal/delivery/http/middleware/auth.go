@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 func AuthMiddleware(tokenService *service.TokenService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := extractToken(c.Request)
+		slog.Debug("Extracted auth", "toekn", token)
 		claims, err := tokenService.ValidateAccessToken(token)
 		if err != nil {
 			log.Printf("⚠️ AuthMiddleware error: %v", err)
@@ -34,7 +36,7 @@ func extractToken(r *http.Request) string {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
 		parts := strings.Split(authHeader, " ")
-		if len(parts) == 2 || parts[0] == "Bearer" {
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
 			return parts[1]
 		}
 	}
