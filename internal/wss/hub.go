@@ -36,7 +36,7 @@ func (h *Hub) Unregister(userID uuid.UUID, conn *websocket.Conn) {
 	}
 }
 
-func (h *Hub) SendProgress(userID uuid.UUID, data interface{}) {
+func (h *Hub) SendMessgeToOwner(userID uuid.UUID, data interface{}) {
 	h.mu.Lock()
 	conns := h.clients[userID]
 	h.mu.Unlock()

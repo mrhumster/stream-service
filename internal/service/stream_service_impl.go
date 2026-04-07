@@ -588,12 +588,10 @@ func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *Upd
 	}
 
 	if s.hub != nil {
-		s.hub.SendProgress(stream.OwnerID, gin.H{
-			"type": "VIDEO_PROGRESS",
+		s.hub.SendMessgeToOwner(stream.OwnerID, gin.H{
+			"type": "STREAM_UPDATED",
 			"payload": gin.H{
 				"stream_id": req.StreamUUID,
-				"progress":  req.Processing.Progress,
-				"status":    "processing",
 			},
 		})
 	}
