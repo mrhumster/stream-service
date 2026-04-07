@@ -16,11 +16,12 @@ type StreamResponse struct {
 	OwnerID     uuid.UUID               `json:"owner_id"`
 	Visibility  models.StreamVisibility `json:"visibility"`
 	Tags        []string                `json:"tags"`
-	Metadata    map[string]any          `json:"metadata"`
+	Metadata    models.StreamMetadata   `json:"metadata"`
 	CreatedAt   time.Time               `json:"created_at"`
 	UpdatedAt   time.Time               `json:"updated_at"`
 	PublishedAt *time.Time              `json:"published_at"`
-	Storage     map[string]string       `json:"storage"`
+	Storage     models.StreamStorage    `json:"storage"`
+	Processing  models.StreamProcessing `json:"processing"`
 }
 
 func FromDomainModel(stream *models.Stream) StreamResponse {
@@ -43,15 +44,21 @@ func FromDomainModel(stream *models.Stream) StreamResponse {
 	}
 
 	if len(stream.Metadata) > 0 {
-		var metadata map[string]any
+		var metadata models.StreamMetadata
 		json.Unmarshal(stream.Metadata, &metadata)
 		resp.Metadata = metadata
 	}
 
 	if len(stream.Storage) > 0 {
-		var storage map[string]string
+		var storage models.StreamStorage
 		json.Unmarshal(stream.Storage, &storage)
 		resp.Storage = storage
+	}
+
+	if len(stream.Processing) > 0 {
+		var processing models.StreamProcessing
+		json.Unmarshal(stream.Processing, &processing)
+		resp.Processing = processing
 	}
 
 	return resp

@@ -24,7 +24,6 @@ func TestStreamResponse_FromDomainModel(t *testing.T) {
 	}
 
 	storageJSON, err := json.Marshal(storage)
-
 	if err != nil {
 		t.Errorf("Error marshal storage to JSON error: %s", err.Error())
 	}
@@ -63,12 +62,10 @@ func TestStreamResponse_FromDomainModel(t *testing.T) {
 	assert.Equal(t, models.VisibilityPublic, resp.Visibility)
 	assert.Equal(t, now, resp.CreatedAt)
 
-	assert.Equal(t, storage.Key, resp.Storage["key"])
-	assert.Equal(t, storage.Bucket, resp.Storage["bucket"])
-	assert.Equal(t, storage.Provider, resp.Storage["provider"])
-	assert.Equal(t, storage.Filename, resp.Storage["filename"])
+	assert.Equal(t, storage.Key, resp.Storage.Key)
+	assert.Equal(t, storage.Bucket, resp.Storage.Bucket)
+	assert.Equal(t, storage.Provider, resp.Storage.Provider)
+	assert.Equal(t, storage.Filename, resp.Storage.Filename)
 	assert.Contains(t, resp.Tags, "tag1")
-	assert.Contains(t, resp.Metadata, "resolution")
-	assert.Equal(t, resp.Metadata["resolution"], "2x2")
-
+	assert.Equal(t, resp.Metadata.Resolution, "2x2")
 }
