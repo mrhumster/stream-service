@@ -125,6 +125,8 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return nil, fmt.Errorf("failed to update stream: %w", err)
 	}
+
+	s.notifyUpdate(stream)
 	return stream, nil
 }
 
@@ -228,6 +230,7 @@ func (s *StreamServiceImpl) PublishStream(ctx context.Context, streamID uuid.UUI
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
+	s.notifyUpdate(stream)
 	return nil
 }
 
@@ -240,6 +243,7 @@ func (s *StreamServiceImpl) UnpublishStream(ctx context.Context, streamID uuid.U
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
+	s.notifyUpdate(stream)
 	return nil
 }
 
@@ -252,6 +256,7 @@ func (s *StreamServiceImpl) UpdateStreamStatus(ctx context.Context, streamID uui
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
+	s.notifyUpdate(stream)
 	return nil
 }
 
@@ -552,6 +557,7 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 	}); err != nil {
 		return fmt.Errorf("failed to update processing: %w", err)
 	}
+	s.notifyUpdate(stream)
 	return nil
 }
 
@@ -566,6 +572,7 @@ func (s *StreamServiceImpl) UpdateStreamMetadata(ctx context.Context, req *Updat
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
+	s.notifyUpdate(stream)
 	return nil
 }
 
@@ -586,15 +593,7 @@ func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *Upd
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
-
-	if s.hub != nil {
-		s.hub.SendMessgeToOwner(stream.OwnerID, gin.H{
-			"type": "STREAM_UPDATED",
-			"payload": gin.H{
-				"stream_id": req.StreamUUID,
-			},
-		})
-	}
+	s.notifyUpdate(stream)
 	return nil
 }
 
@@ -606,6 +605,17 @@ func getContentType(fileName string) string {
 		return "video/MP2T"
 	default:
 		return "application/octet-stream"
+	}
+}
+
+func (s *StreamServiceImpl) notifyUpdate(stream *models.Stream) {
+	if s.hub != nil {
+		s.hub.SendMessgeToOwner(stream.OwnerID, gin.H{
+			"type": "STREAM_UPDATED",
+			"payload": gin.H{
+				"stream_id": stream.ID,
+			},
+		})
 	}
 }
 
