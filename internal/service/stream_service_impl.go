@@ -29,16 +29,16 @@ type StreamServiceImpl struct {
 	permissionClient auth.PermissionClient
 	storage          storage.FileStorage
 	queue            queue.TaskDistributor
-	hub              *wss.Hub
+	hub              wss.Hub
 }
 
-func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor, wssHub *wss.Hub) *StreamServiceImpl {
+func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor, hub wss.Hub) *StreamServiceImpl {
 	return &StreamServiceImpl{
 		repo:             repo,
 		permissionClient: perm,
 		storage:          stor,
 		queue:            queue,
-		hub:              wssHub,
+		hub:              hub,
 	}
 }
 

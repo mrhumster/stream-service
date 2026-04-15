@@ -74,7 +74,7 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 		DB:       2,
 	}
 
-	hub := wss.NewHub()
+	hub := wss.NewWssHub()
 	database := repository.NewGormStreamRepository(db)
 	asyncDistributor := queue.NewAsyncDistributor(redisOpt)
 	streamService := service.NewStreamServiceImpl(database, permissionClient, storage, asyncDistributor, hub)

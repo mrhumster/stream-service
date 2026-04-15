@@ -20,13 +20,13 @@ import (
 
 type StreamHandler struct {
 	service service.StreamService
-	hub     *wss.Hub
+	hub     wss.Hub
 }
 
-func NewStreamHandler(service service.StreamService, wssHub *wss.Hub) *StreamHandler {
+func NewStreamHandler(service service.StreamService, hub wss.Hub) *StreamHandler {
 	return &StreamHandler{
 		service: service,
-		hub:     wssHub,
+		hub:     hub,
 	}
 }
 
@@ -39,6 +39,7 @@ func (h *StreamHandler) HandleWS(c *gin.Context) {
 	slog.Debug("Auth HANDLE WS", "user", userUUID)
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		slog.Error("Upgrade connection", "error", err)
 		return
 	}
 

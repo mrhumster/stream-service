@@ -17,11 +17,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/request"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/service"
 	servicemock "github.com/mrhumster/stream-service/internal/service/mock"
+	"github.com/mrhumster/stream-service/internal/wss/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -1366,5 +1368,36 @@ func TestStreamHandler_GetHLS(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 		assert.Contains(t, w.Body.String(), "file not found")
+	})
+}
+
+func TestStreamHandler_HandleWS(t *testing.T) {
+	userID := uuid.New()
+	setupTest := func() (*gin.Engine, *servicemock.MockStreamService, *StreamHandler, *mock.MockHub) {
+		router := setupTestRouter()
+		ctrl := gomock.NewController(t)
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockHub := mock.NewMockHub(ctrl)
+		handler := NewStreamHandler(mockService, mockHub)
+		router.Use(func(c *gin.Context) {
+			c.Set("user", userID)
+			c.Next()
+		})
+		router.GET("/streams/ws/upgrade", handler.HandleWS)
+		return router, mockService, handler, mockHub
+	}
+
+	t.Run("success", func(t *testing.T) {
+		router, _, _, mockHub := setupTest()
+		mockHub.EXPECT().Register(userID, gomock.Any()).Return()
+		ts := httptest.NewServer(router)
+		defer ts.Close()
+		u := "ws" + strings.TrimPrefix(ts.URL, "http") + "/streams/ws/upgrade"
+
+		conn, _, err := websocket.DefaultDialer.Dial(u, nil)
+		if err != nil {
+			t.Fatalf("failed to dial websocket: %v", err)
+		}
+		defer conn.Close()
 	})
 }
