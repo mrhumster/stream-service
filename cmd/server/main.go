@@ -38,7 +38,7 @@ func main() {
 	}
 
 	if !cfg.Server.KeepOriginalFile {
-		slog.Warn("ORIGINAL FILE AFTER TRANSCODING WILL BE DELETED")
+		log.Printf("⚠️ ORIGINAL FILE AFTER TRANSCODING WILL BE DELETED")
 	}
 
 	fileMinIOStorage, err := storage.NewMinIOStorageFromConfig(cfg.MinIO)
