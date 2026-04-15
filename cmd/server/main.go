@@ -37,6 +37,10 @@ func main() {
 		log.Fatalf("❌  Error load config: %v", err)
 	}
 
+	if !cfg.Server.KeepOriginalFile {
+		slog.Warn("ORIGINAL FILE AFTER TRANSCODING WILL BE DELETED")
+	}
+
 	fileMinIOStorage, err := storage.NewMinIOStorageFromConfig(cfg.MinIO)
 	if err != nil {
 		log.Fatalf("❌  Error create file storage: %v", err)
