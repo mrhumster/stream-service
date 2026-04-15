@@ -20,10 +20,19 @@ type Redis struct {
 	Password string
 }
 
+type ServerMode string
+
+const (
+	Debug   ServerMode = "debug"
+	Release ServerMode = "release"
+	Test    ServerMode = "test"
+)
+
 type Server struct {
 	ServerAddr       string
 	AuthServiceAddr  string
 	KeepOriginalFile bool
+	Mode             ServerMode
 }
 
 type Database struct {
@@ -49,9 +58,22 @@ type MinIO struct {
 	Region          string
 }
 
+func (m ServerMode) isValid() bool {
+	switch m {
+	case Test, Debug, Release:
+		return true
+	}
+	return false
+}
+
 func LoadConfig() (*Config, error) {
 	useSSL, _ := strconv.ParseBool(getEnv("MINIO_USE_SSL", "false"))
 	keepOriginalFile, _ := strconv.ParseBool(getEnv("KEEP_ORIGINAL_FILE", "true"))
+
+	mode := ServerMode(getEnv("MODE", "debug"))
+	if !mode.isValid() {
+		mode = Release
+	}
 
 	return &Config{
 		Database: Database{
@@ -67,6 +89,7 @@ func LoadConfig() (*Config, error) {
 			ServerAddr:       os.Getenv("SERVER_ADDR"),
 			AuthServiceAddr:  os.Getenv("AUTH_SERVICE_ADDRESS"),
 			KeepOriginalFile: keepOriginalFile,
+			Mode:             mode,
 		},
 		JWT: JWT{
 			AccessPublicKeyURL: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
@@ -98,7 +121,9 @@ func TestConfig() (*Config, error) {
 			TimeZone: "UTC",
 		},
 		Server: Server{
-			ServerAddr: os.Getenv("SERVER_ADDR"),
+			ServerAddr:       os.Getenv("SERVER_ADDR"),
+			KeepOriginalFile: false,
+			Mode:             Test,
 		},
 		JWT: JWT{
 			AccessPublicKeyURL: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),

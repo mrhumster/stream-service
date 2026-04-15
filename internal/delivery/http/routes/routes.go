@@ -20,13 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	ModeTest    = "TEST"
-	ModeDebug   = "DEBUG"
-	ModeRelease = "RELEASE"
-)
-
-func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClient, storage storage.FileStorage) (*gin.Engine, service.StreamService, error) {
+func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.PermissionClient, storage storage.FileStorage) (*gin.Engine, service.StreamService, error) {
 	var (
 		cfg *config.Config
 		err error
@@ -37,13 +31,13 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	r.Use(gin.Recovery())
 
 	switch mode {
-	case ModeTest:
+	case config.Test:
 		gin.SetMode(gin.TestMode)
 		cfg, err = config.TestConfig()
-	case ModeDebug:
+	case config.Debug:
 		gin.SetMode(gin.DebugMode)
 		cfg, err = config.TestConfig()
-	case ModeRelease:
+	case config.Release:
 		gin.SetMode(gin.ReleaseMode)
 		cfg, err = config.LoadConfig()
 	default:

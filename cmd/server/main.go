@@ -50,14 +50,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("❌ Error open database: %v", err)
 	}
-	mode := os.Getenv("MODE")
 
 	permissionClient, err := auth.NewPermissionClient(cfg.Server.AuthServiceAddr)
 	if err != nil {
 		log.Fatalf("❌ Permission gRPC client: %v", err)
 	}
 
-	r, svc, err := routes.SetupRoutes(db, mode, permissionClient, fileMinIOStorage)
+	r, svc, err := routes.SetupRoutes(db, cfg.Server.Mode, permissionClient, fileMinIOStorage)
 	if err != nil {
 		log.Fatalf("❌ Error gin route: %v", err)
 	}
