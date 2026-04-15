@@ -77,7 +77,7 @@ func SetupRoutes(db *gorm.DB, mode string, permissionClient auth.PermissionClien
 	hub := wss.NewWssHub()
 	database := repository.NewGormStreamRepository(db)
 	asyncDistributor := queue.NewAsyncDistributor(redisOpt)
-	streamService := service.NewStreamServiceImpl(database, permissionClient, storage, asyncDistributor, hub)
+	streamService := service.NewStreamServiceImpl(database, permissionClient, storage, asyncDistributor, hub, &cfg.Server)
 	streamHandler := handlers.NewStreamHandler(streamService, hub)
 
 	r.GET("/stream/health", func(c *gin.Context) {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	authmock "github.com/mrhumster/identity-service/pkg/auth/mock"
+	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	queuemock "github.com/mrhumster/stream-service/internal/queue/mock"
 	"github.com/mrhumster/stream-service/internal/repository"
@@ -28,6 +29,12 @@ import (
 	"gorm.io/gorm"
 )
 
+func srvCfg() *config.Server {
+	return &config.Server{
+		KeepOriginalFile: false,
+	}
+}
+
 func TestStreamServiceImpl_ListUserStreams(t *testing.T) {
 	ctx := context.Background()
 
@@ -39,7 +46,7 @@ func TestStreamServiceImpl_ListUserStreams(t *testing.T) {
 		mockPermissionClient := authmock.NewMockPermissionClient(ctrl)
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
 
 		userID := uuid.New()
 
@@ -77,7 +84,7 @@ func TestStreamServicImpl_ListStreams(t *testing.T) {
 	mockStorage := mock.NewMockFileStorage(ctrl)
 	mockQueue := queuemock.NewMockTaskDistributor(ctrl)
 
-	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil)
+	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
 	t.Run("list all streams with filter", func(t *testing.T) {
 		ownerID := uuid.New()
 		filter := repository.StreamFilter{
@@ -144,7 +151,7 @@ func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 	mockPermissionClient := authmock.NewMockPermissionClient(ctrl)
 	mockStorage := mock.NewMockFileStorage(ctrl)
 	mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil)
+	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
 
 	t.Run("successful delete", func(t *testing.T) {
 		ownerID := uuid.New()
@@ -233,7 +240,7 @@ func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 		p := authmock.NewMockPermissionClient(c)
 		s := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		srv := service.NewStreamServiceImpl(r, p, s, mockQueue, nil)
+		srv := service.NewStreamServiceImpl(r, p, s, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		storageKey := fmt.Sprintf("streams/%s/videos/%s_%s",
@@ -342,7 +349,7 @@ func TestStreamServicImpl_GetStream(t *testing.T) {
 	mockStorage := mock.NewMockFileStorage(ctrl)
 	mockQueue := queuemock.NewMockTaskDistributor(ctrl)
 
-	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil)
+	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
 	t.Run("successful get stream", func(t *testing.T) {
 		streamID := uuid.New()
 		existingStream := &models.Stream{
@@ -390,7 +397,7 @@ func TestStreamServicImpl_UpdateStream(t *testing.T) {
 		mockPermissionClient := authmock.NewMockPermissionClient(ctrl)
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		ownerID := uuid.New()
 
@@ -434,7 +441,7 @@ func TestStreamServicImpl_UpdateStream(t *testing.T) {
 
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		existingStream := &models.Stream{
 			Title:   "Test Stream",
@@ -467,7 +474,7 @@ func TestStreamServicImpl_UpdateStream(t *testing.T) {
 		mockPermissionClient := authmock.NewMockPermissionClient(ctrl)
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		existiongStream := &models.Stream{
 			Title:   "Original Title",
@@ -494,7 +501,7 @@ func TestStreamServicImpl_UpdateStream(t *testing.T) {
 		mockPermissionClient := authmock.NewMockPermissionClient(ctrl)
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		existingStream := &models.Stream{
 			Title:   "Original",
@@ -525,7 +532,7 @@ func TestStreamServicImpl_UpdateStream(t *testing.T) {
 
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		publishedStream := &models.Stream{
 			Title:  "Published Stream",
@@ -555,7 +562,7 @@ func TestStreamServicImpl_CreateStream(t *testing.T) {
 
 	mockStorage := mock.NewMockFileStorage(ctrl)
 	mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil)
+	serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
 
 	t.Run("succesful stream creation", func(t *testing.T) {
 		ownerID := uuid.New()
@@ -638,7 +645,7 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		fileName := "test.mp4"
@@ -716,7 +723,7 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepoo, mockPerm, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepoo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 
 		streamID := uuid.New()
 		userID := uuid.New()
@@ -741,7 +748,7 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepoo, mockPerm, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepoo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 
 		streamID := uuid.New()
 		userID := uuid.New()
@@ -773,7 +780,7 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		stream := &models.Stream{
@@ -804,7 +811,7 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 		mockStorage.EXPECT().GetBucketName().Return("bucketname")
 		streamID := uuid.New()
 		userID := uuid.New()
@@ -855,7 +862,7 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 
 		streamID := uuid.New()
 		userID := uuid.New()
@@ -927,7 +934,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		uploadID := "minio-session-123"
@@ -965,7 +972,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(nil, gorm.ErrRecordNotFound)
 		req := service.StartUploadRequest{
 			StreamID:  uuid.New(),
@@ -984,7 +991,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 		mockRepo.EXPECT().Read(ctx, gomock.Any()).Return(nil, errors.New("internal error"))
 
 		req := service.StartUploadRequest{
@@ -1006,7 +1013,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 		expectedStream := &models.Stream{
 			OwnerID: uuid.New(),
 			Title:   "someone else's stream",
@@ -1030,7 +1037,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 		userID := uuid.New()
 		expectedStream := &models.Stream{
 			Title:   "Stream already published",
@@ -1057,7 +1064,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 		userID := uuid.New()
 		expectedStream := &models.Stream{
 			Title:   "Stream already published",
@@ -1084,7 +1091,7 @@ func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {
 		mockStorage := mock.NewMockFileStorage(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 
 		userID := uuid.New()
 		streamID := uuid.New()
@@ -1124,7 +1131,7 @@ func TestStreamServicImpl_UploadPart(t *testing.T) {
 		mockAuth := authmock.NewMockPermissionClient(ctrl)
 		mockStor := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		uploadID := "UploadID-123"
@@ -1176,7 +1183,7 @@ func TestStreamServicImpl_UploadPart(t *testing.T) {
 		mockAuth := authmock.NewMockPermissionClient(ctrl)
 		mockStor := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		uploadID := "UploadID-123"
@@ -1217,7 +1224,7 @@ func TestStreamServicImpl_UploadPart(t *testing.T) {
 		mockAuth := authmock.NewMockPermissionClient(ctrl)
 		mockStor := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		uploadID := "UploadID-123"
@@ -1244,7 +1251,7 @@ func TestStreamServicImpl_UploadPart(t *testing.T) {
 		mockAuth := authmock.NewMockPermissionClient(ctrl)
 		mockStor := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		uploadID := "UploadID-123"
@@ -1277,7 +1284,7 @@ func TestStreamServicImpl_UploadPart(t *testing.T) {
 		mockAuth := authmock.NewMockPermissionClient(ctrl)
 		mockStor := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		uploadID := "UploadID-123"
@@ -1317,7 +1324,7 @@ func TestStreamServicImpl_UploadPart(t *testing.T) {
 		mockAuth := authmock.NewMockPermissionClient(ctrl)
 		mockStor := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		uploadID := "UploadID-123"
@@ -1357,7 +1364,7 @@ func TestStreamServicImpl_UploadPart(t *testing.T) {
 		mockAuth := authmock.NewMockPermissionClient(ctrl)
 		mockStor := mock.NewMockFileStorage(ctrl)
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil, srvCfg())
 		streamID := uuid.New()
 		userID := uuid.New()
 		uploadID := "UploadID-123"
@@ -1416,6 +1423,7 @@ func TestStreamServiceImpl_PublishStream(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		streamUUID := uuid.New()
 		stream := &models.Stream{
@@ -1449,6 +1457,7 @@ func TestStreamServiceImpl_PublishStream(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		streamUUID := uuid.New()
 		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(nil, fmt.Errorf("read error"))
@@ -1470,6 +1479,7 @@ func TestStreamServiceImpl_PublishStream(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		streamUUID := uuid.New()
 		stream := &models.Stream{
@@ -1506,6 +1516,7 @@ func TestStreamServiceImpl_UnpublishStream(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		streamUUID := uuid.New()
 		stream := &models.Stream{
@@ -1539,6 +1550,7 @@ func TestStreamServiceImpl_UnpublishStream(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		streamUUID := uuid.New()
 		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(nil, fmt.Errorf("read error"))
@@ -1560,6 +1572,7 @@ func TestStreamServiceImpl_UnpublishStream(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		streamUUID := uuid.New()
 		stream := &models.Stream{
@@ -1596,6 +1609,7 @@ func TestStreamServiceImpl_UpdateStreamStatus(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		streamUUID := uuid.New()
 		stream := &models.Stream{
@@ -1629,6 +1643,7 @@ func TestStreamServiceImpl_UpdateStreamStatus(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		streamUUID := uuid.New()
 		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(nil, fmt.Errorf("read error"))
@@ -1650,6 +1665,7 @@ func TestStreamServiceImpl_UpdateStreamStatus(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		streamUUID := uuid.New()
 		stream := &models.Stream{
@@ -1685,6 +1701,7 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -1765,6 +1782,7 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -1817,6 +1835,7 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -1868,6 +1887,7 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -1919,6 +1939,7 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -1978,6 +1999,7 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2042,6 +2064,7 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2116,6 +2139,7 @@ func TestStreamServiceImpl_UpdateStreamProcessing(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2174,6 +2198,7 @@ func TestStreamServiceImpl_UpdateStreamProcessing(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2224,6 +2249,7 @@ func TestStreamServiceImpl_UpdateStreamProcessing(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2283,6 +2309,7 @@ func TestStreamServiceImpl_UpdateStreamMetadata(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2339,6 +2366,7 @@ func TestStreamServiceImpl_UpdateStreamMetadata(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2388,6 +2416,7 @@ func TestStreamServiceImpl_UpdateStreamMetadata(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2448,6 +2477,7 @@ func TestStreamServiceImpl_GetFileByKey(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2487,6 +2517,7 @@ func TestStreamServiceImpl_GetFileByKey(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2526,6 +2557,7 @@ func TestStreamServiceImpl_GetFileByKey(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2565,6 +2597,7 @@ func TestStreamServiceImpl_GetFileByKey(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2590,6 +2623,7 @@ func TestStreamServiceImpl_GetFileByKey(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()
@@ -2624,6 +2658,7 @@ func TestStreamServiceImpl_GetFileByKey(t *testing.T) {
 			mockStor,
 			mockQueue,
 			nil,
+			srvCfg(),
 		)
 		ctx := context.Background()
 		streamUUID := uuid.New()

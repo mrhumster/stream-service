@@ -53,6 +53,14 @@ func (s *Stream) SetStorageInfo(storageInfo *StreamStorage) error {
 	return nil
 }
 
+func (s *Stream) GetStorageInfo() (*StreamStorage, error) {
+	var storageInfo StreamStorage
+	if err := json.Unmarshal(s.Storage, &storageInfo); err != nil {
+		return nil, err
+	}
+	return &storageInfo, nil
+}
+
 func (s *Stream) GetMetadata() (*StreamMetadata, error) {
 	var metadata StreamMetadata
 	if err := json.Unmarshal(s.Metadata, &metadata); err != nil {

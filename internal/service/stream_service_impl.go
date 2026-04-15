@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/mrhumster/identity-service/pkg/auth"
+	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/queue"
 	"github.com/mrhumster/stream-service/internal/repository"
@@ -30,15 +31,17 @@ type StreamServiceImpl struct {
 	storage          storage.FileStorage
 	queue            queue.TaskDistributor
 	hub              wss.Hub
+	cfg              *config.Server
 }
 
-func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor, hub wss.Hub) *StreamServiceImpl {
+func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor, hub wss.Hub, cfg *config.Server) *StreamServiceImpl {
 	return &StreamServiceImpl{
 		repo:             repo,
 		permissionClient: perm,
 		storage:          stor,
 		queue:            queue,
 		hub:              hub,
+		cfg:              cfg,
 	}
 }
 
@@ -255,6 +258,12 @@ func (s *StreamServiceImpl) UpdateStreamStatus(ctx context.Context, streamID uui
 	stream.Status = status
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	if stream.Status == models.StatusReady && !s.cfg.KeepOriginalFile {
+		streamStorage, _ := stream.GetStorageInfo()
+		if err := s.storage.Delete(ctx, streamStorage.Key); err != nil {
+			slog.Error("Delete source", "error", err, "stream", stream.ID, "storage key", streamStorage.Key)
+		}
 	}
 	s.notifyUpdate(stream)
 	return nil

@@ -21,8 +21,9 @@ type Redis struct {
 }
 
 type Server struct {
-	ServerAddr      string
-	AuthServiceAddr string
+	ServerAddr       string
+	AuthServiceAddr  string
+	KeepOriginalFile bool
 }
 
 type Database struct {
@@ -50,6 +51,7 @@ type MinIO struct {
 
 func LoadConfig() (*Config, error) {
 	useSSL, _ := strconv.ParseBool(getEnv("MINIO_USE_SSL", "false"))
+	keepOriginalFile, _ := strconv.ParseBool(getEnv("KEEP_ORIGINAL_FILE", "true"))
 
 	return &Config{
 		Database: Database{
@@ -62,8 +64,9 @@ func LoadConfig() (*Config, error) {
 			TimeZone: "UTC",
 		},
 		Server: Server{
-			ServerAddr:      os.Getenv("SERVER_ADDR"),
-			AuthServiceAddr: os.Getenv("AUTH_SERVICE_ADDRESS"),
+			ServerAddr:       os.Getenv("SERVER_ADDR"),
+			AuthServiceAddr:  os.Getenv("AUTH_SERVICE_ADDRESS"),
+			KeepOriginalFile: keepOriginalFile,
 		},
 		JWT: JWT{
 			AccessPublicKeyURL: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
