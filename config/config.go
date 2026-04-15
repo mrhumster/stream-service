@@ -36,7 +36,7 @@ type Database struct {
 }
 
 type JWT struct {
-	AccessPublicKeyUrl string
+	AccessPublicKeyURL string
 }
 
 type MinIO struct {
@@ -53,11 +53,11 @@ func LoadConfig() (*Config, error) {
 
 	return &Config{
 		Database: Database{
-			Host:     os.Getenv("DB_HOST"),
-			Port:     os.Getenv("DB_PORT"),
-			User:     os.Getenv("DB_USER"),
-			Password: os.Getenv("DB_PASS"),
-			Name:     os.Getenv("DB_NAME"),
+			Host:     getEnv("DB_HOST", "localhost"),
+			Port:     getEnv("DB_PORT", "5432"),
+			User:     getEnv("DB_USER", "postgres"),
+			Password: getEnv("DB_PASS", ""),
+			Name:     getEnv("DB_NAME", "postgres"),
 			SslMode:  "disable",
 			TimeZone: "UTC",
 		},
@@ -66,7 +66,7 @@ func LoadConfig() (*Config, error) {
 			AuthServiceAddr: os.Getenv("AUTH_SERVICE_ADDRESS"),
 		},
 		JWT: JWT{
-			AccessPublicKeyUrl: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
+			AccessPublicKeyURL: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
 		},
 		MinIO: MinIO{
 			Endpoint:        getEnv("MINIO_ENDPOINT", "localhost:9000"),
@@ -78,7 +78,7 @@ func LoadConfig() (*Config, error) {
 		},
 		Redis: Redis{
 			Addr:     getEnv("REDIS_ADDR", "localhost"),
-			Password: getEnv("REDIS_PASS", ""),
+			Password: getEnv("redis-password", ""),
 		},
 	}, nil
 }
@@ -98,18 +98,18 @@ func TestConfig() (*Config, error) {
 			ServerAddr: os.Getenv("SERVER_ADDR"),
 		},
 		JWT: JWT{
-			AccessPublicKeyUrl: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
+			AccessPublicKeyURL: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
 		},
 	}, nil
 }
 
 func (config *Config) GetDsn() string {
-	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=%s",
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
 		config.Database.Host,
+		config.Database.Port,
 		config.Database.User,
 		config.Database.Password,
 		config.Database.Name,
-		config.Database.Port,
 		config.Database.SslMode,
 		config.Database.TimeZone)
 }

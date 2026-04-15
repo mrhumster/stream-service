@@ -9,5 +9,4 @@ data:
   MINIO_BUCKET_NAME: "go-app-bucket"
   MINIO_USE_SSL: "false"
   MINIO_REGION: "us-east-1"
----
-
+  REDIS_ADDR: "casbin-redis-master:6379"

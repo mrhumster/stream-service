@@ -1,0 +1,14 @@
+# https://kubernetes.io/docs/concepts/configuration/configmap/
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stream-service-config
+  namespace: go-app
+data:
+  SERVER_ADDR: ":8080"
+  DOMAIN: "api.example.com"
+  DB_HOST: "postgresql"
+  DB_PORT: "5432"
+  DB_NAME: "database1"
+  JWT_ACCESS_PUBLIC_KEY_URL: "http://identity-service:80/auth/public-key"
+  AUTH_SERVICE_ADDRESS: "identity-service:50051"

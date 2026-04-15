@@ -19,14 +19,14 @@ type TokenService struct {
 }
 
 func NewTokenService(cfg *config.JWT) (*TokenService, error) {
-	if cfg.AccessPublicKeyUrl == "" {
+	if cfg.AccessPublicKeyURL == "" {
 		return nil, errors.New("⚠️ Error Token Service. JWT_ACCESS_PUBLIC_KEY_URL not set")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", cfg.AccessPublicKeyUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", cfg.AccessPublicKeyURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("⚠️ Error getting access public key: %w", err)
 	}

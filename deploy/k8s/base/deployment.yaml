@@ -21,68 +21,17 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
-          env:
-            - name: SERVER_ADDR
-              value: ":8080"
-            - name: DOMAIN
-              value: api.example.com
-            - name: DB_HOST
-              value: postgresql
-            - name: DB_PORT
-              value: "5432"
-            - name: DB_NAME
-              value: "database1"
-            - name: DB_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: go-app-secret
-                  key: DB_PASS
-            - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: go-app-secret
-                  key: DB_USER
-            - name: JWT_ACCESS_PUBLIC_KEY_URL
-              value: http://identity-service:80/auth/public-key
-            - name: AUTH_SERVICE_ADDRESS
-              value: identity-service:50051
-            - name: MINIO_ENDPOINT
-              valueFrom:
-                configMapKeyRef:
-                  name: go-app-config
-                  key: MINIO_ENDPOINT
-            - name: MINIO_BUCKET_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: go-app-config
-                  key: MINIO_BUCKET_NAME
-            - name: MINIO_USE_SSL
-              valueFrom:
-                configMapKeyRef:
-                  name: go-app-config
-                  key: MINIO_USE_SSL
-            - name: MINIO_REGION
-              valueFrom:
-                configMapKeyRef:
-                  name: go-app-config
-                  key: MINIO_REGION
-            - name: MINIO_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: minio-credentials
-                  key: MINIO_ACCESS_KEY
-            - name: MINIO_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: minio-credentials
-                  key: MINIO_SECRET_KEY
-            - name: REDIS_ADDR
-              value: casbin-redis-master:6379
-            - name: REDIS_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: casbin-redis
-                  key: redis-password
+          envFrom:
+            - configMapRef:
+                name: stream-service-config
+            - configMapRef:
+                name: go-app-config
+            - secretRef:
+                name: go-app-secret
+            - secretRef:
+                name: minio-credentials
+            - secretRef:
+                name: casbin-redis
 
           resources:
             requests:
