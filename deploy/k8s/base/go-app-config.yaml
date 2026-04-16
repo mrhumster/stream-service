@@ -10,3 +10,6 @@ data:
   MINIO_USE_SSL: "false"
   MINIO_REGION: "us-east-1"
   REDIS_ADDR: "casbin-redis-master:6379"
+  STREAM_SERVICE_ADDR: stream-service:50051
+  JWT_ACCESS_PUBLIC_KEY_URL: "http://identity-service:80/auth/public-key"
+  AUTH_SERVICE_ADDRESS: "identity-service:50051"

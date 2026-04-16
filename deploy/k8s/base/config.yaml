@@ -10,7 +10,5 @@ data:
   DB_HOST: "postgresql"
   DB_PORT: "5432"
   DB_NAME: "database1"
-  JWT_ACCESS_PUBLIC_KEY_URL: "http://identity-service:80/auth/public-key"
-  AUTH_SERVICE_ADDRESS: "identity-service:50051"
   KEEP_ORIGINAL_FILE: "false"
   MODE: "release"
