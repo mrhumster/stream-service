@@ -32,7 +32,7 @@ func (d *AsyncDistributor) DistributeVideoTranscoding(ctx context.Context, strea
 		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	task := asynq.NewTask(TaskVideoTranscoding, payload, asynq.MaxRetry(3))
+	task := asynq.NewTask(TaskVideoTranscoding, payload, asynq.MaxRetry(1))
 	info, err := d.client.EnqueueContext(ctx, task, asynq.TaskID(streamUUID.String()))
 	if err != nil {
 		if errors.Is(err, asynq.ErrDuplicateTask) {
