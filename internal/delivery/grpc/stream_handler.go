@@ -112,5 +112,9 @@ func (s *StreamGRPCServer) UpdateStreamProcessing(ctx context.Context, req *stre
 	if err := s.streamService.UpdateStreamProcessing(ctx, serviceReq); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	if req.Error != "" {
+		streamID, _ := uuid.Parse(req.StreamUuid)
+		s.streamService.UpdateStreamStatus(ctx, streamID, models.StatusError)
+	}
 	return &stream.UpdateStreamProcessingResponse{Updated: true}, nil
 }
