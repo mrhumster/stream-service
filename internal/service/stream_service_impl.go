@@ -647,7 +647,7 @@ func (s *StreamServiceImpl) GetFileByKey(ctx context.Context, req *GetFileByKeyR
 	if err != nil {
 		return nil, fmt.Errorf("error get stream from repository: %w", err)
 	}
-	if stream.Status != models.StatusReady {
+	if stream.Status != models.StatusReady && stream.Status != models.StatusPublished {
 		return nil, fmt.Errorf("you can't watch a stream with the status %s", stream.Status)
 	}
 	path := path.Join("processed", req.StreamUUID.String(), req.FileName)
