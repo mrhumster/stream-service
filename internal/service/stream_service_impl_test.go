@@ -1431,7 +1431,7 @@ func TestStreamServiceImpl_PublishStream(t *testing.T) {
 				ID: streamUUID,
 			},
 			Title:  "unpublished stream",
-			Status: models.StatusDraft,
+			Status: models.StatusReady,
 		}
 		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
 		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
@@ -1487,7 +1487,7 @@ func TestStreamServiceImpl_PublishStream(t *testing.T) {
 				ID: streamUUID,
 			},
 			Title:  "unpublished stream",
-			Status: models.StatusDraft,
+			Status: models.StatusReady,
 		}
 		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
 		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
@@ -1499,6 +1499,37 @@ func TestStreamServiceImpl_PublishStream(t *testing.T) {
 		err := svc.PublishStream(ctx, streamUUID)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "update error")
+	})
+
+	t.Run("not publish stream if he not ready", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+			nil,
+			srvCfg(),
+		)
+		streamUUID := uuid.New()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:  "unpublished stream",
+			Status: models.StatusDraft,
+		}
+
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
+		ctx := context.Background()
+		err := svc.PublishStream(ctx, streamUUID)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "can't publish stream if they not ready")
 	})
 }
 

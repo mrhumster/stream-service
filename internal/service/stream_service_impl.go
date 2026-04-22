@@ -229,6 +229,9 @@ func (s *StreamServiceImpl) PublishStream(ctx context.Context, streamID uuid.UUI
 	if err != nil {
 		return fmt.Errorf("error read stream from repo: %w", err)
 	}
+	if stream.Status != models.StatusReady {
+		return fmt.Errorf("can't publish stream if they not ready")
+	}
 	stream.Status = models.StatusPublished
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
@@ -621,6 +624,17 @@ func (s *StreamServiceImpl) notifyUpdate(stream *models.Stream) {
 	if s.hub != nil {
 		s.hub.SendMessgeToOwner(stream.OwnerID, gin.H{
 			"type": "STREAM_UPDATED",
+			"payload": gin.H{
+				"stream_id": stream.ID,
+			},
+		})
+	}
+}
+
+func (s *StreamServiceImpl) notifyComplete(stream *models.Stream) {
+	if s.hub != nil {
+		s.hub.SendMessgeToOwner(stream.OwnerID, gin.H{
+			"type": "STREAM_READY",
 			"payload": gin.H{
 				"stream_id": stream.ID,
 			},

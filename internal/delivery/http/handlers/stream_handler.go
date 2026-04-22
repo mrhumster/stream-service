@@ -79,14 +79,14 @@ func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
 
 func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 	pub := models.VisibilityPublic
-	ready := models.StatusReady
+	published := models.StatusPublished
 	limit := c.Query("limit")
 	offset := c.Query("offset")
 	filter := repository.StreamFilter{
 		Visibility: &pub,
 		Offset:     0,
 		Limit:      10,
-		Status:     &ready,
+		Status:     &published,
 	}
 	if limit != "" {
 		limitInt, err := strconv.Atoi(limit)
