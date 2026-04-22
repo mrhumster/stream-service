@@ -432,3 +432,27 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 	}
 	c.DataFromReader(http.StatusOK, res.Size, res.ContentType, res.Content, nil)
 }
+
+func (h *StreamHandler) PublishStream(c *gin.Context) {
+	userUUID := c.MustGet("user").(uuid.UUID)
+	streamID := c.Param("id")
+	streamUUID, err := uuid.Parse(streamID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+	stream, err := h.service.GetStream(c.Request.Context(), streamUUID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("stream not found"))
+		return
+	}
+	if stream.OwnerID != userUUID {
+		c.JSON(http.StatusForbidden, response.ErrorResponse("only owner can published that stream"))
+		return
+	}
+	if err := h.service.PublishStream(c.Request.Context(), streamUUID); err != nil {
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
+		return
+	}
+	c.Status(http.StatusCreated)
+}
