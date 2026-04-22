@@ -236,7 +236,7 @@ func (s *StreamServiceImpl) PublishStream(ctx context.Context, streamID uuid.UUI
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
-	s.notifyUpdate(stream)
+	s.notifyComplete(stream)
 	return nil
 }
 
