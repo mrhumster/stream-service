@@ -1390,6 +1390,7 @@ func TestStreamHandler_HandleWS(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		router, _, _, mockHub := setupTest()
 		mockHub.EXPECT().Register(userID, gomock.Any()).Return()
+		mockHub.EXPECT().Unregister(userID, gomock.Any()).Return()
 		ts := httptest.NewServer(router)
 		defer ts.Close()
 		u := "ws" + strings.TrimPrefix(ts.URL, "http") + "/streams/ws/upgrade"

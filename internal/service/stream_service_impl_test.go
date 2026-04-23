@@ -1560,7 +1560,7 @@ func TestStreamServiceImpl_UnpublishStream(t *testing.T) {
 		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
 		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
 			Do(func(ctx context.Context, s *models.Stream) {
-				assert.Equal(t, stream.Status, models.StatusDraft)
+				assert.Equal(t, stream.Status, models.StatusReady)
 			}).
 			Return(nil)
 		ctx := context.Background()
@@ -1616,7 +1616,7 @@ func TestStreamServiceImpl_UnpublishStream(t *testing.T) {
 		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
 		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
 			Do(func(ctx context.Context, s *models.Stream) {
-				assert.Equal(t, stream.Status, models.StatusDraft)
+				assert.Equal(t, stream.Status, models.StatusReady)
 			}).
 			Return(fmt.Errorf("update error"))
 		ctx := context.Background()

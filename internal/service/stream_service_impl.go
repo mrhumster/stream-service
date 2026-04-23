@@ -245,7 +245,7 @@ func (s *StreamServiceImpl) UnpublishStream(ctx context.Context, streamID uuid.U
 	if err != nil {
 		return fmt.Errorf("error read stream from repo: %w", err)
 	}
-	stream.Status = models.StatusDraft
+	stream.Status = models.StatusReady
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
