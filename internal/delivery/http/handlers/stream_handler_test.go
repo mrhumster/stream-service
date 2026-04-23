@@ -1317,6 +1317,11 @@ func TestStreamHandler_GetHLS(t *testing.T) {
 			ContentType: "application/x-mpegURL",
 			Size:        int64(len(file)),
 		}
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamUUID},
+			Status:    models.StatusPublished,
+		}
+		mockService.EXPECT().GetStream(gomock.Any(), streamUUID).Return(expectedStream, nil)
 		mockService.EXPECT().
 			GetFileByKey(gomock.Any(), svcReq).
 			Return(svcRes, nil)
