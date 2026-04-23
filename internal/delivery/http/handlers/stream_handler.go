@@ -407,26 +407,29 @@ func (h *StreamHandler) CompleteUpload(c *gin.Context) {
 }
 
 func (h *StreamHandler) GetHLS(c *gin.Context) {
-	user, _ := c.Get("user")
-	userUUID := user.(uuid.UUID)
-
 	val := c.Param("id")
 	streamUUID, err := uuid.Parse(val)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		return
 	}
-	fileName := c.Param("file")
-	if fileName == "" || fileName == "/" {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse("filename cannot be empty"))
-		return
-	}
+
 	stream, err := h.service.GetStream(c.Request.Context(), streamUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
 	}
-	if stream.Status != models.StatusPublished && stream.OwnerID != userUUID {
-		c.JSON(http.StatusForbidden, response.ErrorResponse("stream not published. only owner can play video"))
+
+	if stream.Status != models.StatusPublished {
+		user, exist := c.Get("user")
+		if !exist || user.(uuid.UUID) != stream.OwnerID {
+			c.JSON(http.StatusForbidden, response.ErrorResponse("this stream is private or not ready "))
+			return
+		}
+	}
+
+	fileName := c.Param("file")
+	if fileName == "" || fileName == "/" {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("filename cannot be empty"))
 		return
 	}
 	req := &service.GetFileByKeyRequest{
