@@ -50,6 +50,7 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 		AllowOrigins:     []string{"http://localhost:5173", "https://example.com", "https://api.example.com"},
 		AllowMethods:     []string{"GET", "PATCH", "POST", "OPTIONS", "PUT", "DELETE"},
 		AllowHeaders:     []string{"Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
 		AllowCredentials: true,
 	}))
 
