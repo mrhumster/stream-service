@@ -56,3 +56,8 @@ func (d *AsyncDistributor) TerminateTask(ctx context.Context, taskID string) err
 	}
 	return nil
 }
+
+func (d *AsyncDistributor) DistributeThumbsnailProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
+	notImpl := "method not implemented"
+	return nil, errors.New(notImpl)
+}

@@ -8,3 +8,7 @@ type VideoTranscodingPayload struct {
 	StreamUUID uuid.UUID `json:"stream_uuid"`
 	InputPath  string    `json:"input_path"`
 }
+
+type ThumbsnailProcessorPayload struct {
+	VideoTranscodingPayload
+}

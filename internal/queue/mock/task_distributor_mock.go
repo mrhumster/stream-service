@@ -41,6 +41,21 @@ func (m *MockTaskDistributor) EXPECT() *MockTaskDistributorMockRecorder {
 	return m.recorder
 }
 
+// DistributeThumbsnailProcessor mocks base method.
+func (m *MockTaskDistributor) DistributeThumbsnailProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DistributeThumbsnailProcessor", ctx, streamUUID, inputPath)
+	ret0, _ := ret[0].(*string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DistributeThumbsnailProcessor indicates an expected call of DistributeThumbsnailProcessor.
+func (mr *MockTaskDistributorMockRecorder) DistributeThumbsnailProcessor(ctx, streamUUID, inputPath any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DistributeThumbsnailProcessor", reflect.TypeOf((*MockTaskDistributor)(nil).DistributeThumbsnailProcessor), ctx, streamUUID, inputPath)
+}
+
 // DistributeVideoTranscoding mocks base method.
 func (m *MockTaskDistributor) DistributeVideoTranscoding(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
 	m.ctrl.T.Helper()
