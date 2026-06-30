@@ -2,7 +2,10 @@ package queue
 
 import "github.com/google/uuid"
 
-const TaskVideoTranscoding = "video:transcode"
+const (
+	TaskVideoTranscoding    = "video:transcode"
+	TaskThumbsnailProcessor = "video:thumbsnail"
+)
 
 type VideoTranscodingPayload struct {
 	StreamUUID uuid.UUID `json:"stream_uuid"`
@@ -10,5 +13,6 @@ type VideoTranscodingPayload struct {
 }
 
 type ThumbsnailProcessorPayload struct {
-	VideoTranscodingPayload
+	StreamUUID uuid.UUID `json:"stream_uuid"`
+	InputPath  string    `json:"input_path"`
 }

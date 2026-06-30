@@ -58,6 +58,29 @@ func (d *AsyncDistributor) TerminateTask(ctx context.Context, taskID string) err
 }
 
 func (d *AsyncDistributor) DistributeThumbsnailProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
-	notImpl := "method not implemented"
-	return nil, errors.New(notImpl)
+	payload, err := json.Marshal(ThumbsnailProcessorPayload{
+		StreamUUID: streamUUID,
+		InputPath:  inputPath,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payloaf: %w", err)
+	}
+
+	task := asynq.NewTask(TaskThumbsnailProcessor, payload)
+	info, err := d.client.EnqueueContext(
+		ctx,
+		task,
+		asynq.MaxRetry(1),
+		asynq.Queue("thumbsnails"),
+		asynq.TaskID(fmt.Sprintf("thumbs-%s", streamUUID)),
+	)
+	if err != nil {
+		if errors.Is(err, asynq.ErrDuplicateTask) {
+			slog.Warn("task already equeued", "uuid", streamUUID)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to enqueue task: %w", err)
+	}
+	slog.Info("enqueue task:", "id", info.ID, "queue", info.Queue)
+	return &info.ID, nil
 }
