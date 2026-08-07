@@ -360,6 +360,17 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 		return fmt.Errorf("failed to update processing: %w", err)
 	}
 
+	taksID, err := s.queue.DistributeThumbsnailProcessor(
+		ctx,
+		stream.ID,
+		storageInfo.Key,
+	)
+	if err != nil {
+		slog.Error("failed to enqueue thumbsnail task for", "stream", stream.ID, "error", err)
+	}
+
+	slog.Debug("Task for generate thumbsnail in queue", "taskID", taksID)
+
 	return nil
 }
 
