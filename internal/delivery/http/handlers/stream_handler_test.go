@@ -746,7 +746,7 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 		expectedURL := "https://storage.example.com/streams/user-id/videos/file-key.mp4?signature=..."
 		expiresAt := time.Now().Add(1 * time.Hour)
 		mockService.EXPECT().
-			GenerateDownloadURL(gomock.Any(), streamID).
+			GenerateDownloadURL(gomock.Any(), streamID, uuid.Nil).
 			Return(&service.GenerateDownloadURLInfo{
 				DownloadURL: &url.URL{
 					Scheme:   "https",
@@ -784,7 +784,7 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 	t.Run("stream not found", func(t *testing.T) {
 		router, service, _ := setupTest()
 		streamID := uuid.New()
-		service.EXPECT().GenerateDownloadURL(gomock.Any(), streamID).Return(nil, errors.New("stream not found"))
+		service.EXPECT().GenerateDownloadURL(gomock.Any(), streamID, uuid.Nil).Return(nil, errors.New("stream not found"))
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -797,7 +797,7 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 	t.Run("stream not ready for download", func(t *testing.T) {
 		router, service, _ := setupTest()
 		streamID := uuid.New()
-		service.EXPECT().GenerateDownloadURL(gomock.Any(), streamID).Return(nil, fmt.Errorf("stream not ready for download (status: %s)", models.StatusDraft))
+		service.EXPECT().GenerateDownloadURL(gomock.Any(), streamID, uuid.Nil).Return(nil, fmt.Errorf("stream not ready for download (status: %s)", models.StatusDraft))
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -811,7 +811,7 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 	t.Run("error conver service respose", func(t *testing.T) {
 		router, serviceMock, _ := setupTest()
 		streamID := uuid.New()
-		serviceMock.EXPECT().GenerateDownloadURL(gomock.Any(), streamID).Return(
+		serviceMock.EXPECT().GenerateDownloadURL(gomock.Any(), streamID, uuid.Nil).Return(
 			&service.GenerateDownloadURLInfo{
 				DownloadURL: nil,
 			}, nil)
@@ -829,7 +829,7 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 		router, mockService, _ := setupTest()
 		streamID := uuid.New()
 		mockService.EXPECT().
-			GenerateDownloadURL(gomock.Any(), streamID).
+			GenerateDownloadURL(gomock.Any(), streamID, uuid.Nil).
 			Return(&service.GenerateDownloadURLInfo{
 				DownloadURL: &url.URL{
 					Scheme:   "https",

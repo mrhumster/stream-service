@@ -28,7 +28,7 @@ type StreamService interface {
 
 	CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error)
 	UploadVideo(ctx context.Context, req UploadVideoRequest) error
-	GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (*GenerateDownloadURLInfo, error)
+	GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*GenerateDownloadURLInfo, error)
 
 	UploadPart(ctx context.Context, req UploadPartRequest) (*models.MultipartPart, error)
 	StartStreamUpload(ctx context.Context, req StartUploadRequest) (*UploadInfo, error)

@@ -374,7 +374,7 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 	return nil
 }
 
-func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID) (*GenerateDownloadURLInfo, error) {
+func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*GenerateDownloadURLInfo, error) {
 	stream, err := s.GetStream(ctx, streamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -399,6 +399,12 @@ func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uu
 	var streamMeta models.StreamMetadata
 	if err := json.Unmarshal(stream.Metadata, &streamMeta); err != nil {
 		return nil, fmt.Errorf("failed to parse meta info: %w", err)
+	}
+
+	if stream.Visibility != models.VisibilityPublic {
+		if stream.OwnerID != userUUID {
+			return nil, fmt.Errorf("not owner and not public")
+		}
 	}
 
 	expires := 1 * time.Hour

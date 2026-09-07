@@ -904,7 +904,7 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 				RawQuery: "signature=...",
 			}, nil)
 
-		resp, err := serviceImpl.GenerateDownloadURL(ctx, streamID)
+		resp, err := serviceImpl.GenerateDownloadURL(ctx, streamID, userID)
 
 		require.NoError(t, err)
 		assert.Equal(t, expectedURL, resp.DownloadURL.String())

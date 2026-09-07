@@ -171,9 +171,9 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 	}
 
 	if stream.Visibility != models.VisibilityPublic {
-		_, ok := c.MustGet("user").(uuid.UUID)
+		user, ok := c.MustGet("user").(uuid.UUID)
 
-		if !ok {
+		if !ok || user == uuid.Nil || user != stream.OwnerID {
 			c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
 			return
 		}
