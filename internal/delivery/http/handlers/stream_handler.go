@@ -272,12 +272,13 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 func (h *StreamHandler) DownloadStream(c *gin.Context) {
 	streamID := c.Param("id")
 	streamUUID, err := uuid.Parse(streamID)
+	userUUID := c.MustGet("user").(uuid.UUID)
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
 	}
 
-	serviceResp, err := h.service.GenerateDownloadURL(c, streamUUID)
+	serviceResp, err := h.service.GenerateDownloadURL(c, streamUUID, userUUID)
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
