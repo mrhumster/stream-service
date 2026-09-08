@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -30,8 +29,20 @@ func NewStreamHandler(service service.StreamService, hub wss.Hub) *StreamHandler
 	}
 }
 
+var allowedWSOrigins = map[string]bool{
+	"http://localhost:5173":   true,
+	"https://example.com":     true,
+	"https://api.example.com": true,
+}
+
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		return allowedWSOrigins[origin]
+	},
 }
 
 func (h *StreamHandler) HandleWS(c *gin.Context) {
@@ -64,7 +75,8 @@ func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
 	var filter repository.StreamFilter
 	streams, total, err := h.service.ListUserStreams(c.Request.Context(), userUUID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		slog.Error("list user streams failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 	var resp response.ListReponse[response.StreamResponse]
@@ -91,8 +103,12 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 	}
 	if limit != "" {
 		limitInt, err := strconv.Atoi(limit)
-		if err != nil {
+		if err != nil || limitInt < 0 {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid limit query"))
+			return
+		}
+		if limitInt > 100 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("limit must be 100 or less"))
 			return
 		}
 		filter.Limit = limitInt
@@ -100,8 +116,12 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 
 	if offset != "" {
 		offsetInt, err := strconv.Atoi(offset)
-		if err != nil {
+		if err != nil || offsetInt < 0 {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid offset query"))
+			return
+		}
+		if offsetInt > 1000 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("offset must be 1000 or less"))
 			return
 		}
 		filter.Offset = offsetInt
@@ -134,20 +154,21 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 
 	var req request.CreateStreamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
 		return
 	}
 
 	serviceReq, err := req.ToServiceRequest(userUUID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("create stream request conversion failed", "error", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream request"))
 		return
 	}
 
 	stream, err := h.service.CreateStream(c.Request.Context(), *serviceReq)
 	if err != nil {
-		// TODO: Реализовать разделение ошибок (validation, not found, internal)
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("create stream failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 
@@ -166,7 +187,12 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 
 	stream, err := h.service.GetStream(c.Request.Context(), streamIDuuid)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		} else {
+			slog.Error("get stream failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
 		return
 	}
 
@@ -195,19 +221,25 @@ func (h *StreamHandler) UpdateStream(c *gin.Context) {
 	var req request.UpdateStreamRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
 		return
 	}
 
 	updateRequest, err := req.ToServiceRequest()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		slog.Error("update stream request conversion failed", "error", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream request"))
 		return
 	}
 
 	updatedStream, err := h.service.UpdateStream(c.Request.Context(), streamUUID, *updateRequest)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		} else {
+			slog.Error("update stream failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
 		return
 	}
 
@@ -254,13 +286,15 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 		if _, ok := err.(*request.ValidationError); ok {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		} else {
-			c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+			slog.Error("upload request conversion failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		}
 		return
 	}
 	err = h.service.UploadVideo(c.Request.Context(), *serviceReq)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("upload video failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -316,14 +350,13 @@ func (h *StreamHandler) InitUpload(c *gin.Context) {
 	val := c.Param("id")
 	streamUUID, err := uuid.Parse(val)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
 		return
 	}
 
 	var req request.StartUploadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
-		h.handleDownloadError(c, err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
 		return
 	}
 
@@ -336,7 +369,8 @@ func (h *StreamHandler) InitUpload(c *gin.Context) {
 		*serviceReq,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("start stream upload failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 
@@ -352,24 +386,26 @@ func (h *StreamHandler) PartUpload(c *gin.Context) {
 	val := c.Param("id")
 	streamUUID, err := uuid.Parse(val)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
 		return
 	}
 	var req request.UploadPartRequest
 	if err = c.ShouldBind(&req); err != nil {
-		fmt.Printf("Binding error: %v\n", err)
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		slog.Error("bind part upload request failed", "error", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
 		return
 	}
 	reqService, err := req.ToService(streamUUID, userUUID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("part upload request conversion failed", "error", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid part upload request"))
 		return
 	}
 
 	part, err := h.service.UploadPart(c.Request.Context(), *reqService)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		slog.Error("upload part failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 	resp := response.PartUploadResponse{
@@ -384,23 +420,25 @@ func (h *StreamHandler) CompleteUpload(c *gin.Context) {
 	val := c.Param("id")
 	streamUUID, err := uuid.Parse(val)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
 		return
 	}
 
 	var req request.CompleteUploadRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
 		return
 	}
 
 	reqService, err := req.ToService(streamUUID, userUUID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		slog.Error("complete upload request conversion failed", "error", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid complete upload request"))
 		return
 	}
 	if err := h.service.CompleteStreamUpload(c.Request.Context(), *reqService); err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("complete stream upload failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 
@@ -411,13 +449,14 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 	val := c.Param("id")
 	streamUUID, err := uuid.Parse(val)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
 		return
 	}
 
 	stream, err := h.service.GetStream(c.Request.Context(), streamUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		return
 	}
 
 	if stream.Status != models.StatusPublished {
@@ -439,7 +478,15 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 	}
 	res, err := h.service.GetFileByKey(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		switch {
+		case strings.Contains(err.Error(), "invalid file name"):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid file name"))
+		case strings.Contains(err.Error(), "can't watch"):
+			c.JSON(http.StatusForbidden, response.ErrorResponse("stream is not available for watching"))
+		default:
+			slog.Error("get file by key failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
 		return
 	}
 

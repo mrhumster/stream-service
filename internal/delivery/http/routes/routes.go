@@ -11,6 +11,7 @@ import (
 	"github.com/mrhumster/identity-service/pkg/auth"
 	"github.com/mrhumster/identity-service/pkg/middleware"
 	"github.com/mrhumster/stream-service/config"
+	streammiddleware "github.com/mrhumster/stream-service/internal/delivery/http/middleware"
 	"github.com/mrhumster/stream-service/internal/delivery/http/handlers"
 	"github.com/mrhumster/stream-service/internal/queue"
 	"github.com/mrhumster/stream-service/internal/repository"
@@ -88,7 +89,7 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 	r.GET("/stream/:id", middleware.OptionalAuthMiddleware(tokenService), streamHandler.GetStream)
 	r.GET("/stream/:id/download", middleware.AuthMiddleware(tokenService), streamHandler.DownloadStream)
 	r.GET("/stream/:id/hls/*file", middleware.OptionalAuthMiddleware(tokenService), streamHandler.GetHLS)
-	r.GET("/stream/ws/updates", middleware.AuthMiddleware(tokenService), streamHandler.HandleWS)
+	r.GET("/stream/ws/updates", streammiddleware.WSProtocolAuth(tokenService), streamHandler.HandleWS)
 
 	authGroup := r.Group("/stream")
 	authGroup.Use(middleware.AuthMiddleware(tokenService))

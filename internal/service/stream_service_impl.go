@@ -680,8 +680,12 @@ func (s *StreamServiceImpl) GetFileByKey(ctx context.Context, req *GetFileByKeyR
 	if stream.Status != models.StatusReady && stream.Status != models.StatusPublished {
 		return nil, fmt.Errorf("you can't watch a stream with the status %s", stream.Status)
 	}
-	path := path.Join("processed", req.StreamUUID.String(), req.FileName)
-	content, size, err := s.storage.Download(ctx, path)
+	fileName := strings.TrimPrefix(req.FileName, "/")
+	if fileName == "" || strings.Contains(fileName, "..") || strings.Contains(fileName, "\\") {
+		return nil, fmt.Errorf("invalid file name")
+	}
+	key := path.Join("processed", req.StreamUUID.String(), fileName)
+	content, size, err := s.storage.Download(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("error download file from storage: %w", err)
 	}
