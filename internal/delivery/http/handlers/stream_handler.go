@@ -48,7 +48,9 @@ var upgrader = websocket.Upgrader{
 func (h *StreamHandler) HandleWS(c *gin.Context) {
 	userUUID := c.MustGet("user").(uuid.UUID)
 	slog.Debug("Auth HANDLE WS", "user", userUUID)
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, http.Header{
+		"Sec-Websocket-Protocol": {c.GetHeader("Sec-Websocket-Protocol")},
+	})
 	if err != nil {
 		slog.Error("Upgrade connection", "error", err)
 		return

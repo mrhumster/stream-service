@@ -13,8 +13,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
   -o server ./cmd/server/main.go
 
 FROM alpine:3.18
-ARG VERSION=0.1
-ARG BUILD_DATE=07.11.2025
+ARG VERSION=1.1.2
+ARG BUILD_DATE=02.03.2026
 LABEL version=$VERSION \
   build-date=$BUILD_DATE \
   maintainer="me@xomrkob.ru"
