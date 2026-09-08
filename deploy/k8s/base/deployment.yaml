@@ -32,6 +32,21 @@ spec:
                 name: minio-credentials
             - secretRef:
                 name: casbin-redis
+          env:
+            - name: GRPC_TLS_ENABLED
+              value: "true"
+            - name: GRPC_TLS_CERT
+              value: "/tls/grpc/tls.crt"
+            - name: GRPC_TLS_KEY
+              value: "/tls/grpc/tls.key"
+            - name: GRPC_TLS_CA
+              value: "/tls/grpc/ca.crt"
+            - name: GRPC_TLS_ALLOWED_OUS
+              value: "thumbnail-service,transcoder-service"
+          volumeMounts:
+            - name: grpc-tls
+              mountPath: /tls/grpc
+              readOnly: true
 
           resources:
             requests:
@@ -52,3 +67,7 @@ spec:
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 10
+      volumes:
+        - name: grpc-tls
+          secret:
+            secretName: grpc-stream-tls

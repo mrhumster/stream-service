@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -29,10 +30,15 @@ const (
 )
 
 type Server struct {
-	ServerAddr       string
-	AuthServiceAddr  string
-	KeepOriginalFile bool
-	Mode             ServerMode
+	ServerAddr        string
+	AuthServiceAddr   string
+	KeepOriginalFile  bool
+	Mode              ServerMode
+	GRPCTLSCertFile   string
+	GRPCTLSKeyFile    string
+	GRPCTLSCAFile     string
+	GRPCTLSAllowedOUs []string
+	GRPCTLSEnabled    bool
 }
 
 type Database struct {
@@ -86,10 +92,15 @@ func LoadConfig() (*Config, error) {
 			TimeZone: "UTC",
 		},
 		Server: Server{
-			ServerAddr:       os.Getenv("SERVER_ADDR"),
-			AuthServiceAddr:  os.Getenv("AUTH_SERVICE_ADDRESS"),
-			KeepOriginalFile: keepOriginalFile,
-			Mode:             mode,
+			ServerAddr:        os.Getenv("SERVER_ADDR"),
+			AuthServiceAddr:   os.Getenv("AUTH_SERVICE_ADDRESS"),
+			KeepOriginalFile:  keepOriginalFile,
+			Mode:              mode,
+			GRPCTLSCertFile:   os.Getenv("GRPC_TLS_CERT"),
+			GRPCTLSKeyFile:    os.Getenv("GRPC_TLS_KEY"),
+			GRPCTLSCAFile:     os.Getenv("GRPC_TLS_CA"),
+			GRPCTLSAllowedOUs: commaSplit(getEnv("GRPC_TLS_ALLOWED_OUS", "")),
+			GRPCTLSEnabled:    getBool("GRPC_TLS_ENABLED"),
 		},
 		JWT: JWT{
 			AccessPublicKeyURL: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
@@ -148,4 +159,24 @@ func getEnv(key, defaultValue string) string {
 	}
 
 	return defaultValue
+}
+
+func getBool(key string) bool {
+	v, _ := strconv.ParseBool(os.Getenv(key))
+	return v
+}
+
+func commaSplit(v string) []string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
