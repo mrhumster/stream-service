@@ -48,7 +48,7 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 
 	// CORS
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "https://example.com", "https://api.example.com"},
+		AllowOrigins:     cfg.Server.AllowedOrigins,
 		AllowMethods:     []string{"GET", "PATCH", "POST", "OPTIONS", "PUT", "DELETE"},
 		AllowHeaders:     []string{"Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
@@ -74,7 +74,7 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 	database := repository.NewGormStreamRepository(db)
 	asyncDistributor := queue.NewAsyncDistributor(redisOpt)
 	streamService := service.NewStreamServiceImpl(database, permissionClient, storage, asyncDistributor, hub, &cfg.Server)
-	streamHandler := handlers.NewStreamHandler(streamService, hub)
+	streamHandler := handlers.NewStreamHandlerWithOrigins(streamService, hub, cfg.Server.AllowedOrigins)
 
 	r.GET("/stream/health", func(c *gin.Context) {
 		if _, err := db.DB(); err != nil {

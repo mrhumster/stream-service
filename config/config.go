@@ -39,6 +39,7 @@ type Server struct {
 	GRPCTLSCAFile     string
 	GRPCTLSAllowedOUs []string
 	GRPCTLSEnabled    bool
+	AllowedOrigins    []string
 }
 
 type Database struct {
@@ -101,6 +102,7 @@ func LoadConfig() (*Config, error) {
 			GRPCTLSCAFile:     os.Getenv("GRPC_TLS_CA"),
 			GRPCTLSAllowedOUs: commaSplit(getEnv("GRPC_TLS_ALLOWED_OUS", "")),
 			GRPCTLSEnabled:    getBool("GRPC_TLS_ENABLED"),
+			AllowedOrigins:    commaSplit(getEnv("CORS_ALLOW_ORIGINS", "http://localhost:5173,https://example.com,https://api.example.com")),
 		},
 		JWT: JWT{
 			AccessPublicKeyURL: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
@@ -135,6 +137,7 @@ func TestConfig() (*Config, error) {
 			ServerAddr:       os.Getenv("SERVER_ADDR"),
 			KeepOriginalFile: false,
 			Mode:             Test,
+			AllowedOrigins:   commaSplit(getEnv("CORS_ALLOW_ORIGINS", "http://localhost:5173,https://example.com,https://api.example.com")),
 		},
 		JWT: JWT{
 			AccessPublicKeyURL: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),

@@ -18,36 +18,44 @@ import (
 )
 
 type StreamHandler struct {
-	service service.StreamService
-	hub     wss.Hub
+	service      service.StreamService
+	hub          wss.Hub
+	allowedOrigs map[string]bool
 }
 
 func NewStreamHandler(service service.StreamService, hub wss.Hub) *StreamHandler {
+	return NewStreamHandlerWithOrigins(service, hub, nil)
+}
+
+func NewStreamHandlerWithOrigins(service service.StreamService, hub wss.Hub, origins []string) *StreamHandler {
+	if len(origins) == 0 {
+		origins = []string{"http://localhost:5173", "https://example.com", "https://api.example.com"}
+	}
+	allowed := make(map[string]bool, len(origins))
+	for _, o := range origins {
+		allowed[o] = true
+	}
 	return &StreamHandler{
-		service: service,
-		hub:     hub,
+		service:      service,
+		hub:          hub,
+		allowedOrigs: allowed,
 	}
 }
 
-var allowedWSOrigins = map[string]bool{
-	"http://localhost:5173":   true,
-	"https://example.com":     true,
-	"https://api.example.com": true,
-}
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true
-		}
-		return allowedWSOrigins[origin]
-	},
+func (h *StreamHandler) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	return h.allowedOrigs[origin]
 }
 
 func (h *StreamHandler) HandleWS(c *gin.Context) {
 	userUUID := c.MustGet("user").(uuid.UUID)
 	slog.Debug("Auth HANDLE WS", "user", userUUID)
+	upgrader := websocket.Upgrader{
+		CheckOrigin: h.checkOrigin,
+	}
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, http.Header{
 		"Sec-Websocket-Protocol": {c.GetHeader("Sec-Websocket-Protocol")},
 	})
