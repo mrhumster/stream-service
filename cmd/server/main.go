@@ -22,6 +22,11 @@ import (
 	"google.golang.org/grpc"
 )
 
+var (
+	version   = "dev"
+	buildDate = "unknown"
+)
+
 func main() {
 	opts := &slog.HandlerOptions{
 		Level:     slog.LevelDebug,
@@ -31,7 +36,7 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
 
 	slog.SetDefault(logger)
-	slog.Info("Start Stream service", "version", "v0.1.0")
+	slog.Info("Start Stream service", "version", version, "build_date", buildDate)
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
