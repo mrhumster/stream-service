@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/request"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
+	streammetrics "github.com/mrhumster/stream-service/internal/metrics"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
@@ -182,6 +183,7 @@ func (h *StreamHandler) CreateStream(c *gin.Context) {
 		return
 	}
 
+	streammetrics.Lifecycle.WithLabelValues("created").Inc()
 	resp := response.FromDomainModel(stream)
 	c.JSON(http.StatusCreated, resp)
 }
@@ -280,6 +282,7 @@ func (h *StreamHandler) DeleteStream(c *gin.Context) {
 		return
 	}
 
+	streammetrics.Lifecycle.WithLabelValues("deleted").Inc()
 	c.JSON(http.StatusOK, nil)
 }
 
@@ -320,6 +323,7 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
+	streammetrics.Uploads.WithLabelValues("simple").Inc()
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "video uploaded successfully",
@@ -401,6 +405,7 @@ func (h *StreamHandler) InitUpload(c *gin.Context) {
 		StreamID: uploadInfo.StreamID.String(),
 		UploadID: uploadInfo.UploadID,
 	}
+	streammetrics.Uploads.WithLabelValues("init").Inc()
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -435,6 +440,7 @@ func (h *StreamHandler) PartUpload(c *gin.Context) {
 		PartNumber: part.PartNumber,
 		ETag:       part.ETag,
 	}
+	streammetrics.Uploads.WithLabelValues("part").Inc()
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -465,6 +471,7 @@ func (h *StreamHandler) CompleteUpload(c *gin.Context) {
 		return
 	}
 
+	streammetrics.Uploads.WithLabelValues("complete").Inc()
 	c.Status(http.StatusNoContent)
 }
 
@@ -485,6 +492,7 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 	if stream.Status != models.StatusPublished {
 		user, exist := c.Get("user")
 		if !exist || user.(uuid.UUID) != stream.OwnerID {
+			streammetrics.HLSRequests.WithLabelValues("403").Inc()
 			c.JSON(http.StatusForbidden, response.ErrorResponse("this stream is private or not ready "))
 			return
 		}
@@ -516,6 +524,7 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 	if res != nil {
 		defer res.Content.Close()
 	}
+	streammetrics.HLSRequests.WithLabelValues("200").Inc()
 	c.DataFromReader(http.StatusOK, res.Size, res.ContentType, res.Content, nil)
 }
 
@@ -540,6 +549,7 @@ func (h *StreamHandler) PublishStream(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
 		return
 	}
+	streammetrics.Lifecycle.WithLabelValues("published").Inc()
 	c.Status(http.StatusCreated)
 }
 
@@ -564,5 +574,6 @@ func (h *StreamHandler) UnpublishStream(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
 		return
 	}
+	streammetrics.Lifecycle.WithLabelValues("unpublished").Inc()
 	c.Status(http.StatusCreated)
 }

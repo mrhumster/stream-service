@@ -18,6 +18,7 @@ import (
 	"github.com/mrhumster/stream-service/internal/service"
 	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/stream-service/internal/wss"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gorm.io/gorm"
 )
 
@@ -29,6 +30,7 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 
 	r := gin.New()
 	r.Use(middleware.StructuredLog())
+	r.Use(middleware.MetricsMiddleware())
 	r.Use(gin.Recovery())
 
 	switch mode {
@@ -84,6 +86,7 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "up"})
 	})
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	r.GET("/stream", streamHandler.ListStreamPublic)
 	r.GET("/stream/:id", middleware.OptionalAuthMiddleware(tokenService), streamHandler.GetStream)
