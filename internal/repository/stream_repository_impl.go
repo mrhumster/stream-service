@@ -140,13 +140,13 @@ func (r *GormStreamRepository) UpdateStatus(ctx context.Context, id uuid.UUID, s
 	return nil
 }
 
-func (r *GormStreamRepository) UpdateProcessing(ctx context.Context, id uuid.UUID, processing models.StreamProcessing) error {
+func (r *GormStreamRepository) UpdateProcessing(ctx context.Context, id uuid.UUID, processing models.StreamProcessingTask) error {
 	var stream *models.Stream
 	result := r.db.WithContext(ctx).First(&stream, id)
 	if result.Error != nil {
 		return fmt.Errorf("stream id not found")
 	}
-	if err := stream.UpdateProcessing(processing.Progress, processing.Steps, processing.Error, processing.TaskID); err != nil {
+	if err := stream.SetTaskProgress(processing.TaskType, processing.Progress, processing.Steps, processing.Error, processing.TaskID); err != nil {
 		return fmt.Errorf("update stream processing error: %w", err)
 	}
 	result = r.db.WithContext(ctx).Save(stream)

@@ -577,3 +577,29 @@ func (h *StreamHandler) UnpublishStream(c *gin.Context) {
 	streammetrics.Lifecycle.WithLabelValues("unpublished").Inc()
 	c.Status(http.StatusCreated)
 }
+
+func (h *StreamHandler) ReprocessStream(c *gin.Context) {
+	streamID := c.Param("id")
+	streamUUID, err := uuid.Parse(streamID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+
+	if err := h.service.ReprocessStream(c.Request.Context(), streamUUID); err != nil {
+		switch {
+		case strings.Contains(err.Error(), "stream not found"):
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		case err == service.ErrStreamNotInErrorState:
+			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		case err == service.ErrSourceFileMissing:
+			c.JSON(http.StatusConflict, response.ErrorResponse("source file has been removed; re-upload is required"))
+		default:
+			slog.Error("reprocess stream failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
+		return
+	}
+	streammetrics.Lifecycle.WithLabelValues("reprocessed").Inc()
+	c.JSON(http.StatusOK, nil)
+}

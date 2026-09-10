@@ -24,16 +24,11 @@ func NewAsyncDistributor(redisOpt asynq.RedisClientOpt) TaskDistributor {
 }
 
 func (d *AsyncDistributor) DistributeVideoTranscoding(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
-	payload, err := json.Marshal(VideoTranscodingPayload{
-		StreamUUID: streamUUID,
-		InputPath:  inputPath,
-	})
+	task, err := d.newVideoTranscodingTask(streamUUID, inputPath, streamUUID.String())
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+		return nil, err
 	}
-
-	task := asynq.NewTask(TaskVideoTranscoding, payload, asynq.MaxRetry(1))
-	info, err := d.client.EnqueueContext(ctx, task, asynq.TaskID(streamUUID.String()))
+	info, err := d.client.EnqueueContext(ctx, task, asynq.MaxRetry(1))
 	if err != nil {
 		if errors.Is(err, asynq.ErrDuplicateTask) {
 			slog.Warn("task already equeued", "uuid", streamUUID)
@@ -43,6 +38,30 @@ func (d *AsyncDistributor) DistributeVideoTranscoding(ctx context.Context, strea
 	}
 	slog.Info("enqueue task:", "id", info.ID, "queue", info.Queue)
 	return &info.ID, nil
+}
+
+func (d *AsyncDistributor) ReprocessVideoTranscoding(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
+	task, err := d.newVideoTranscodingTask(streamUUID, inputPath, fmt.Sprintf("reprocess-%s", uuid.New().String()))
+	if err != nil {
+		return nil, err
+	}
+	info, err := d.client.EnqueueContext(ctx, task, asynq.MaxRetry(1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to enqueue re-process task: %w", err)
+	}
+	slog.Info("enqueue re-process task:", "id", info.ID, "queue", info.Queue)
+	return &info.ID, nil
+}
+
+func (d *AsyncDistributor) newVideoTranscodingTask(streamUUID uuid.UUID, inputPath, taskID string) (*asynq.Task, error) {
+	payload, err := json.Marshal(VideoTranscodingPayload{
+		StreamUUID: streamUUID,
+		InputPath:  inputPath,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	return asynq.NewTask(TaskVideoTranscoding, payload, asynq.TaskID(taskID)), nil
 }
 
 func (d *AsyncDistributor) TerminateTask(ctx context.Context, taskID string) error {
@@ -58,21 +77,15 @@ func (d *AsyncDistributor) TerminateTask(ctx context.Context, taskID string) err
 }
 
 func (d *AsyncDistributor) DistributeThumbsnailProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
-	payload, err := json.Marshal(ThumbsnailProcessorPayload{
-		StreamUUID: streamUUID,
-		InputPath:  inputPath,
-	})
+	task, err := d.newThumbnailTask(streamUUID, inputPath, fmt.Sprintf("thumbs-%s", streamUUID))
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal payloaf: %w", err)
+		return nil, err
 	}
-
-	task := asynq.NewTask(TaskThumbsnailProcessor, payload)
 	info, err := d.client.EnqueueContext(
 		ctx,
 		task,
 		asynq.MaxRetry(1),
 		asynq.Queue("thumbsnails"),
-		asynq.TaskID(fmt.Sprintf("thumbs-%s", streamUUID)),
 	)
 	if err != nil {
 		if errors.Is(err, asynq.ErrDuplicateTask) {
@@ -83,4 +96,33 @@ func (d *AsyncDistributor) DistributeThumbsnailProcessor(ctx context.Context, st
 	}
 	slog.Info("enqueue task:", "id", info.ID, "queue", info.Queue)
 	return &info.ID, nil
+}
+
+func (d *AsyncDistributor) ReprocessThumbsnailProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
+	task, err := d.newThumbnailTask(streamUUID, inputPath, fmt.Sprintf("reprocess-thumbs-%s", uuid.New().String()))
+	if err != nil {
+		return nil, err
+	}
+	info, err := d.client.EnqueueContext(
+		ctx,
+		task,
+		asynq.MaxRetry(1),
+		asynq.Queue("thumbsnails"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to enqueue re-process thumbsnail task: %w", err)
+	}
+	slog.Info("enqueue re-process thumbsnail task:", "id", info.ID, "queue", info.Queue)
+	return &info.ID, nil
+}
+
+func (d *AsyncDistributor) newThumbnailTask(streamUUID uuid.UUID, inputPath, taskID string) (*asynq.Task, error) {
+	payload, err := json.Marshal(ThumbsnailProcessorPayload{
+		StreamUUID: streamUUID,
+		InputPath:  inputPath,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	return asynq.NewTask(TaskThumbsnailProcessor, payload, asynq.TaskID(taskID)), nil
 }

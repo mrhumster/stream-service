@@ -10,5 +10,7 @@ import (
 type TaskDistributor interface {
 	DistributeVideoTranscoding(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error)
 	DistributeThumbsnailProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error)
+	ReprocessVideoTranscoding(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error)
+	ReprocessThumbsnailProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error)
 	TerminateTask(ctx context.Context, taskID string) error
 }

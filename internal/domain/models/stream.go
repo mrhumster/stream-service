@@ -23,6 +23,9 @@ const (
 	VisibilityPublic   StreamVisibility = "public"
 	VisibilityPrivate  StreamVisibility = "private"
 	VisibilityUnlisted StreamVisibility = "unlisted"
+
+	TaskTypeTranscode  = "transcode"
+	TaskTypeThumbnail  = "thumbnail"
 )
 
 type Stream struct {
@@ -59,7 +62,8 @@ type StreamStorage struct {
 	UploadID string `json:"upload_id,omitempty"`
 }
 
-type StreamProcessing struct {
+type StreamProcessingTask struct {
+	TaskType string   `json:"task_type"`
 	Progress int      `json:"progress"`
 	Steps    []string `json:"steps"`
 	Error    *string  `json:"error"`

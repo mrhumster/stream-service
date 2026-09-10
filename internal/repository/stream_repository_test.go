@@ -292,7 +292,8 @@ func TestGormStreamRepository_UpdateProcessing(t *testing.T) {
 	}
 	stream.ID = streamID
 	repo.Create(ctx, stream)
-	processing := models.StreamProcessing{
+	processing := models.StreamProcessingTask{
+		TaskType: models.TaskTypeTranscode,
 		Steps:    []string{"step one", "step two"},
 		Progress: 50,
 		Error:    nil,
@@ -302,11 +303,12 @@ func TestGormStreamRepository_UpdateProcessing(t *testing.T) {
 
 	updated, err := repo.Read(ctx, stream.ID)
 	require.NoError(t, err)
-	var updProcessing *models.StreamProcessing
+	var updProcessing []models.StreamProcessingTask
 	if err := json.Unmarshal(updated.Processing, &updProcessing); err != nil {
 		t.Errorf("error unmarshal precessing: %v", err)
 	}
-	require.Equal(t, processing, *updProcessing)
+	require.Len(t, updProcessing, 1)
+	require.Equal(t, processing, updProcessing[0])
 }
 
 func TestGormStreamRepository_Update_Extra(t *testing.T) {

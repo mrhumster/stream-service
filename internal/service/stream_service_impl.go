@@ -45,6 +45,11 @@ func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.Permission
 	}
 }
 
+var (
+	ErrStreamNotInErrorState = errors.New("stream is not in an error state")
+	ErrSourceFileMissing     = errors.New("source file is missing")
+)
+
 func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRequest) (*models.Stream, error) {
 	if req.Title == "" {
 		return nil, fmt.Errorf("stream title is required")
@@ -175,18 +180,15 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 		}
 	}
 
-	if stream.Processing != nil {
-		var processing models.StreamProcessing
-		err = json.Unmarshal(stream.Processing, &processing)
-		if err != nil {
-			return fmt.Errorf("umarshaling processing error: %w", err)
-		}
-		if processing.TaskID != nil && stream.Status == models.StatusProcessing {
-			if err = s.queue.TerminateTask(ctx, *processing.TaskID); err != nil {
-				slog.Error("terminate task",
-					"stream uuid", stream.ID,
-					"task id", processing.TaskID,
-					"error", err.Error())
+	if tasks, err := stream.ProcessingTasks(); err == nil && stream.Status == models.StatusProcessing {
+		for _, t := range tasks {
+			if t.TaskID != nil {
+				if err := s.queue.TerminateTask(ctx, *t.TaskID); err != nil {
+					slog.Error("terminate task",
+						"stream uuid", stream.ID,
+						"task id", *t.TaskID,
+						"error", err.Error())
+				}
 			}
 		}
 	}
@@ -350,22 +352,11 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 	if err != nil {
 		slog.Error("failed to enqueue transcoding task for", "stream", stream.ID, "error", err)
 	}
-
-	slog.Info("send transcoder task", "TaskID", *taskID)
-
-	if err := s.UpdateStreamProcessing(ctx, &UpdateStreamProcessingRequest{
-		StreamUUID: req.StreamID,
-		Processing: models.StreamProcessing{
-			Progress: 0,
-			Steps:    []string{"convertation"},
-			Error:    nil,
-			TaskID:   taskID,
-		},
-	}); err != nil {
-		return fmt.Errorf("failed to update processing: %w", err)
+	if taskID != nil {
+		slog.Info("send transcoder task", "TaskID", *taskID)
 	}
 
-	taksID, err := s.queue.DistributeThumbsnailProcessor(
+	thumbID, err := s.queue.DistributeThumbsnailProcessor(
 		ctx,
 		stream.ID,
 		storageInfo.Key,
@@ -373,8 +364,21 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 	if err != nil {
 		slog.Error("failed to enqueue thumbsnail task for", "stream", stream.ID, "error", err)
 	}
+	if thumbID != nil {
+		slog.Debug("Task for generate thumbsnail in queue", "taskID", *thumbID)
+	}
 
-	slog.Debug("Task for generate thumbsnail in queue", "taskID", taksID)
+	tasks := []models.StreamProcessingTask{
+		{TaskType: models.TaskTypeTranscode, Progress: 0, Steps: []string{"convertation"}, Error: nil, TaskID: taskID},
+		{TaskType: models.TaskTypeThumbnail, Progress: 0, Steps: []string{"Generating thumbnail preview"}, Error: nil, TaskID: thumbID},
+	}
+	if err := stream.SetInitialTasks(tasks); err != nil {
+		return fmt.Errorf("failed to set initial processing: %w", err)
+	}
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("failed to update processing: %w", err)
+	}
+	s.notifyUpdate(stream)
 
 	return nil
 }
@@ -579,22 +583,11 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 	if err != nil {
 		slog.Error("failed to enqueue transcoding task for", "stream", stream.ID, "error", err)
 	}
-
-	if err := s.UpdateStreamProcessing(ctx, &UpdateStreamProcessingRequest{
-		StreamUUID: req.StreamID,
-		Processing: models.StreamProcessing{
-			Progress: 0,
-			Steps:    []string{"convertation"},
-			Error:    nil,
-			TaskID:   taskID,
-		},
-	}); err != nil {
-		return fmt.Errorf("failed to update processing: %w", err)
+	if taskID != nil {
+		slog.Info("send transcoder task", "TaskID", *taskID)
 	}
-	s.notifyUpdate(stream)
 
-	// Thumbsnail processing
-	taksID, err := s.queue.DistributeThumbsnailProcessor(
+	thumbID, err := s.queue.DistributeThumbsnailProcessor(
 		ctx,
 		stream.ID,
 		storageInfo.Key,
@@ -602,8 +595,21 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 	if err != nil {
 		slog.Error("failed to enqueue thumbsnail task for", "stream", stream.ID, "error", err)
 	}
+	if thumbID != nil {
+		slog.Debug("Task for generate thumbsnail in queue", "taskID", *thumbID)
+	}
 
-	slog.Debug("Task for generate thumbsnail in queue", "taskID", taksID)
+	tasks := []models.StreamProcessingTask{
+		{TaskType: models.TaskTypeTranscode, Progress: 0, Steps: []string{"convertation"}, Error: nil, TaskID: taskID},
+		{TaskType: models.TaskTypeThumbnail, Progress: 0, Steps: []string{"Generating thumbnail preview"}, Error: nil, TaskID: thumbID},
+	}
+	if err := stream.SetInitialTasks(tasks); err != nil {
+		return fmt.Errorf("failed to set initial processing: %w", err)
+	}
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("failed to update processing: %w", err)
+	}
+	s.notifyUpdate(stream)
 
 	return nil
 }
@@ -628,14 +634,114 @@ func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *Upd
 	if err != nil {
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
-	if req.Processing.TaskID == nil {
-		var currentProcessing models.StreamProcessing
-		json.Unmarshal(stream.Processing, &currentProcessing)
-		req.Processing.TaskID = currentProcessing.TaskID
+
+	tasks, err := stream.ProcessingTasks()
+	if err != nil {
+		return fmt.Errorf("error read processing tasks: %w", err)
 	}
 
-	if err := stream.UpdateProcessing(req.Processing.Progress, req.Processing.Steps, req.Processing.Error, req.Processing.TaskID); err != nil {
+	if req.Processing.TaskID == nil {
+		for _, t := range tasks {
+			if t.TaskType == req.Processing.TaskType && t.TaskID != nil {
+				req.Processing.TaskID = t.TaskID
+				break
+			}
+		}
+	}
+
+	errMsg := ""
+	if req.Processing.Error != nil {
+		errMsg = *req.Processing.Error
+	}
+	var processingErr *string
+	if errMsg != "" {
+		processingErr = req.Processing.Error
+	}
+
+	if err := stream.SetTaskProgress(req.Processing.TaskType, req.Processing.Progress, req.Processing.Steps, processingErr, req.Processing.TaskID); err != nil {
 		return fmt.Errorf("error update processing: %w", err)
+	}
+
+	if errMsg != "" && req.Processing.TaskType == models.TaskTypeTranscode && stream.Status == models.StatusProcessing {
+		stream.Status = models.StatusError
+	}
+
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	s.notifyUpdate(stream)
+	return nil
+}
+
+func (s *StreamServiceImpl) ReprocessStream(ctx context.Context, streamID uuid.UUID) error {
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("stream not found")
+		}
+		return fmt.Errorf("error read stream from repository: %w", err)
+	}
+
+	tasks, err := stream.ProcessingTasks()
+	if err != nil {
+		return fmt.Errorf("error read processing tasks: %w", err)
+	}
+
+	failed := false
+	for _, t := range tasks {
+		if t.Error != nil && *t.Error != "" {
+			failed = true
+			break
+		}
+	}
+	if !failed {
+		return ErrStreamNotInErrorState
+	}
+
+	storageInfo, err := stream.GetStorageInfo()
+	if err != nil {
+		return fmt.Errorf("error read storage info: %w", err)
+	}
+	exists, err := s.storage.Exists(ctx, storageInfo.Key)
+	if err != nil {
+		return fmt.Errorf("error check source file: %w", err)
+	}
+	if !exists {
+		return ErrSourceFileMissing
+	}
+
+	for i := range tasks {
+		if tasks[i].Error == nil || *tasks[i].Error == "" {
+			continue
+		}
+
+		var taskID *string
+		switch tasks[i].TaskType {
+		case models.TaskTypeTranscode:
+			taskID, err = s.queue.ReprocessVideoTranscoding(ctx, stream.ID, storageInfo.Key)
+		case models.TaskTypeThumbnail:
+			taskID, err = s.queue.ReprocessThumbsnailProcessor(ctx, stream.ID, storageInfo.Key)
+		default:
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("failed to enqueue %s reprocess: %w", tasks[i].TaskType, err)
+		}
+
+		tasks[i].TaskID = taskID
+		tasks[i].Error = nil
+		tasks[i].Progress = 0
+		tasks[i].Steps = nil
+		if taskID != nil {
+			slog.Info("reprocess enqueued", "stream", stream.ID, "task_type", tasks[i].TaskType, "task_id", *taskID)
+		}
+	}
+
+	if stream.Status == models.StatusError {
+		stream.Status = models.StatusProcessing
+	}
+	if err := stream.SetInitialTasks(tasks); err != nil {
+		return fmt.Errorf("error reset processing: %w", err)
 	}
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)

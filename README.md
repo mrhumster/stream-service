@@ -4,7 +4,8 @@ Video upload, HLS serving, stream catalog and real-time updates for GoCast.
 
 ## Functionality
 
-- Stream CRUD + lifecycle: `draft → uploading → processing → ready → published`, `error`;
+- Stream CRUD + lifecycle: `draft → uploading → processing → ready → published`, `error`
+  (failed transcode), with **reprocess** from the error state;
 - Visibility model: `public` / `private` / `unlisted`;
 - Upload: simple single-request for small files, **multipart** (`init` → `part` → `complete`)
   for larger ones;
@@ -42,6 +43,7 @@ Routes are defined in `internal/delivery/http/routes/routes.go`.
 | `POST` | `/stream/:id/upload/init` | bearer + `stream/write` | Init multipart (metadata → uploadID) |
 | `PUT` | `/stream/:id/upload/part` | bearer + `stream/write` | Upload a part (≥ 5 MB, except last) |
 | `POST` | `/stream/:id/upload/complete` | bearer + `stream/write` | Complete multipart → process |
+| `POST` | `/stream/:id/reprocess` | bearer + `stream/write` | Retry failed processing tasks (error → processing) |
 | `GET` | `/stream/health` | – | Liveness/DB check |
 | `GET` | `/metrics` | – | Prometheus metrics |
 
@@ -55,6 +57,19 @@ permissions come from the identity permission service via gRPC.
   with `part` (a part must be ≥ 5 MB except the last — S3/MinIO protocol limit), then `complete`
   concats the parts, stores the final object in MinIO and dispatches thumbnail/transcoding tasks.
 - The frontend sends chunks of 5 MB, 3 in parallel, then completes.
+
+## Processing (task array)
+
+`stream.processing` is a JSON **array** of `StreamProcessingTask` entries
+(`task_type` `transcode` | `thumbnail`, `progress`, `steps`, `error`, `task_id`).
+On upload completion stream-service enqueues **both** transcode and thumbnail tasks and
+persists the initial array in one save. Workers report progress per task via gRPC
+`UpdateStreamProcessingRequest.task`; a failed transcode task sets the stream status to
+`error`, a failed thumbnail task only records its error (the stream stays playable).
+
+`POST /stream/:id/reprocess` re-enqueues the failed/absent tasks (unique asynq IDs),
+clears their errors and resets the stream to `processing`. Mapping: `404` not found,
+`400` "stream is not in an error state", `409` source video missing in MinIO, else `500`.
 
 ## HLS / access control
 
@@ -75,7 +90,7 @@ is restricted to the configured allowed origins. The hub addresses updates by us
 ## gRPC
 
 - **Server** on `:50051` with mTLS — allowed OUs: `thumbnail-service`, `transcoder-service`.
-  Workers call `UpdateStreamProcessing` (progress/error reporting) and file helpers.
+  Workers call `UpdateStreamProcessing` (progress/error reporting, task-aware) and file helpers.
 - **Client** to identity's permission service (`AUTH_SERVICE_ADDRESS`, mTLS, serverName
   `identity-service`) for `Enforce`/`CheckPermission`.
 

@@ -193,6 +193,20 @@ func (mr *MockStreamServiceMockRecorder) PublishStream(ctx, streamID any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishStream", reflect.TypeOf((*MockStreamService)(nil).PublishStream), ctx, streamID)
 }
 
+// ReprocessStream mocks base method.
+func (m *MockStreamService) ReprocessStream(ctx context.Context, streamID uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReprocessStream", ctx, streamID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReprocessStream indicates an expected call of ReprocessStream.
+func (mr *MockStreamServiceMockRecorder) ReprocessStream(ctx, streamID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReprocessStream", reflect.TypeOf((*MockStreamService)(nil).ReprocessStream), ctx, streamID)
+}
+
 // StartStreamUpload mocks base method.
 func (m *MockStreamService) StartStreamUpload(ctx context.Context, req service.StartUploadRequest) (*service.UploadInfo, error) {
 	m.ctrl.T.Helper()

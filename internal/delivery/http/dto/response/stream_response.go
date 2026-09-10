@@ -20,8 +20,8 @@ type StreamResponse struct {
 	CreatedAt   time.Time               `json:"created_at"`
 	UpdatedAt   time.Time               `json:"updated_at"`
 	PublishedAt *time.Time              `json:"published_at"`
-	Storage     models.StreamStorage    `json:"storage"`
-	Processing  models.StreamProcessing `json:"processing"`
+Storage    models.StreamStorage         `json:"storage"`
+	Processing []models.StreamProcessingTask `json:"processing"`
 }
 
 func FromDomainModel(stream *models.Stream) StreamResponse {
@@ -56,7 +56,7 @@ func FromDomainModel(stream *models.Stream) StreamResponse {
 	}
 
 	if len(stream.Processing) > 0 {
-		var processing models.StreamProcessing
+		var processing []models.StreamProcessingTask
 		json.Unmarshal(stream.Processing, &processing)
 		resp.Processing = processing
 	}

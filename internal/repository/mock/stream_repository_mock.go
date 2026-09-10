@@ -160,7 +160,7 @@ func (mr *MockStreamRepositoryMockRecorder) Update(ctx, stream any) *gomock.Call
 }
 
 // UpdateProcessing mocks base method.
-func (m *MockStreamRepository) UpdateProcessing(ctx context.Context, id uuid.UUID, processing models.StreamProcessing) error {
+func (m *MockStreamRepository) UpdateProcessing(ctx context.Context, id uuid.UUID, processing models.StreamProcessingTask) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateProcessing", ctx, id, processing)
 	ret0, _ := ret[0].(error)

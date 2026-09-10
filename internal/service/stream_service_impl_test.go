@@ -282,13 +282,14 @@ func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 		generatedStreamID := uuid.New()
 
 		taskID := "task-id"
-		streamProcessing := models.StreamProcessing{
+		streamProcessing := models.StreamProcessingTask{
+			TaskType: models.TaskTypeTranscode,
 			Progress: 50,
 			Steps:    []string{"convertation"},
 			Error:    nil,
 			TaskID:   &taskID,
 		}
-		streamProcessingJSON, _ := json.Marshal(streamProcessing)
+		streamProcessingJSON, _ := json.Marshal([]models.StreamProcessingTask{streamProcessing})
 
 		streamForDelete := &models.Stream{
 			Description: "Drasft",
@@ -701,10 +702,17 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 			DistributeVideoTranscoding(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(&taskID, nil).
 			Times(1)
-		mockRepo.EXPECT().
-			Read(ctx, streamID).
-			Return(existingStream, nil)
-		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil)
+		thumbID := "thumbs-task-id"
+		mockQueue.EXPECT().
+			DistributeThumbsnailProcessor(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&thumbID, nil).
+			Times(1)
+		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
+			Do(func(ctx context.Context, s *models.Stream) error {
+				assert.Contains(t, s.Processing.String(), models.TaskTypeTranscode)
+				assert.Contains(t, s.Processing.String(), models.TaskTypeThumbnail)
+				return nil
+			}).Return(nil)
 
 		req := service.UploadVideoRequest{
 			StreamID: streamID,
@@ -1790,14 +1798,22 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 				streamUUID,
 				storageInfo.Key).
 			Return(&taskID, nil)
-		mockRepo.EXPECT().
-			Read(gomock.Any(), streamUUID).
-			Return(expectedStream, nil)
-
+		thumbID := "thumbs-task-1"
+		mockQueue.EXPECT().
+			DistributeThumbsnailProcessor(
+				gomock.Any(),
+				streamUUID,
+				storageInfo.Key).
+			Return(&thumbID, nil)
 		mockRepo.EXPECT().
 			Update(
 				gomock.Any(),
 				gomock.Any()).
+			Do(func(ctx context.Context, s *models.Stream) error {
+				assert.Contains(t, s.Processing.String(), models.TaskTypeTranscode)
+				assert.Contains(t, s.Processing.String(), models.TaskTypeThumbnail)
+				return nil
+			}).
 			Return(nil)
 		err = svc.CompleteStreamUpload(ctx, svcReq)
 		require.NoError(t, err)
@@ -2152,7 +2168,12 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 				streamUUID,
 				storageInfo.Key).
 			Return(nil, fmt.Errorf("queue error"))
-		mockRepo.EXPECT().Read(gomock.Any(), gomock.Any()).Return(expectedStream, nil)
+		mockQueue.EXPECT().
+			DistributeThumbsnailProcessor(
+				gomock.Any(),
+				streamUUID,
+				storageInfo.Key).
+			Return(nil, nil)
 		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil)
 		err = svc.CompleteStreamUpload(ctx, svcReq)
 		require.NoError(t, err)
@@ -2180,7 +2201,8 @@ func TestStreamServiceImpl_UpdateStreamProcessing(t *testing.T) {
 		taskID := "task-id"
 		svcReq := &service.UpdateStreamProcessingRequest{
 			StreamUUID: streamUUID,
-			Processing: models.StreamProcessing{
+			Processing: models.StreamProcessingTask{
+				TaskType: models.TaskTypeTranscode,
 				Progress: int(100),
 				Steps:    []string{"convert"},
 				Error:    nil,
@@ -2238,7 +2260,8 @@ func TestStreamServiceImpl_UpdateStreamProcessing(t *testing.T) {
 		userUUID := uuid.New()
 		svcReq := &service.UpdateStreamProcessingRequest{
 			StreamUUID: streamUUID,
-			Processing: models.StreamProcessing{
+			Processing: models.StreamProcessingTask{
+				TaskType: models.TaskTypeTranscode,
 				Progress: int(100),
 				Steps:    []string{"convert"},
 				Error:    nil,
@@ -2289,7 +2312,8 @@ func TestStreamServiceImpl_UpdateStreamProcessing(t *testing.T) {
 		userUUID := uuid.New()
 		svcReq := &service.UpdateStreamProcessingRequest{
 			StreamUUID: streamUUID,
-			Processing: models.StreamProcessing{
+			Processing: models.StreamProcessingTask{
+				TaskType: models.TaskTypeTranscode,
 				Progress: int(100),
 				Steps:    []string{"convert"},
 				Error:    nil,

@@ -43,9 +43,12 @@ func createTestStreamData(id uuid.UUID, title string, ownerID uuid.UUID) *models
 		Bucket:   "streams",
 		Key:      id.String() + ".mp4",
 	})
-	processing, _ := json.Marshal(models.StreamProcessing{
-		Progress: 100,
-		Steps:    []string{"upload", "process", "complete"},
+	processing, _ := json.Marshal([]models.StreamProcessingTask{
+		{
+			TaskType: models.TaskTypeTranscode,
+			Progress: 100,
+			Steps:    []string{"upload", "process", "complete"},
+		},
 	})
 
 	return &models.Stream{
