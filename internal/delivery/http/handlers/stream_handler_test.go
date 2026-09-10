@@ -515,7 +515,7 @@ func TestStreamHandler_DeleteStream(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Equal(t, http.StatusBadRequest, w.Code)
 		var resp map[string]string
 		err := json.Unmarshal(w.Body.Bytes(), &resp)
 		require.NoError(t, err)

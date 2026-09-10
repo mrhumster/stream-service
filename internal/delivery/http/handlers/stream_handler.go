@@ -262,11 +262,24 @@ func (h *StreamHandler) DeleteStream(c *gin.Context) {
 	param := c.Param("id")
 	streamID, err := uuid.Parse(param)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid stream ID in params"))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream ID in params"))
 		return
 	}
 
-	h.service.DeleteStream(c.Request.Context(), streamID)
+	if err := h.service.DeleteStream(c.Request.Context(), streamID); err != nil {
+		msg := err.Error()
+		switch {
+		case strings.Contains(msg, "stream not found"):
+			c.JSON(http.StatusNotFound, response.ErrorResponse(msg))
+		case strings.Contains(msg, "cannot delete published stream"):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse(msg))
+		default:
+			slog.Error("delete stream", "error", msg)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
+		return
+	}
+
 	c.JSON(http.StatusOK, nil)
 }
 

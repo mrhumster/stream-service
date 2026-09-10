@@ -168,6 +168,11 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 				slog.Error("failed to delete object", "error", err)
 			}
 		}
+
+		thumbKey := fmt.Sprintf("thumbnails/%s.jpg", id)
+		if err := s.storage.Delete(ctx, thumbKey); err != nil {
+			slog.Error("failed to delete thumbnail", "key", thumbKey, "error", err)
+		}
 	}
 
 	if stream.Processing != nil {

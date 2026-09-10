@@ -272,6 +272,8 @@ func TestStreamServiceImpl_DeleteStream(t *testing.T) {
 		p.EXPECT().RemovePolicy(gomock.Any(), userID.String(), "stream/"+streamID.String(), "write").Return(true, nil)
 		p.EXPECT().RemovePolicy(gomock.Any(), userID.String(), "stream/"+streamID.String(), "delete").Return(true, nil)
 		s.EXPECT().Delete(gomock.Any(), stor.Key).Return(nil)
+		thumbKey := fmt.Sprintf("thumbnails/%s.jpg", streamID.String())
+		s.EXPECT().Delete(gomock.Any(), thumbKey).Return(nil)
 		err = srv.DeleteStream(ctx, streamID)
 		require.NoError(t, err)
 	})

@@ -51,7 +51,8 @@ init-minio:
 		mc alias set local http://localhost:9000 $(MINIO_ROOT_USER) $(MINIO_ROOT_PASS) && \
 		mc admin user add local $(MINIO_USER_KEY) $(MINIO_USER_SECRET) || true && \
 		mc admin policy attach local readwrite --user=$(MINIO_USER_KEY) && \
-		mc mb local/$(MINIO_BUCKET) || true"
+		mc mb local/$(MINIO_BUCKET) || true && \
+		mc anonymous set download local/$(MINIO_BUCKET)/thumbnails || true"
 	@echo "Done! Used key: $(MINIO_USER_KEY)"
 
 proto:
