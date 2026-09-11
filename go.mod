@@ -11,7 +11,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hibiken/asynq v0.26.0
 	github.com/minio/minio-go/v7 v7.0.98
-	github.com/mrhumster/identity-service v0.1.7
+	github.com/mrhumster/identity-service v0.1.9
 	github.com/prometheus/client_golang v1.24.1
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0

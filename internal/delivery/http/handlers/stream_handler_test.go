@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/mrhumster/identity-service/pkg/dto"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/request"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
 	"github.com/mrhumster/stream-service/internal/domain/models"
@@ -341,6 +342,88 @@ func TestStreamHandler_CreateStream(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("unverified member is forbidden", func(t *testing.T) {
+		router := setupTestRouter()
+		userID := uuid.New()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", userID)
+			c.Set("claims", &dto.AccessClaims{UserID: userID.String(), Role: "member", EmailVerified: false})
+			c.Next()
+		})
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService, nil)
+		router.POST("/streams", handler.CreateStream)
+
+		reqBody := `{"Title": "Test Stream", "Visibility": "public"}`
+		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusForbidden, w.Code)
+
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Equal(t, "email not verified", resp["error"])
+	})
+
+	t.Run("verified member can create", func(t *testing.T) {
+		router := setupTestRouter()
+		userID := uuid.New()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", userID)
+			c.Set("claims", &dto.AccessClaims{UserID: userID.String(), Role: "member", EmailVerified: true})
+			c.Next()
+		})
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		expecetedStream := &models.Stream{Title: "Test Stream", OwnerID: userID, Status: models.StatusDraft}
+		expecetedStream.ID = uuid.New()
+		mockService.EXPECT().CreateStream(gomock.Any(), gomock.Any()).Return(expecetedStream, nil)
+
+		handler := NewStreamHandler(mockService, nil)
+		router.POST("/streams", handler.CreateStream)
+
+		reqBody := `{"Title": "Test Stream", "Visibility": "public"}`
+		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusCreated, w.Code)
+	})
+
+	t.Run("unverified admin can create (admin auto-verified at bootstrap)", func(t *testing.T) {
+		router := setupTestRouter()
+		userID := uuid.New()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", userID)
+			c.Set("claims", &dto.AccessClaims{UserID: userID.String(), Role: "admin", EmailVerified: false})
+			c.Next()
+		})
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		expecetedStream := &models.Stream{Title: "Test Stream", OwnerID: userID, Status: models.StatusDraft}
+		expecetedStream.ID = uuid.New()
+		mockService.EXPECT().CreateStream(gomock.Any(), gomock.Any()).Return(expecetedStream, nil)
+
+		handler := NewStreamHandler(mockService, nil)
+		router.POST("/streams", handler.CreateStream)
+
+		reqBody := `{"Title": "Test Stream", "Visibility": "public"}`
+		req := httptest.NewRequest("POST", "/streams", bytes.NewBufferString(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusCreated, w.Code)
 	})
 }
 

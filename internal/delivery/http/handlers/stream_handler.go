@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/mrhumster/identity-service/pkg/dto"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/request"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
 	streammetrics "github.com/mrhumster/stream-service/internal/metrics"
@@ -162,6 +163,12 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 
 func (h *StreamHandler) CreateStream(c *gin.Context) {
 	userUUID := c.MustGet("user").(uuid.UUID)
+
+	rawClaims, _ := c.Get("claims")
+	if claims, ok := rawClaims.(*dto.AccessClaims); ok && claims.Role != "admin" && !claims.EmailVerified {
+		c.JSON(http.StatusForbidden, response.ErrorResponse("email not verified"))
+		return
+	}
 
 	var req request.CreateStreamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
