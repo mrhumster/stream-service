@@ -32,6 +32,7 @@ type StreamServiceImpl struct {
 	queue            queue.TaskDistributor
 	hub              wss.Hub
 	cfg              *config.Server
+	eventsRecorder   queue.ActivityEventRecorder
 }
 
 func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor, hub wss.Hub, cfg *config.Server) *StreamServiceImpl {
@@ -42,6 +43,22 @@ func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.Permission
 		queue:            queue,
 		hub:              hub,
 		cfg:              cfg,
+	}
+}
+
+// WithActivityRecorder attaches the activity-event recorder (best-effort,
+// nil-safe). Events for the stream owner are emitted through the events queue.
+func (s *StreamServiceImpl) WithActivityRecorder(r queue.ActivityEventRecorder) *StreamServiceImpl {
+	s.eventsRecorder = r
+	return s
+}
+
+func (s *StreamServiceImpl) recordEvent(ctx context.Context, stream *models.Stream, eventType string, payload any) {
+	if s.eventsRecorder == nil {
+		return
+	}
+	if err := s.eventsRecorder.RecordActivityEvent(ctx, stream.OwnerID, eventType, &stream.ID, payload); err != nil {
+		slog.Warn("record activity event failed", "stream", stream.ID, "event", eventType, "error", err)
 	}
 }
 
@@ -86,6 +103,7 @@ func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRe
 			log.Printf("Permission added successfully. permissionClient.AddPolicy(sub = %s,obj = %s, act = %s)", sub, obj, act)
 		}
 	}
+	s.recordEvent(ctx, stream, "stream.created", map[string]any{"title": stream.Title, "visibility": stream.Visibility})
 	return stream, nil
 }
 
@@ -196,6 +214,7 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete stream: %w", err)
 	}
+	s.recordEvent(ctx, stream, "stream.deleted", nil)
 
 	// PERMS
 	obj := stream.OwnerID.String()
@@ -244,6 +263,7 @@ func (s *StreamServiceImpl) PublishStream(ctx context.Context, streamID uuid.UUI
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
 	s.notifyComplete(stream)
+	s.recordEvent(ctx, stream, "stream.published", nil)
 	return nil
 }
 
@@ -257,6 +277,7 @@ func (s *StreamServiceImpl) UnpublishStream(ctx context.Context, streamID uuid.U
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
 	s.notifyUpdate(stream)
+	s.recordEvent(ctx, stream, "stream.unpublished", nil)
 	return nil
 }
 
@@ -268,6 +289,9 @@ func (s *StreamServiceImpl) UpdateStreamStatus(ctx context.Context, streamID uui
 	stream.Status = status
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	if stream.Status == models.StatusReady {
+		s.recordEvent(ctx, stream, "stream.ready", nil)
 	}
 	if stream.Status == models.StatusReady && !s.cfg.KeepOriginalFile {
 		streamStorage, _ := stream.GetStorageInfo()
@@ -379,6 +403,7 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 		return fmt.Errorf("failed to update processing: %w", err)
 	}
 	s.notifyUpdate(stream)
+	s.recordEvent(ctx, stream, "stream.upload.completed", nil)
 
 	return nil
 }
@@ -483,6 +508,7 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, req StartUplo
 		_ = s.storage.AbortMultipart(ctx, storageKey, uID)
 		return nil, fmt.Errorf("failed to update stream: %w", err)
 	}
+	s.recordEvent(ctx, stream, "stream.upload.started", map[string]any{"filename": req.Filename})
 	return &UploadInfo{
 		UploadID: storageInfo.UploadID,
 		StreamID: stream.ID,
@@ -610,6 +636,7 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 		return fmt.Errorf("failed to update processing: %w", err)
 	}
 	s.notifyUpdate(stream)
+	s.recordEvent(ctx, stream, "stream.upload.completed", nil)
 
 	return nil
 }
@@ -669,6 +696,21 @@ func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *Upd
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
+
+	switch req.Processing.TaskType {
+	case models.TaskTypeTranscode:
+		switch {
+		case errMsg != "":
+			s.recordEvent(ctx, stream, "stream.transcode.failed", map[string]any{"error": errMsg})
+		case req.Processing.Progress >= 100:
+			s.recordEvent(ctx, stream, "stream.transcode.finish", map[string]any{"progress": req.Processing.Progress})
+		case req.Processing.Progress == 0:
+			s.recordEvent(ctx, stream, "stream.transcode.started", nil)
+		}
+	default:
+		// thumbnail progress is only written into the task; no feed event.
+	}
+
 	s.notifyUpdate(stream)
 	return nil
 }
@@ -747,6 +789,7 @@ func (s *StreamServiceImpl) ReprocessStream(ctx context.Context, streamID uuid.U
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
 	s.notifyUpdate(stream)
+	s.recordEvent(ctx, stream, "stream.reprocessed", nil)
 	return nil
 }
 

@@ -19,6 +19,9 @@ type Config struct {
 type Redis struct {
 	Addr     string
 	Password string
+	// EventsQueueDB is the Redis DB serving the events-service asynq queue
+	// (event:activity). Defaults to 3.
+	EventsQueueDB int
 }
 
 type ServerMode string
@@ -116,8 +119,9 @@ func LoadConfig() (*Config, error) {
 			Region:          getEnv("MINIO_REGION", "ru-east-1"),
 		},
 		Redis: Redis{
-			Addr:     getEnv("REDIS_ADDR", "localhost"),
-			Password: getEnv("redis-password", ""),
+			Addr:           getEnv("REDIS_ADDR", "localhost"),
+			Password:       getEnv("redis-password", ""),
+			EventsQueueDB:  getQueueDB("EVENTS_QUEUE_DB", 3),
 		},
 	}, nil
 }
@@ -166,6 +170,16 @@ func getEnv(key, defaultValue string) string {
 
 func getBool(key string) bool {
 	v, _ := strconv.ParseBool(os.Getenv(key))
+	return v
+}
+
+// getQueueDB parses an asynq queue DB index; on any parse failure it falls
+// back to the provided default.
+func getQueueDB(key string, fallback int) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil {
+		return fallback
+	}
 	return v
 }
 
