@@ -53,11 +53,31 @@ func (s *StreamServiceImpl) WithActivityRecorder(r queue.ActivityEventRecorder) 
 	return s
 }
 
+// eventPayload builds the activity-event payload for a stream event. The
+// stream title (and visibility) are always included so the feed can render
+// the title; optional fields (filename, progress, error, ...) are merged.
+// Stream fields take precedence over any extra values with the same key.
+func eventPayload(stream *models.Stream, extra any) map[string]any {
+	p := map[string]any{}
+	switch m := extra.(type) {
+	case nil:
+	case map[string]any:
+		for k, v := range m {
+			p[k] = v
+		}
+	default:
+		slog.Warn("unexpected activity event payload type", "type", fmt.Sprintf("%T", extra))
+	}
+	p["title"] = stream.Title
+	p["visibility"] = stream.Visibility
+	return p
+}
+
 func (s *StreamServiceImpl) recordEvent(ctx context.Context, stream *models.Stream, eventType string, payload any) {
 	if s.eventsRecorder == nil {
 		return
 	}
-	if err := s.eventsRecorder.RecordActivityEvent(ctx, stream.OwnerID, eventType, &stream.ID, payload); err != nil {
+	if err := s.eventsRecorder.RecordActivityEvent(ctx, stream.OwnerID, eventType, &stream.ID, eventPayload(stream, payload)); err != nil {
 		slog.Warn("record activity event failed", "stream", stream.ID, "event", eventType, "error", err)
 	}
 }
