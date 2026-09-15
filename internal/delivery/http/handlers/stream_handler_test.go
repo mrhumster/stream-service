@@ -35,6 +35,84 @@ func setupTestRouter() *gin.Engine {
 	return gin.Default()
 }
 
+func TestStreamHandler_GetStreamStatus(t *testing.T) {
+	t.Run("returns status and visibility", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService, nil)
+
+		streamID := uuid.New()
+		mockService.EXPECT().GetStreamStatus(gomock.Any(), streamID).Return(&models.Stream{
+			Status:     models.StatusPublished,
+			Visibility: models.VisibilityPublic,
+		}, nil)
+
+		router := setupTestRouter()
+		router.GET("/stream/:id/status", handler.GetStreamStatus)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/stream/%s/status", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]string
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, "published", resp["status"])
+		assert.Equal(t, "public", resp["visibility"])
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService, nil)
+
+		streamID := uuid.New()
+		mockService.EXPECT().GetStreamStatus(gomock.Any(), streamID).Return(nil, errors.New("stream not found"))
+
+		router := setupTestRouter()
+		router.GET("/stream/:id/status", handler.GetStreamStatus)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/stream/%s/status", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("invalid stream id", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService, nil)
+
+		router := setupTestRouter()
+		router.GET("/stream/:id/status", handler.GetStreamStatus)
+		req := httptest.NewRequest("GET", "/stream/not-a-uuid/status", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("propagates internal error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService, nil)
+
+		streamID := uuid.New()
+		mockService.EXPECT().GetStreamStatus(gomock.Any(), streamID).Return(nil, errors.New("boom"))
+
+		router := setupTestRouter()
+		router.GET("/stream/:id/status", handler.GetStreamStatus)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/stream/%s/status", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
 func TestStreamHandler_GetStream(t *testing.T) {
 	router := setupTestRouter()
 

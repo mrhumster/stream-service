@@ -229,6 +229,34 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// GetStreamStatus returns only the status and visibility of a stream for
+// internal service-to-service checks (e.g. comments-service). Intentionally
+// auth-free and without permission logic: the payload is low-sensitivity and
+// exposed to the in-cluster reader only.
+func (h *StreamHandler) GetStreamStatus(c *gin.Context) {
+	streamIDuuid, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream ID in params"))
+		return
+	}
+
+	stream, err := h.service.GetStreamStatus(c.Request.Context(), streamIDuuid)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		} else {
+			slog.Error("get stream status failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":     stream.Status,
+		"visibility": stream.Visibility,
+	})
+}
+
 func (h *StreamHandler) UpdateStream(c *gin.Context) {
 	val := c.Param("id")
 	streamUUID, err := uuid.Parse(val)

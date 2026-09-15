@@ -147,6 +147,21 @@ func (mr *MockStreamServiceMockRecorder) GetStream(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStream", reflect.TypeOf((*MockStreamService)(nil).GetStream), ctx, id)
 }
 
+// GetStreamStatus mocks base method.
+func (m *MockStreamService) GetStreamStatus(ctx context.Context, id uuid.UUID) (*models.Stream, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetStreamStatus", ctx, id)
+	ret0, _ := ret[0].(*models.Stream)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetStreamStatus indicates an expected call of GetStreamStatus.
+func (mr *MockStreamServiceMockRecorder) GetStreamStatus(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStreamStatus", reflect.TypeOf((*MockStreamService)(nil).GetStreamStatus), ctx, id)
+}
+
 // ListStreams mocks base method.
 func (m *MockStreamService) ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
 	m.ctrl.T.Helper()
