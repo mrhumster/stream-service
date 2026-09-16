@@ -254,6 +254,8 @@ func (h *StreamHandler) GetStreamStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":     stream.Status,
 		"visibility": stream.Visibility,
+		"owner_id":   stream.OwnerID,
+		"title":      stream.Title,
 	})
 }
 

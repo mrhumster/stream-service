@@ -46,6 +46,8 @@ func TestStreamHandler_GetStreamStatus(t *testing.T) {
 		mockService.EXPECT().GetStreamStatus(gomock.Any(), streamID).Return(&models.Stream{
 			Status:     models.StatusPublished,
 			Visibility: models.VisibilityPublic,
+			OwnerID:    streamID,
+			Title:      "Sunset",
 		}, nil)
 
 		router := setupTestRouter()
@@ -59,6 +61,8 @@ func TestStreamHandler_GetStreamStatus(t *testing.T) {
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 		assert.Equal(t, "published", resp["status"])
 		assert.Equal(t, "public", resp["visibility"])
+		assert.Equal(t, streamID.String(), resp["owner_id"])
+		assert.Equal(t, "Sunset", resp["title"])
 	})
 
 	t.Run("not found", func(t *testing.T) {
