@@ -12,6 +12,8 @@ Video upload, HLS serving, stream catalog and real-time updates for GoCast.
 - Publish/unpublish, per-owner access via identity permissions (gRPC);
 - HLS serving from MinIO with Bearer auth, anti-cache `?t=` and path-traversal protection;
 - Thumbnail + transcoding tasks dispatched to asynq workers (thumbnail/transcoder);
+- Video metadata (recorded_at / location / camera) extracted by the transcoder and stored in
+  the JSONB `streams.metadata` column;
 - WebSocket hub (`STREAM_UPDATED` / `STREAM_READY`) to the stream owner;
 - Prometheus `/metrics` (RED + business counters).
 
@@ -30,6 +32,7 @@ Routes are defined in `internal/delivery/http/routes/routes.go`.
 |---|---|---|---|
 | `GET` | `/stream` | – | Public catalog (paged, limit ≤ 100) |
 | `GET` | `/stream/:id` | optional | Stream detail (access by owner/visibility) |
+| `GET` | `/stream/:id/status` | – | Public status probe (`status`/`visibility`, `owner_id`/`title`) — used by comments/stats gates |
 | `GET` | `/stream/:id/download` | bearer | Generate a signed download URL |
 | `GET` | `/stream/:id/hls/*file` | optional | HLS playlist/segments from MinIO |
 | `GET` | `/stream/ws/updates` | WS subprotocol | WebSocket updates for the owner |
@@ -71,6 +74,29 @@ persists the initial array in one save. Workers report progress per task via gRP
 clears their errors and resets the stream to `processing`. Mapping: `404` not found,
 `400` "stream is not in an error state", `409` source video missing in MinIO, else `500`.
 
+## Video metadata
+
+`streams.metadata` is a JSONB column (`models.StreamMetadata`) with:
+
+```json
+{
+  "duration": 2,
+  "size": 21694,
+  "format": "hls",
+  "resolution": "1280x720",
+  "recorded_at": "2024-06-01T10:15:30Z",
+  "location": "55.75580,37.61760",
+  "camera": "PixelCam XC-42"
+}
+```
+
+`duration`/`size`/`format`/`resolution` come from the processing pipelines; `recorded_at`,
+`location`, `camera` and the authoritative `size` are reported by the transcoder via gRPC
+`UpdateStreamMetadata` (parsed from ffprobe of the original file — see transcoder-service
+README). New optional fields are `omitempty`, and the gRPC mapping parses `recorded_at`
+tolerantly: an unparseable timestamp is ignored (`nil`) rather than failing the whole update
+(`parseOptionalTime` in `internal/delivery/grpc/stream_handler.go`).
+
 ## HLS / access control
 
 `GET /stream/:id/hls/*file` resolves the stream, checks visibility/owner
@@ -90,7 +116,9 @@ is restricted to the configured allowed origins. The hub addresses updates by us
 ## gRPC
 
 - **Server** on `:50051` with mTLS — allowed OUs: `thumbnail-service`, `transcoder-service`.
-  Workers call `UpdateStreamProcessing` (progress/error reporting, task-aware) and file helpers.
+  Workers call `UpdateStreamProcessing` (progress/error reporting, task-aware),
+  `UpdateStreamMetadata` (recorded_at/location/camera/size via `UpdateStreamMetadataRequest`,
+  fields `duration=4 size=5 recorded_at=6 location=7 camera=8`) and file helpers.
 - **Client** to identity's permission service (`AUTH_SERVICE_ADDRESS`, mTLS, serverName
   `identity-service`) for `Enforce`/`CheckPermission`.
 
