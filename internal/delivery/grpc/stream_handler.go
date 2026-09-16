@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/gen/go/stream"
@@ -70,11 +71,35 @@ func protoMetadataReqToService(req *stream.UpdateStreamMetadataRequest) (*servic
 		Format:     req.Format,
 		Resolution: req.Resolution,
 		Size:       req.Size,
+		RecordedAt: parseOptionalTime(req.RecordedAt),
+		Location:   parseOptionalString(req.Location),
+		Camera:     parseOptionalString(req.Camera),
 	}
 	return &service.UpdateStreamMetadataRequest{
 		StreamUUID: streamUUID,
 		Metadata:   meta,
 	}, nil
+}
+
+// parseOptionalTime parses an RFC3339 timestamp into a *time.Time, returning
+// nil for empty input. Values that fail to parse are ignored so a malformed
+// payload never fails the metadata update entirely.
+func parseOptionalTime(v string) *time.Time {
+	if v == "" {
+		return nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+		t = t.UTC()
+		return &t
+	}
+	return nil
+}
+
+func parseOptionalString(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }
 
 func (s *StreamGRPCServer) UpdateStreamMetadata(ctx context.Context, req *stream.UpdateStreamMetadataRequest) (*stream.UpdateStreamMetadataResponse, error) {

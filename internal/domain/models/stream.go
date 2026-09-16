@@ -52,6 +52,10 @@ type StreamMetadata struct {
 	Size       int64  `json:"size"`
 	Format     string `json:"format"`
 	Resolution string `json:"resolution"`
+
+	RecordedAt *time.Time `json:"recorded_at,omitempty"`
+	Location   *string    `json:"location,omitempty"`
+	Camera     *string    `json:"camera,omitempty"`
 }
 
 type StreamStorage struct {
