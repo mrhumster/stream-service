@@ -149,7 +149,7 @@ func TestStreamHandler_GetStream(t *testing.T) {
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", uuid.New()), nil)
 		w := httptest.NewRecorder()
 		r1.ServeHTTP(w, req)
-		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Equal(t, http.StatusForbidden, w.Code)
 	})
 
 	t.Run("request without userID", func(t *testing.T) {
@@ -165,7 +165,7 @@ func TestStreamHandler_GetStream(t *testing.T) {
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", uuid.New()), nil)
 		w := httptest.NewRecorder()
 		r1.ServeHTTP(w, req)
-		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Equal(t, http.StatusForbidden, w.Code)
 	})
 
 	t.Run("propagation service error", func(t *testing.T) {
@@ -226,6 +226,110 @@ func TestStreamHandler_GetStream(t *testing.T) {
 	})
 
 	t.Run("invalid user id return errror", func(t *testing.T) {
+	})
+
+	t.Run("unlisted stream available to non-owner by link", func(t *testing.T) {
+		r1 := setupTestRouter()
+		owner := uuid.New()
+		otherUser := uuid.New()
+		r1.Use(func(c *gin.Context) {
+			c.Set("user", otherUser)
+			c.Next()
+		})
+		ctrl1 := gomock.NewController(t)
+		defer ctrl1.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl1)
+		streamID := uuid.New()
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			Visibility: models.VisibilityUnlisted,
+			OwnerID:    owner,
+			Status:     models.StatusPublished,
+			Title:      "hidden gem",
+		}, nil)
+		handler1 := NewStreamHandler(mockService, nil)
+		r1.GET("/streams/:id", handler1.GetStream)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", streamID), nil)
+		w := httptest.NewRecorder()
+		r1.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp response.StreamResponse
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Equal(t, "hidden gem", resp.Title)
+	})
+
+	t.Run("private stream forbidden for non-owner", func(t *testing.T) {
+		r1 := setupTestRouter()
+		owner := uuid.New()
+		otherUser := uuid.New()
+		r1.Use(func(c *gin.Context) {
+			c.Set("user", otherUser)
+			c.Next()
+		})
+		ctrl1 := gomock.NewController(t)
+		defer ctrl1.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl1)
+		streamID := uuid.New()
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			Visibility: models.VisibilityPrivate,
+			OwnerID:    owner,
+			Status:     models.StatusPublished,
+		}, nil)
+		handler1 := NewStreamHandler(mockService, nil)
+		r1.GET("/streams/:id", handler1.GetStream)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", streamID), nil)
+		w := httptest.NewRecorder()
+		r1.ServeHTTP(w, req)
+		require.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("private stream visible to owner", func(t *testing.T) {
+		r1 := setupTestRouter()
+		owner := uuid.New()
+		r1.Use(func(c *gin.Context) {
+			c.Set("user", owner)
+			c.Next()
+		})
+		ctrl1 := gomock.NewController(t)
+		defer ctrl1.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl1)
+		streamID := uuid.New()
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			Visibility: models.VisibilityPrivate,
+			OwnerID:    owner,
+			Status:     models.StatusPublished,
+			Title:      "my private",
+		}, nil)
+		handler1 := NewStreamHandler(mockService, nil)
+		r1.GET("/streams/:id", handler1.GetStream)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", streamID), nil)
+		w := httptest.NewRecorder()
+		r1.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("anonymous sees public stream", func(t *testing.T) {
+		r1 := setupTestRouter()
+		ctrl1 := gomock.NewController(t)
+		defer ctrl1.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl1)
+		streamID := uuid.New()
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			Visibility: models.VisibilityPublic,
+			OwnerID:    uuid.New(),
+			Status:     models.StatusPublished,
+			Title:      "public",
+		}, nil)
+		handler1 := NewStreamHandler(mockService, nil)
+		r1.GET("/streams/:id", handler1.GetStream)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s", streamID), nil)
+		w := httptest.NewRecorder()
+		r1.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
 	})
 }
 
@@ -1546,6 +1650,147 @@ func TestStreamHandler_GetHLS(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 		assert.Contains(t, w.Body.String(), "internal server error")
+	})
+}
+
+func TestStreamHandler_GetHLS_Visibility(t *testing.T) {
+	ownerID := uuid.New()
+
+	newAnonRouter := func(t *testing.T, stream *models.Stream, mockService *servicemock.MockStreamService) *gin.Engine {
+		handler := NewStreamHandler(mockService, nil)
+		router := setupTestRouter()
+		router.GET("/streams/:id/hls/*file", handler.GetHLS)
+		return router
+	}
+
+	serve := func(t *testing.T, router *gin.Engine, streamID uuid.UUID) *httptest.ResponseRecorder {
+		url := fmt.Sprintf("/streams/%s/hls/index.m3u8", streamID)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", url, nil)
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	t.Run("published private stream forbidden for anonymous", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		streamID := uuid.New()
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			Status:     models.StatusPublished,
+			Visibility: models.VisibilityPrivate,
+			OwnerID:    ownerID,
+		}, nil)
+
+		router := newAnonRouter(t, nil, mockService)
+		w := serve(t, router, streamID)
+		require.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("published private stream visible to owner", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		streamID := uuid.New()
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			Status:     models.StatusPublished,
+			Visibility: models.VisibilityPrivate,
+			OwnerID:    ownerID,
+		}, nil)
+
+		content := io.NopCloser(strings.NewReader("#EXTM3U"))
+		mockService.EXPECT().GetFileByKey(gomock.Any(), &service.GetFileByKeyRequest{
+			StreamUUID: streamID,
+			FileName:   "/index.m3u8",
+		}).Return(&service.GetFileByKeyResponse{
+			Content:     content,
+			ContentType: "application/x-mpegURL",
+			Size:        int64(len("#EXTM3U")),
+		}, nil)
+
+		handler := NewStreamHandler(mockService, nil)
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", ownerID)
+			c.Next()
+		})
+		router.GET("/streams/:id/hls/*file", handler.GetHLS)
+
+		w := serve(t, router, streamID)
+		require.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("published unlisted stream open by link for anonymous", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		streamID := uuid.New()
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			Status:     models.StatusPublished,
+			Visibility: models.VisibilityUnlisted,
+			OwnerID:    ownerID,
+		}, nil)
+
+		content := io.NopCloser(strings.NewReader("#EXTM3U"))
+		mockService.EXPECT().GetFileByKey(gomock.Any(), &service.GetFileByKeyRequest{
+			StreamUUID: streamID,
+			FileName:   "/index.m3u8",
+		}).Return(&service.GetFileByKeyResponse{
+			Content:     content,
+			ContentType: "application/x-mpegURL",
+			Size:        int64(len("#EXTM3U")),
+		}, nil)
+
+		router := newAnonRouter(t, nil, mockService)
+		w := serve(t, router, streamID)
+		require.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("published public stream open for anonymous", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		streamID := uuid.New()
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			Status:     models.StatusPublished,
+			Visibility: models.VisibilityPublic,
+			OwnerID:    ownerID,
+		}, nil)
+
+		content := io.NopCloser(strings.NewReader("#EXTM3U"))
+		mockService.EXPECT().GetFileByKey(gomock.Any(), &service.GetFileByKeyRequest{
+			StreamUUID: streamID,
+			FileName:   "/index.m3u8",
+		}).Return(&service.GetFileByKeyResponse{
+			Content:     content,
+			ContentType: "application/x-mpegURL",
+			Size:        int64(len("#EXTM3U")),
+		}, nil)
+
+		router := newAnonRouter(t, nil, mockService)
+		w := serve(t, router, streamID)
+		require.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("unpublished stream forbidden for non-owner", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockService := servicemock.NewMockStreamService(ctrl)
+		streamID := uuid.New()
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			Status:     models.StatusReady,
+			Visibility: models.VisibilityPublic,
+			OwnerID:    ownerID,
+		}, nil)
+
+		router := newAnonRouter(t, nil, mockService)
+		w := serve(t, router, streamID)
+		require.Equal(t, http.StatusForbidden, w.Code)
 	})
 }
 

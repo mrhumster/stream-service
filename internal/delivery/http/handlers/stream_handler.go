@@ -215,11 +215,15 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 		return
 	}
 
-	if stream.Visibility != models.VisibilityPublic {
-		user, ok := c.MustGet("user").(uuid.UUID)
-
-		if !ok || user == uuid.Nil || user != stream.OwnerID {
-			c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
+	if stream.Visibility == models.VisibilityPrivate {
+		user, ok := c.Get("user")
+		if !ok {
+			c.JSON(http.StatusForbidden, response.ErrorResponse("access denied"))
+			return
+		}
+		userID, ok := user.(uuid.UUID)
+		if !ok || userID == uuid.Nil || userID != stream.OwnerID {
+			c.JSON(http.StatusForbidden, response.ErrorResponse("access denied"))
 			return
 		}
 
@@ -526,9 +530,17 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 		return
 	}
 
-	if stream.Status != models.StatusPublished {
+	// Published streams play for everyone; private streams are owner-only
+	// even after publishing; non-published streams are owner-only as well.
+	if stream.Status != models.StatusPublished || stream.Visibility == models.VisibilityPrivate {
 		user, exist := c.Get("user")
-		if !exist || user.(uuid.UUID) != stream.OwnerID {
+		if !exist {
+			streammetrics.HLSRequests.WithLabelValues("403").Inc()
+			c.JSON(http.StatusForbidden, response.ErrorResponse("this stream is private or not ready "))
+			return
+		}
+		userID, ok := user.(uuid.UUID)
+		if !ok || userID != stream.OwnerID {
 			streammetrics.HLSRequests.WithLabelValues("403").Inc()
 			c.JSON(http.StatusForbidden, response.ErrorResponse("this stream is private or not ready "))
 			return
