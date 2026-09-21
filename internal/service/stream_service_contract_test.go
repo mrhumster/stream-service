@@ -271,7 +271,7 @@ func (c *StreamServiceContractTest) TestListOperations() {
 		require.NoError(c.t, err)
 
 		// Test ListUserStreams
-		userStreams, _, err := c.service.ListUserStreams(c.ctx, userID)
+		userStreams, _, err := c.service.ListUserStreams(c.ctx, userID, 100, 0)
 		assert.NoError(c.t, err)
 		assert.NotNil(c.t, userStreams)
 

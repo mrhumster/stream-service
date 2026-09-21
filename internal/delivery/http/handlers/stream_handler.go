@@ -1,10 +1,10 @@
 package handlers
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -84,8 +84,39 @@ func (h *StreamHandler) HandleWS(c *gin.Context) {
 func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
 	userUUID := c.MustGet("user").(uuid.UUID)
 
-	var filter repository.StreamFilter
-	streams, total, err := h.service.ListUserStreams(c.Request.Context(), userUUID)
+	limit := c.Query("limit")
+	offset := c.Query("offset")
+
+	filter := repository.StreamFilter{
+		Offset: 0,
+		Limit:  100,
+	}
+	if limit != "" {
+		limitInt, err := strconv.Atoi(limit)
+		if err != nil || limitInt < 0 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid limit query"))
+			return
+		}
+		if limitInt > 100 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("limit must be 100 or less"))
+			return
+		}
+		filter.Limit = limitInt
+	}
+	if offset != "" {
+		offsetInt, err := strconv.Atoi(offset)
+		if err != nil || offsetInt < 0 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid offset query"))
+			return
+		}
+		if offsetInt > 1000 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("offset must be 1000 or less"))
+			return
+		}
+		filter.Offset = offsetInt
+	}
+
+	streams, total, err := h.service.ListUserStreams(c.Request.Context(), userUUID, filter.Limit, filter.Offset)
 	if err != nil {
 		slog.Error("list user streams failed", "error", err)
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
@@ -206,7 +237,7 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 
 	stream, err := h.service.GetStream(c.Request.Context(), streamIDuuid)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, service.ErrStreamNotFound) {
 			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
 		} else {
 			slog.Error("get stream failed", "error", err)
@@ -246,7 +277,7 @@ func (h *StreamHandler) GetStreamStatus(c *gin.Context) {
 
 	stream, err := h.service.GetStreamStatus(c.Request.Context(), streamIDuuid)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, service.ErrStreamNotFound) {
 			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
 		} else {
 			slog.Error("get stream status failed", "error", err)
@@ -287,9 +318,12 @@ func (h *StreamHandler) UpdateStream(c *gin.Context) {
 
 	updatedStream, err := h.service.UpdateStream(c.Request.Context(), streamUUID, *updateRequest)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		switch {
+		case errors.Is(err, service.ErrStreamNotFound):
 			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
-		} else {
+		case errors.Is(err, service.ErrCannotUpdatePublished):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		default:
 			slog.Error("update stream failed", "error", err)
 			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		}
@@ -310,14 +344,13 @@ func (h *StreamHandler) DeleteStream(c *gin.Context) {
 	}
 
 	if err := h.service.DeleteStream(c.Request.Context(), streamID); err != nil {
-		msg := err.Error()
 		switch {
-		case strings.Contains(msg, "stream not found"):
-			c.JSON(http.StatusNotFound, response.ErrorResponse(msg))
-		case strings.Contains(msg, "cannot delete published stream"):
-			c.JSON(http.StatusBadRequest, response.ErrorResponse(msg))
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse(err.Error()))
+		case errors.Is(err, service.ErrCannotDeletePublished):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		default:
-			slog.Error("delete stream", "error", msg)
+			slog.Error("delete stream", "error", err)
 			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		}
 		return
@@ -402,12 +435,10 @@ func (h *StreamHandler) DownloadStream(c *gin.Context) {
 }
 
 func (h *StreamHandler) handleDownloadError(c *gin.Context, err error) {
-	errorMsg := err.Error()
-
 	switch {
-	case strings.Contains(errorMsg, "not found"):
+	case errors.Is(err, service.ErrStreamNotFound):
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
-	case strings.Contains(errorMsg, "not ready"):
+	case errors.Is(err, service.ErrStreamNotReady):
 		c.JSON(http.StatusBadRequest, response.ErrorResponse("stream not available for download"))
 	default:
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("failed to generate download link"))
@@ -559,9 +590,9 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 	res, err := h.service.GetFileByKey(c.Request.Context(), req)
 	if err != nil {
 		switch {
-		case strings.Contains(err.Error(), "invalid file name"):
+		case errors.Is(err, service.ErrInvalidFileName):
 			c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid file name"))
-		case strings.Contains(err.Error(), "can't watch"):
+		case errors.Is(err, service.ErrCannotWatch):
 			c.JSON(http.StatusForbidden, response.ErrorResponse("stream is not available for watching"))
 		default:
 			slog.Error("get file by key failed", "error", err)
@@ -637,11 +668,11 @@ func (h *StreamHandler) ReprocessStream(c *gin.Context) {
 
 	if err := h.service.ReprocessStream(c.Request.Context(), streamUUID); err != nil {
 		switch {
-		case strings.Contains(err.Error(), "stream not found"):
+		case errors.Is(err, service.ErrStreamNotFound):
 			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
-		case err == service.ErrStreamNotInErrorState:
+		case errors.Is(err, service.ErrStreamNotInErrorState):
 			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
-		case err == service.ErrSourceFileMissing:
+		case errors.Is(err, service.ErrSourceFileMissing):
 			c.JSON(http.StatusConflict, response.ErrorResponse("source file has been removed; re-upload is required"))
 		default:
 			slog.Error("reprocess stream failed", "error", err)

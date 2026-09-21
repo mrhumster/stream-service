@@ -68,10 +68,37 @@ func TestStreamServiceImpl_ListUserStreams(t *testing.T) {
 			).
 			Return(expectedStreams, int64(2), nil)
 
-		streams, _, err := serviceImpl.ListUserStreams(ctx, userID)
+		streams, total, err := serviceImpl.ListUserStreams(ctx, userID, 50, 25)
 
 		require.NoError(t, err)
 		require.Len(t, streams, 2)
+		require.Equal(t, int64(2), total)
+	})
+
+	t.Run("passes limit and offset into filter", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockPermissionClient := authmock.NewMockPermissionClient(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
+
+		userID := uuid.New()
+
+		mockRepo.EXPECT().
+			List(
+				gomock.Any(),
+				gomock.Cond(func(x interface{}) bool {
+					f, ok := x.(repository.StreamFilter)
+					return ok && f.OwnerID != nil && *f.OwnerID == userID && f.Limit == 50 && f.Offset == 25
+				}),
+			).
+			Return([]*models.Stream{}, int64(0), nil)
+
+		_, _, err := serviceImpl.ListUserStreams(ctx, userID, 50, 25)
+		require.NoError(t, err)
 	})
 }
 
@@ -2700,7 +2727,7 @@ func TestStreamServiceImpl_GetFileByKey(t *testing.T) {
 		mockRepo.EXPECT().Read(ctx, streamUUID).Return(expectedStream, nil)
 		svcRes, err := svc.GetFileByKey(ctx, svcReq)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "you can't watch a stream with the status uploading")
+		assert.ErrorIs(t, err, service.ErrCannotWatch)
 		assert.Nil(t, svcRes)
 	})
 	t.Run("storage error propagate", func(t *testing.T) {

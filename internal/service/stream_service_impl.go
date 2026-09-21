@@ -83,6 +83,12 @@ func (s *StreamServiceImpl) recordEvent(ctx context.Context, stream *models.Stre
 }
 
 var (
+	ErrStreamNotFound        = errors.New("stream not found")
+	ErrCannotUpdatePublished = errors.New("cannot update published stream")
+	ErrCannotDeletePublished = errors.New("cannot delete published stream")
+	ErrStreamNotReady        = errors.New("stream not ready for download")
+	ErrInvalidFileName       = errors.New("invalid file name")
+	ErrCannotWatch           = errors.New("stream is not available for watching")
 	ErrStreamNotInErrorState = errors.New("stream is not in an error state")
 	ErrSourceFileMissing     = errors.New("source file is missing")
 )
@@ -131,7 +137,7 @@ func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*model
 	stream, err := s.repo.Read(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("stream not found: %w", err)
+			return nil, ErrStreamNotFound
 		}
 		return nil, fmt.Errorf("failed to get stream: %w", err)
 	}
@@ -141,18 +147,21 @@ func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*model
 func (s *StreamServiceImpl) GetStreamStatus(ctx context.Context, id uuid.UUID) (*models.Stream, error) {
 	stream, err := s.repo.Read(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("stream not found: %w", err)
+		return nil, ErrStreamNotFound
 	}
 	return stream, nil
 }
 
 func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error) {
 	stream, err := s.repo.Read(ctx, id)
-	if stream.Status == models.StatusPublished {
-		return nil, fmt.Errorf("cannot update published stream")
-	}
 	if err != nil {
-		return nil, fmt.Errorf("stream not found: %w", err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrStreamNotFound
+		}
+		return nil, fmt.Errorf("failed to get stream: %w", err)
+	}
+	if stream.Status == models.StatusPublished {
+		return nil, ErrCannotUpdatePublished
 	}
 	if req.Title != nil {
 		if *req.Title == "" {
@@ -189,12 +198,12 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 	stream, err := s.repo.Read(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("stream not found")
+			return ErrStreamNotFound
 		}
 		return fmt.Errorf("delete stream error: %w", err)
 	}
 	if stream.Status == models.StatusPublished {
-		return fmt.Errorf("cannot delete published stream")
+		return ErrCannotDeletePublished
 	}
 
 	if stream.Storage != nil {
@@ -270,10 +279,11 @@ func (s *StreamServiceImpl) ListStreams(ctx context.Context, filter repository.S
 	return streams, total, nil
 }
 
-func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, int64, error) {
+func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUID, limit, offset int) ([]*models.Stream, int64, error) {
 	filter := repository.StreamFilter{
 		OwnerID: &userID,
-		Limit:   100,
+		Limit:   limit,
+		Offset:  offset,
 	}
 	return s.ListStreams(ctx, filter)
 }
@@ -439,14 +449,11 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*GenerateDownloadURLInfo, error) {
 	stream, err := s.GetStream(ctx, streamID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("stream not found")
-		}
-		return nil, fmt.Errorf("error getting stream: %w", err)
+		return nil, err
 	}
 
 	if stream.Status != models.StatusReady {
-		return nil, fmt.Errorf("stream not ready for download (status: %s)", stream.Status)
+		return nil, ErrStreamNotReady
 	}
 
 	var storageInfo models.StreamStorage
@@ -747,7 +754,7 @@ func (s *StreamServiceImpl) ReprocessStream(ctx context.Context, streamID uuid.U
 	stream, err := s.repo.Read(ctx, streamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("stream not found")
+			return ErrStreamNotFound
 		}
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
@@ -860,11 +867,11 @@ func (s *StreamServiceImpl) GetFileByKey(ctx context.Context, req *GetFileByKeyR
 		return nil, fmt.Errorf("error get stream from repository: %w", err)
 	}
 	if stream.Status != models.StatusReady && stream.Status != models.StatusPublished {
-		return nil, fmt.Errorf("you can't watch a stream with the status %s", stream.Status)
+		return nil, ErrCannotWatch
 	}
 	fileName := strings.TrimPrefix(req.FileName, "/")
 	if fileName == "" || strings.Contains(fileName, "..") || strings.Contains(fileName, "\\") {
-		return nil, fmt.Errorf("invalid file name")
+		return nil, ErrInvalidFileName
 	}
 	key := path.Join("processed", req.StreamUUID.String(), fileName)
 	content, size, err := s.storage.Download(ctx, key)

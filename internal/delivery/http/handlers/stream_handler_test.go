@@ -72,7 +72,7 @@ func TestStreamHandler_GetStreamStatus(t *testing.T) {
 		handler := NewStreamHandler(mockService, nil)
 
 		streamID := uuid.New()
-		mockService.EXPECT().GetStreamStatus(gomock.Any(), streamID).Return(nil, errors.New("stream not found"))
+		mockService.EXPECT().GetStreamStatus(gomock.Any(), streamID).Return(nil, service.ErrStreamNotFound)
 
 		router := setupTestRouter()
 		router.GET("/stream/:id/status", handler.GetStreamStatus)
@@ -1049,9 +1049,9 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 	})
 
 	t.Run("stream not found", func(t *testing.T) {
-		router, service, _ := setupTest()
+		router, mockService, _ := setupTest()
 		streamID := uuid.New()
-		service.EXPECT().GenerateDownloadURL(gomock.Any(), streamID, gomock.Any()).Return(nil, errors.New("stream not found"))
+		mockService.EXPECT().GenerateDownloadURL(gomock.Any(), streamID, gomock.Any()).Return(nil, service.ErrStreamNotFound)
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -1062,9 +1062,9 @@ func TestStreamHandler_DownloadStream(t *testing.T) {
 		require.Contains(t, resp.Error, "stream not found")
 	})
 	t.Run("stream not ready for download", func(t *testing.T) {
-		router, service, _ := setupTest()
+		router, mockService, _ := setupTest()
 		streamID := uuid.New()
-		service.EXPECT().GenerateDownloadURL(gomock.Any(), streamID, gomock.Any()).Return(nil, fmt.Errorf("stream not ready for download (status: %s)", models.StatusDraft))
+		mockService.EXPECT().GenerateDownloadURL(gomock.Any(), streamID, gomock.Any()).Return(nil, service.ErrStreamNotReady)
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -1231,7 +1231,7 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 			},
 		}
 		ctx := context.Background()
-		mockService.EXPECT().ListUserStreams(ctx, userID).Return(streams, int64(4), nil)
+		mockService.EXPECT().ListUserStreams(ctx, userID, 100, 0).Return(streams, int64(4), nil)
 		req := httptest.NewRequest("GET", "/streams", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -1275,12 +1275,37 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 
 	t.Run("propagation service error", func(t *testing.T) {
 		router, mockService, _ := setupTest()
-		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any()).Return(nil, int64(0), errors.New("service error"))
+		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, int64(0), errors.New("service error"))
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "/streams", nil)
 		router.ServeHTTP(w, req)
 		require.Equal(t, w.Code, http.StatusInternalServerError)
 		assert.Contains(t, w.Body.String(), "internal server error")
+	})
+
+	t.Run("propagates limit and offset query params", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any(), 25, 50).Return([]*models.Stream{}, int64(0), nil)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?limit=25&offset=50", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusOK)
+	})
+
+	t.Run("rejects limit above 100", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?limit=101", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
+	})
+
+	t.Run("rejects invalid offset", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?offset=-1", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
 	})
 }
 
