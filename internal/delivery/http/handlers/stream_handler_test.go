@@ -792,6 +792,142 @@ func TestStreamHandler_DeleteStream(t *testing.T) {
 	})
 }
 
+func TestStreamHandler_PublishStream(t *testing.T) {
+	t.Run("publish non-ready stream returns 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		userID := uuid.New()
+		streamID := uuid.New()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			OwnerID:    userID,
+			Status:     models.StatusDraft,
+			Visibility: models.VisibilityPublic,
+		}, nil)
+		mockService.EXPECT().PublishStream(gomock.Any(), streamID).Return(service.ErrCannotPublish)
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", userID)
+			c.Next()
+		})
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/publish", handlers.PublishStream)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/publish", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Contains(t, resp["error"], "stream must be ready before publishing")
+	})
+
+	t.Run("publish ready stream succeeds", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		userID := uuid.New()
+		streamID := uuid.New()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			OwnerID:    userID,
+			Status:     models.StatusReady,
+			Visibility: models.VisibilityPublic,
+		}, nil)
+		mockService.EXPECT().PublishStream(gomock.Any(), streamID).Return(nil)
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", userID)
+			c.Next()
+		})
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/publish", handlers.PublishStream)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/publish", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusCreated, w.Code)
+	})
+}
+
+func TestStreamHandler_UnpublishStream(t *testing.T) {
+	t.Run("unpublish non-published stream returns 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		userID := uuid.New()
+		streamID := uuid.New()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			OwnerID:    userID,
+			Status:     models.StatusReady,
+			Visibility: models.VisibilityPublic,
+		}, nil)
+		mockService.EXPECT().UnpublishStream(gomock.Any(), streamID).Return(service.ErrCannotUnpublish)
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", userID)
+			c.Next()
+		})
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/unpublish", handlers.UnpublishStream)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/unpublish", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Contains(t, resp["error"], "only published streams can be unpublished")
+	})
+
+	t.Run("unpublish published stream succeeds", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		userID := uuid.New()
+		streamID := uuid.New()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			OwnerID:    userID,
+			Status:     models.StatusPublished,
+			Visibility: models.VisibilityPublic,
+		}, nil)
+		mockService.EXPECT().UnpublishStream(gomock.Any(), streamID).Return(nil)
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", userID)
+			c.Next()
+		})
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/unpublish", handlers.UnpublishStream)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/unpublish", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusCreated, w.Code)
+	})
+}
+
 func TestStreamHandler_StartStreamUpload(t *testing.T) {
 	t.Run("success case", func(t *testing.T) {
 		ctrl := gomock.NewController(t)

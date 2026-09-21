@@ -109,8 +109,8 @@ func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid offset query"))
 			return
 		}
-		if offsetInt > 1000 {
-			c.JSON(http.StatusBadRequest, response.ErrorResponse("offset must be 1000 or less"))
+		if offsetInt > 10000 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("offset must be 10000 or less"))
 			return
 		}
 		filter.Offset = offsetInt
@@ -163,8 +163,8 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid offset query"))
 			return
 		}
-		if offsetInt > 1000 {
-			c.JSON(http.StatusBadRequest, response.ErrorResponse("offset must be 1000 or less"))
+		if offsetInt > 10000 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("offset must be 10000 or less"))
 			return
 		}
 		filter.Offset = offsetInt
@@ -626,7 +626,15 @@ func (h *StreamHandler) PublishStream(c *gin.Context) {
 		return
 	}
 	if err := h.service.PublishStream(c.Request.Context(), streamUUID); err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
+		switch {
+		case errors.Is(err, service.ErrCannotPublish):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("stream must be ready before publishing"))
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		default:
+			slog.Error("publish stream failed", "error", err, "stream", streamUUID)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
+		}
 		return
 	}
 	streammetrics.Lifecycle.WithLabelValues("published").Inc()
@@ -651,7 +659,15 @@ func (h *StreamHandler) UnpublishStream(c *gin.Context) {
 		return
 	}
 	if err := h.service.UnpublishStream(c.Request.Context(), streamUUID); err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
+		switch {
+		case errors.Is(err, service.ErrCannotUnpublish):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("only published streams can be unpublished"))
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		default:
+			slog.Error("unpublish stream failed", "error", err, "stream", streamUUID)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
+		}
 		return
 	}
 	streammetrics.Lifecycle.WithLabelValues("unpublished").Inc()

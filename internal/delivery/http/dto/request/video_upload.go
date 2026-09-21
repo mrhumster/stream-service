@@ -19,7 +19,7 @@ type VideoUploadRequest struct {
 func (r *VideoUploadRequest) ToServiceRequest() (*service.UploadVideoRequest, error) {
 	contentType := r.FileHeader.Header.Get("Content-Type")
 	if !isValidVideoContentType(contentType) {
-		return nil, NewValidationError("invalid video format. allowed: mp4, webm, mov")
+		return nil, NewValidationError("invalid video format. allowed: mp4, webm, mov, avi, mkv")
 	}
 
 	const maxFileSize = 5 * 1024 * 1024 * 1024
@@ -29,7 +29,7 @@ func (r *VideoUploadRequest) ToServiceRequest() (*service.UploadVideoRequest, er
 
 	filename := r.FileHeader.Filename
 	if !isValidVideoExtension(filename) {
-		return nil, NewValidationError("invalid file extension. allowed: mp4, webm, mov")
+		return nil, NewValidationError("invalid file extension. allowed: mp4, webm, mov, avi, mkv")
 	}
 
 	return &service.UploadVideoRequest{

@@ -44,21 +44,6 @@ func (m *MockStreamService) EXPECT() *MockStreamServiceMockRecorder {
 	return m.recorder
 }
 
-// CanUserAccessStream mocks base method.
-func (m *MockStreamService) CanUserAccessStream(ctx context.Context, userID, streamID uuid.UUID) (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CanUserAccessStream", ctx, userID, streamID)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CanUserAccessStream indicates an expected call of CanUserAccessStream.
-func (mr *MockStreamServiceMockRecorder) CanUserAccessStream(ctx, userID, streamID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CanUserAccessStream", reflect.TypeOf((*MockStreamService)(nil).CanUserAccessStream), ctx, userID, streamID)
-}
-
 // CompleteStreamUpload mocks base method.
 func (m *MockStreamService) CompleteStreamUpload(ctx context.Context, req service.CompleteStreamUploadRequest) error {
 	m.ctrl.T.Helper()

@@ -27,7 +27,6 @@ type StreamService interface {
 	UnpublishStream(ctx context.Context, streamID uuid.UUID) error
 	UpdateStreamStatus(ctx context.Context, streamID uuid.UUID, status models.StreamStatus) error
 
-	CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error)
 	UploadVideo(ctx context.Context, req UploadVideoRequest) error
 	GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*GenerateDownloadURLInfo, error)
 

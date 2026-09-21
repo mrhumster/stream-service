@@ -91,6 +91,8 @@ var (
 	ErrCannotWatch           = errors.New("stream is not available for watching")
 	ErrStreamNotInErrorState = errors.New("stream is not in an error state")
 	ErrSourceFileMissing     = errors.New("source file is missing")
+	ErrCannotPublish         = errors.New("stream must be ready before publishing")
+	ErrCannotUnpublish       = errors.New("only published streams can be unpublished")
 )
 
 func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRequest) (*models.Stream, error) {
@@ -294,7 +296,7 @@ func (s *StreamServiceImpl) PublishStream(ctx context.Context, streamID uuid.UUI
 		return fmt.Errorf("error read stream from repo: %w", err)
 	}
 	if stream.Status != models.StatusReady {
-		return fmt.Errorf("can't publish stream if they not ready")
+		return ErrCannotPublish
 	}
 	stream.Status = models.StatusPublished
 	if err = s.repo.Update(ctx, stream); err != nil {
@@ -309,6 +311,9 @@ func (s *StreamServiceImpl) UnpublishStream(ctx context.Context, streamID uuid.U
 	stream, err := s.repo.Read(ctx, streamID)
 	if err != nil {
 		return fmt.Errorf("error read stream from repo: %w", err)
+	}
+	if stream.Status != models.StatusPublished {
+		return ErrCannotUnpublish
 	}
 	stream.Status = models.StatusReady
 	if err = s.repo.Update(ctx, stream); err != nil {
@@ -339,10 +344,6 @@ func (s *StreamServiceImpl) UpdateStreamStatus(ctx context.Context, streamID uui
 	}
 	s.notifyUpdate(stream)
 	return nil
-}
-
-func (s *StreamServiceImpl) CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error) {
-	return false, fmt.Errorf("not implemented")
 }
 
 func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequest) error {

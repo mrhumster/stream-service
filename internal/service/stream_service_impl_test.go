@@ -1566,7 +1566,7 @@ func TestStreamServiceImpl_PublishStream(t *testing.T) {
 		ctx := context.Background()
 		err := svc.PublishStream(ctx, streamUUID)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "can't publish stream if they not ready")
+		assert.ErrorIs(t, err, service.ErrCannotPublish)
 	})
 }
 
@@ -1626,6 +1626,34 @@ func TestStreamServiceImpl_UnpublishStream(t *testing.T) {
 		err := svc.UnpublishStream(ctx, streamUUID)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "read error")
+	})
+	t.Run("unpublish non-published stream returns ErrCannotUnpublish", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+			nil,
+			srvCfg(),
+		)
+		streamUUID := uuid.New()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:  "draft stream",
+			Status: models.StatusDraft,
+		}
+		mockRepo.EXPECT().Read(gomock.Any(), streamUUID).Return(stream, nil)
+		ctx := context.Background()
+		err := svc.UnpublishStream(ctx, streamUUID)
+		require.ErrorIs(t, err, service.ErrCannotUnpublish)
 	})
 	t.Run("update stream error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
