@@ -78,23 +78,6 @@ func (s *Stream) SetMetadata(metadata *StreamMetadata) error {
 	return nil
 }
 
-func (s *Stream) GetAnalitics() (*StreamAnalytics, error) {
-	var analytics StreamAnalytics
-	if err := json.Unmarshal(s.Analytics, &analytics); err != nil {
-		return nil, err
-	}
-	return &analytics, nil
-}
-
-func (s *Stream) SetAnalitics(analitics *StreamAnalytics) error {
-	data, err := json.Marshal(analitics)
-	if err != nil {
-		return err
-	}
-	s.Analytics = datatypes.JSON(data)
-	return nil
-}
-
 func (s *Stream) UpdateProcessing(process int, steps []string, errMsg *string, taskID *string) error {
 	return s.SetTaskProgress(TaskTypeTranscode, process, steps, errMsg, taskID)
 }

@@ -21,8 +21,6 @@ type StreamRepository interface {
 
 	UpdateStatus(ctx context.Context, id uuid.UUID, status models.StreamStatus) error
 	UpdateProcessing(ctx context.Context, id uuid.UUID, processing models.StreamProcessingTask) error
-
-	IncrementViews(ctx context.Context, id uuid.UUID) error
 }
 
 type StreamFilter struct {

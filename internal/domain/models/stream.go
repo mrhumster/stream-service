@@ -42,7 +42,6 @@ type Stream struct {
 	Metadata   datatypes.JSON `gorm:"type:jsonb"`
 	Storage    datatypes.JSON `gorm:"type:jsonb"`
 	Processing datatypes.JSON `gorm:"type:jsonb"`
-	Analytics  datatypes.JSON `gorm:"type:jsonb"`
 
 	PublishedAt *time.Time
 }
@@ -72,11 +71,6 @@ type StreamProcessingTask struct {
 	Steps    []string `json:"steps"`
 	Error    *string  `json:"error"`
 	TaskID   *string  `json:"task_id"`
-}
-
-type StreamAnalytics struct {
-	Views int64 `json:"views"`
-	Likes int64 `json:"likes"`
 }
 
 type MultipartPart struct {

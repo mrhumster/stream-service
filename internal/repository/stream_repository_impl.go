@@ -155,22 +155,3 @@ func (r *GormStreamRepository) UpdateProcessing(ctx context.Context, id uuid.UUI
 	}
 	return nil
 }
-
-func (r *GormStreamRepository) IncrementViews(ctx context.Context, id uuid.UUID) error {
-	var stream *models.Stream
-	if err := r.db.WithContext(ctx).First(&stream, id).Error; err != nil {
-		return fmt.Errorf("stream id not found")
-	}
-	analitics, err := stream.GetAnalitics()
-	if err != nil {
-		return fmt.Errorf("increment views error: %w", err)
-	}
-	analitics.Views += 1
-	if err := stream.SetAnalitics(analitics); err != nil {
-		return fmt.Errorf("increment views errror: %w", err)
-	}
-	if err := r.db.WithContext(ctx).Save(stream).Error; err != nil {
-		return fmt.Errorf("increment views errror: %w", err)
-	}
-	return nil
-}

@@ -100,20 +100,6 @@ func (mr *MockStreamRepositoryMockRecorder) GetByOwner(ctx, ownerID any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByOwner", reflect.TypeOf((*MockStreamRepository)(nil).GetByOwner), ctx, ownerID)
 }
 
-// IncrementViews mocks base method.
-func (m *MockStreamRepository) IncrementViews(ctx context.Context, id uuid.UUID) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IncrementViews", ctx, id)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// IncrementViews indicates an expected call of IncrementViews.
-func (mr *MockStreamRepositoryMockRecorder) IncrementViews(ctx, id any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementViews", reflect.TypeOf((*MockStreamRepository)(nil).IncrementViews), ctx, id)
-}
-
 // List mocks base method.
 func (m *MockStreamRepository) List(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
 	m.ctrl.T.Helper()
