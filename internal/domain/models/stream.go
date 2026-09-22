@@ -26,6 +26,7 @@ const (
 
 	TaskTypeTranscode  = "transcode"
 	TaskTypeThumbnail  = "thumbnail"
+	TaskTypeFaces      = "faces"
 )
 
 type Stream struct {

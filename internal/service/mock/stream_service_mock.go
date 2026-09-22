@@ -179,6 +179,20 @@ func (mr *MockStreamServiceMockRecorder) ListUserStreams(ctx, userID, limit, off
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUserStreams", reflect.TypeOf((*MockStreamService)(nil).ListUserStreams), ctx, userID, limit, offset)
 }
 
+// ProcessFacesStream mocks base method.
+func (m *MockStreamService) ProcessFacesStream(ctx context.Context, streamID uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ProcessFacesStream", ctx, streamID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ProcessFacesStream indicates an expected call of ProcessFacesStream.
+func (mr *MockStreamServiceMockRecorder) ProcessFacesStream(ctx, streamID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProcessFacesStream", reflect.TypeOf((*MockStreamService)(nil).ProcessFacesStream), ctx, streamID)
+}
+
 // PublishStream mocks base method.
 func (m *MockStreamService) PublishStream(ctx context.Context, streamID uuid.UUID) error {
 	m.ctrl.T.Helper()

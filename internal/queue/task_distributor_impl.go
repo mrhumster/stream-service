@@ -126,3 +126,54 @@ func (d *AsyncDistributor) newThumbnailTask(streamUUID uuid.UUID, inputPath, tas
 	}
 	return asynq.NewTask(TaskThumbsnailProcessor, payload, asynq.TaskID(taskID)), nil
 }
+
+func (d *AsyncDistributor) DistributeFacesProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
+	task, err := d.newFacesTask(streamUUID, inputPath, fmt.Sprintf("faces-%s", streamUUID))
+	if err != nil {
+		return nil, err
+	}
+	info, err := d.client.EnqueueContext(
+		ctx,
+		task,
+		asynq.MaxRetry(1),
+		asynq.Queue("faces"),
+	)
+	if err != nil {
+		if errors.Is(err, asynq.ErrDuplicateTask) {
+			slog.Warn("task already equeued", "uuid", streamUUID)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to enqueue task: %w", err)
+	}
+	slog.Info("enqueue task:", "id", info.ID, "queue", info.Queue)
+	return &info.ID, nil
+}
+
+func (d *AsyncDistributor) ReprocessFacesProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
+	task, err := d.newFacesTask(streamUUID, inputPath, fmt.Sprintf("reprocess-faces-%s", uuid.New().String()))
+	if err != nil {
+		return nil, err
+	}
+	info, err := d.client.EnqueueContext(
+		ctx,
+		task,
+		asynq.MaxRetry(1),
+		asynq.Queue("faces"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to enqueue re-process faces task: %w", err)
+	}
+	slog.Info("enqueue re-process faces task:", "id", info.ID, "queue", info.Queue)
+	return &info.ID, nil
+}
+
+func (d *AsyncDistributor) newFacesTask(streamUUID uuid.UUID, inputPath, taskID string) (*asynq.Task, error) {
+	payload, err := json.Marshal(FacesProcessorPayload{
+		StreamUUID: streamUUID,
+		InputPath:  inputPath,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	return asynq.NewTask(TaskFacesProcessor, payload, asynq.TaskID(taskID)), nil
+}

@@ -431,9 +431,22 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 		slog.Debug("Task for generate thumbsnail in queue", "taskID", *thumbID)
 	}
 
+	facesID, err := s.queue.DistributeFacesProcessor(
+		ctx,
+		stream.ID,
+		storageInfo.Key,
+	)
+	if err != nil {
+		slog.Error("failed to enqueue faces task for", "stream", stream.ID, "error", err)
+	}
+	if facesID != nil {
+		slog.Debug("Task for detect faces in queue", "taskID", *facesID)
+	}
+
 	tasks := []models.StreamProcessingTask{
 		{TaskType: models.TaskTypeTranscode, Progress: 0, Steps: []string{"convertation"}, Error: nil, TaskID: taskID},
 		{TaskType: models.TaskTypeThumbnail, Progress: 0, Steps: []string{"Generating thumbnail preview"}, Error: nil, TaskID: thumbID},
+		{TaskType: models.TaskTypeFaces, Progress: 0, Steps: []string{"Detecting faces"}, Error: nil, TaskID: facesID},
 	}
 	if err := stream.SetInitialTasks(tasks); err != nil {
 		return fmt.Errorf("failed to set initial processing: %w", err)
@@ -661,9 +674,22 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 		slog.Debug("Task for generate thumbsnail in queue", "taskID", *thumbID)
 	}
 
+	facesID, err := s.queue.DistributeFacesProcessor(
+		ctx,
+		stream.ID,
+		storageInfo.Key,
+	)
+	if err != nil {
+		slog.Error("failed to enqueue faces task for", "stream", stream.ID, "error", err)
+	}
+	if facesID != nil {
+		slog.Debug("Task for detect faces in queue", "taskID", *facesID)
+	}
+
 	tasks := []models.StreamProcessingTask{
 		{TaskType: models.TaskTypeTranscode, Progress: 0, Steps: []string{"convertation"}, Error: nil, TaskID: taskID},
 		{TaskType: models.TaskTypeThumbnail, Progress: 0, Steps: []string{"Generating thumbnail preview"}, Error: nil, TaskID: thumbID},
+		{TaskType: models.TaskTypeFaces, Progress: 0, Steps: []string{"Detecting faces"}, Error: nil, TaskID: facesID},
 	}
 	if err := stream.SetInitialTasks(tasks); err != nil {
 		return fmt.Errorf("failed to set initial processing: %w", err)
@@ -799,6 +825,8 @@ func (s *StreamServiceImpl) ReprocessStream(ctx context.Context, streamID uuid.U
 			taskID, err = s.queue.ReprocessVideoTranscoding(ctx, stream.ID, storageInfo.Key)
 		case models.TaskTypeThumbnail:
 			taskID, err = s.queue.ReprocessThumbsnailProcessor(ctx, stream.ID, storageInfo.Key)
+		case models.TaskTypeFaces:
+			taskID, err = s.queue.ReprocessFacesProcessor(ctx, stream.ID, storageInfo.Key)
 		default:
 			continue
 		}
@@ -826,6 +854,45 @@ func (s *StreamServiceImpl) ReprocessStream(ctx context.Context, streamID uuid.U
 	}
 	s.notifyUpdate(stream)
 	s.recordEvent(ctx, stream, "stream.reprocessed", nil)
+	return nil
+}
+
+func (s *StreamServiceImpl) ProcessFacesStream(ctx context.Context, streamID uuid.UUID) error {
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrStreamNotFound
+		}
+		return fmt.Errorf("error read stream from repository: %w", err)
+	}
+
+	storageInfo, err := stream.GetStorageInfo()
+	if err != nil {
+		return fmt.Errorf("error read storage info: %w", err)
+	}
+	exists, err := s.storage.Exists(ctx, storageInfo.Key)
+	if err != nil {
+		return fmt.Errorf("error check source file: %w", err)
+	}
+	if !exists {
+		return ErrSourceFileMissing
+	}
+
+	facesID, err := s.queue.DistributeFacesProcessor(ctx, stream.ID, storageInfo.Key)
+	if err != nil {
+		return fmt.Errorf("failed to enqueue faces task: %w", err)
+	}
+
+	if err := stream.SetTaskProgress(models.TaskTypeFaces, 0, []string{"Detecting faces"}, nil, facesID); err != nil {
+		return fmt.Errorf("error reset processing: %w", err)
+	}
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	s.notifyUpdate(stream)
+	if facesID != nil {
+		slog.Info("faces task enqueued", "stream", stream.ID, "task_id", *facesID)
+	}
 	return nil
 }
 

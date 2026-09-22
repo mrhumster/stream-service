@@ -2088,3 +2088,82 @@ func TestStreamHandler_HandleWS(t *testing.T) {
 		defer conn.Close()
 	})
 }
+
+func TestStreamHandler_ProcessFacesStream(t *testing.T) {
+	streamID := uuid.New()
+
+	t.Run("success", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ProcessFacesStream(gomock.Any(), streamID).Return(nil)
+
+		router := setupTestRouter()
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/faces", handlers.ProcessFacesStream)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/faces", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("stream not found returns 404", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ProcessFacesStream(gomock.Any(), streamID).Return(service.ErrStreamNotFound)
+
+		router := setupTestRouter()
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/faces", handlers.ProcessFacesStream)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/faces", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusNotFound, w.Code)
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Contains(t, resp["error"], "stream not found")
+	})
+
+	t.Run("source file missing returns 409", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ProcessFacesStream(gomock.Any(), streamID).Return(service.ErrSourceFileMissing)
+
+		router := setupTestRouter()
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/faces", handlers.ProcessFacesStream)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/faces", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusConflict, w.Code)
+	})
+
+	t.Run("invalid stream id returns 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		router := setupTestRouter()
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/faces", handlers.ProcessFacesStream)
+
+		req := httptest.NewRequest("POST", "/streams/not-a-uuid/faces", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}

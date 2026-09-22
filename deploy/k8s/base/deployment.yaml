@@ -46,7 +46,7 @@ spec:
             - name: GRPC_TLS_CA
               value: "/tls/grpc/ca.crt"
             - name: GRPC_TLS_ALLOWED_OUS
-              value: "thumbnail-service,transcoder-service"
+              value: "thumbnail-service,transcoder-service,faces-service"
           volumeMounts:
             - name: grpc-tls
               mountPath: /tls/grpc

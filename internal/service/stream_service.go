@@ -37,6 +37,7 @@ type StreamService interface {
 	UpdateStreamMetadata(ctx context.Context, req *UpdateStreamMetadataRequest) error
 	UpdateStreamProcessing(ctx context.Context, req *UpdateStreamProcessingRequest) error
 	ReprocessStream(ctx context.Context, streamID uuid.UUID) error
+	ProcessFacesStream(ctx context.Context, streamID uuid.UUID) error
 
 	GetFileByKey(ctx context.Context, req *GetFileByKeyRequest) (*GetFileByKeyResponse, error)
 }

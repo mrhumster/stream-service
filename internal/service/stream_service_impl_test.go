@@ -734,10 +734,16 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 			DistributeThumbsnailProcessor(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return(&thumbID, nil).
 			Times(1)
+		facesID := "faces-task-id"
+		mockQueue.EXPECT().
+			DistributeFacesProcessor(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&facesID, nil).
+			Times(1)
 		mockRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
 			Do(func(ctx context.Context, s *models.Stream) error {
 				assert.Contains(t, s.Processing.String(), models.TaskTypeTranscode)
 				assert.Contains(t, s.Processing.String(), models.TaskTypeThumbnail)
+				assert.Contains(t, s.Processing.String(), models.TaskTypeFaces)
 				return nil
 			}).Return(nil)
 
@@ -1908,6 +1914,13 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 				streamUUID,
 				storageInfo.Key).
 			Return(&thumbID, nil)
+		facesID := "faces-task-1"
+		mockQueue.EXPECT().
+			DistributeFacesProcessor(
+				gomock.Any(),
+				streamUUID,
+				storageInfo.Key).
+			Return(&facesID, nil)
 		mockRepo.EXPECT().
 			Update(
 				gomock.Any(),
@@ -1915,6 +1928,7 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 			Do(func(ctx context.Context, s *models.Stream) error {
 				assert.Contains(t, s.Processing.String(), models.TaskTypeTranscode)
 				assert.Contains(t, s.Processing.String(), models.TaskTypeThumbnail)
+				assert.Contains(t, s.Processing.String(), models.TaskTypeFaces)
 				return nil
 			}).
 			Return(nil)
@@ -2273,6 +2287,12 @@ func TestStreamServiceImpl_CompleteStreamUpload(t *testing.T) {
 			Return(nil, fmt.Errorf("queue error"))
 		mockQueue.EXPECT().
 			DistributeThumbsnailProcessor(
+				gomock.Any(),
+				streamUUID,
+				storageInfo.Key).
+			Return(nil, nil)
+		mockQueue.EXPECT().
+			DistributeFacesProcessor(
 				gomock.Any(),
 				streamUUID,
 				storageInfo.Key).
@@ -2844,5 +2864,117 @@ func TestStreamServiceImpl_GetFileByKey(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "download error")
 		assert.Nil(t, svcRes)
+	})
+}
+
+func TestStreamServiceImpl_ProcessFacesStream(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+			nil,
+			srvCfg(),
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusReady,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+		}
+		require.NoError(t, expectedStream.SetStorageInfo(storageInfo))
+		facesID := "faces-task-1"
+		mockRepo.EXPECT().Read(ctx, streamUUID).Return(expectedStream, nil)
+		mockStor.EXPECT().Exists(ctx, storageInfo.Key).Return(true, nil)
+		mockQueue.EXPECT().
+			DistributeFacesProcessor(ctx, streamUUID, storageInfo.Key).
+			Return(&facesID, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).
+			Do(func(_ context.Context, s *models.Stream) error {
+				assert.Contains(t, s.Processing.String(), models.TaskTypeFaces)
+				return nil
+			}).
+			Return(nil)
+		err := svc.ProcessFacesStream(ctx, streamUUID)
+		require.NoError(t, err)
+	})
+
+	t.Run("stream not found", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+			nil,
+			srvCfg(),
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		mockRepo.EXPECT().Read(ctx, streamUUID).Return(nil, gorm.ErrRecordNotFound)
+		err := svc.ProcessFacesStream(ctx, streamUUID)
+		require.ErrorIs(t, err, service.ErrStreamNotFound)
+	})
+
+	t.Run("source file missing", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+			nil,
+			srvCfg(),
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusReady,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+		}
+		require.NoError(t, expectedStream.SetStorageInfo(storageInfo))
+		mockRepo.EXPECT().Read(ctx, streamUUID).Return(expectedStream, nil)
+		mockStor.EXPECT().Exists(ctx, storageInfo.Key).Return(false, nil)
+		err := svc.ProcessFacesStream(ctx, streamUUID)
+		require.ErrorIs(t, err, service.ErrSourceFileMissing)
 	})
 }

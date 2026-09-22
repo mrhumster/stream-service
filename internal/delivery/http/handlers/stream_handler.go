@@ -705,3 +705,27 @@ func (h *StreamHandler) ReprocessStream(c *gin.Context) {
 	streammetrics.Lifecycle.WithLabelValues("reprocessed").Inc()
 	c.JSON(http.StatusOK, nil)
 }
+
+func (h *StreamHandler) ProcessFacesStream(c *gin.Context) {
+	streamID := c.Param("id")
+	streamUUID, err := uuid.Parse(streamID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+
+	if err := h.service.ProcessFacesStream(c.Request.Context(), streamUUID); err != nil {
+		switch {
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		case errors.Is(err, service.ErrSourceFileMissing):
+			c.JSON(http.StatusConflict, response.ErrorResponse("source file has been removed; re-upload is required"))
+		default:
+			slog.Error("process faces failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
+		return
+	}
+	streammetrics.Lifecycle.WithLabelValues("faces").Inc()
+	c.JSON(http.StatusOK, nil)
+}
