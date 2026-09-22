@@ -858,6 +858,75 @@ func TestStreamHandler_PublishStream(t *testing.T) {
 
 		require.Equal(t, http.StatusCreated, w.Code)
 	})
+
+	t.Run("publish by non-owner returns 403", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		ownerID := uuid.New()
+		otherUserID := uuid.New()
+		streamID := uuid.New()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			OwnerID:    ownerID,
+			Status:     models.StatusReady,
+			Visibility: models.VisibilityPublic,
+		}, nil)
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", otherUserID)
+			c.Set("claims", &dto.AccessClaims{Role: "member"})
+			c.Next()
+		})
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/publish", handlers.PublishStream)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/publish", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusForbidden, w.Code)
+		var resp map[string]string
+		err := json.Unmarshal(w.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Contains(t, resp["error"], "only owner")
+	})
+
+	t.Run("publish by admin bypasses owner check", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		ownerID := uuid.New()
+		adminID := uuid.New()
+		streamID := uuid.New()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			OwnerID:    ownerID,
+			Status:     models.StatusReady,
+			Visibility: models.VisibilityPublic,
+		}, nil)
+		mockService.EXPECT().PublishStream(gomock.Any(), streamID).Return(nil)
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", adminID)
+			c.Set("claims", &dto.AccessClaims{Role: "admin"})
+			c.Next()
+		})
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/publish", handlers.PublishStream)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/publish", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusCreated, w.Code)
+	})
 }
 
 func TestStreamHandler_UnpublishStream(t *testing.T) {
@@ -915,6 +984,39 @@ func TestStreamHandler_UnpublishStream(t *testing.T) {
 		router := setupTestRouter()
 		router.Use(func(c *gin.Context) {
 			c.Set("user", userID)
+			c.Next()
+		})
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/unpublish", handlers.UnpublishStream)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/unpublish", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusCreated, w.Code)
+	})
+
+	t.Run("unpublish by admin bypasses owner check", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		ownerID := uuid.New()
+		adminID := uuid.New()
+		streamID := uuid.New()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().GetStream(gomock.Any(), streamID).Return(&models.Stream{
+			BaseModel:  models.BaseModel{ID: streamID},
+			OwnerID:    ownerID,
+			Status:     models.StatusPublished,
+			Visibility: models.VisibilityPublic,
+		}, nil)
+		mockService.EXPECT().UnpublishStream(gomock.Any(), streamID).Return(nil)
+
+		router := setupTestRouter()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", adminID)
+			c.Set("claims", &dto.AccessClaims{Role: "admin"})
 			c.Next()
 		})
 		handlers := NewStreamHandler(mockService, nil)

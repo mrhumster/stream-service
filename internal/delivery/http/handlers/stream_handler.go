@@ -608,6 +608,12 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 	c.DataFromReader(http.StatusOK, res.Size, res.ContentType, res.Content, nil)
 }
 
+func (h *StreamHandler) isAdmin(c *gin.Context) bool {
+	rawClaims, _ := c.Get("claims")
+	claims, ok := rawClaims.(*dto.AccessClaims)
+	return ok && claims.Role == "admin"
+}
+
 func (h *StreamHandler) PublishStream(c *gin.Context) {
 	userUUID := c.MustGet("user").(uuid.UUID)
 	streamID := c.Param("id")
@@ -621,7 +627,7 @@ func (h *StreamHandler) PublishStream(c *gin.Context) {
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
 		return
 	}
-	if stream.OwnerID != userUUID {
+	if stream.OwnerID != userUUID && !h.isAdmin(c) {
 		c.JSON(http.StatusForbidden, response.ErrorResponse("only owner can published that stream"))
 		return
 	}
@@ -654,7 +660,7 @@ func (h *StreamHandler) UnpublishStream(c *gin.Context) {
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
 		return
 	}
-	if stream.OwnerID != userUUID {
+	if stream.OwnerID != userUUID && !h.isAdmin(c) {
 		c.JSON(http.StatusForbidden, response.ErrorResponse("only owner can unpublished that stream"))
 		return
 	}

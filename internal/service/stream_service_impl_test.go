@@ -959,6 +959,54 @@ func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 	t.Run("stream not ready", func(t *testing.T) {
 		// ...
 	})
+
+	t.Run("published stream is downloadable", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
+
+		streamID := uuid.New()
+		userID := uuid.New()
+
+		storageInfo := models.StreamStorage{
+			Provider: "minio",
+			Key:      "streams/user-id/videos/file-key.mp4",
+			Filename: "video.mp4",
+			Bucket:   "streams",
+		}
+		streamMeta := models.StreamMetadata{Size: int64(200)}
+
+		metaJSON, _ := json.Marshal(streamMeta)
+		storageJSON, _ := json.Marshal(storageInfo)
+
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   userID,
+			Status:    models.StatusPublished,
+			Storage:   datatypes.JSON(storageJSON),
+			Metadata:  datatypes.JSON(metaJSON),
+		}
+
+		mockRepo.EXPECT().Read(ctx, streamID).Return(stream, nil)
+		mockStorage.EXPECT().
+			GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, gomock.Any()).
+			Return(&url.URL{
+				Scheme:   "https",
+				Host:     "storage.example.com",
+				Path:     "/streams/user-id/videos/file-key.mp4",
+				RawQuery: "signature=...",
+			}, nil)
+
+		resp, err := serviceImpl.GenerateDownloadURL(ctx, streamID, userID)
+
+		require.NoError(t, err)
+		assert.True(t, resp.ExpiresAt.After(time.Now()))
+	})
 }
 
 func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {

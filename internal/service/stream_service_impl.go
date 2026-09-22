@@ -453,7 +453,7 @@ func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uu
 		return nil, err
 	}
 
-	if stream.Status != models.StatusReady {
+	if stream.Status != models.StatusReady && stream.Status != models.StatusPublished {
 		return nil, ErrStreamNotReady
 	}
 
