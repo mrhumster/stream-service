@@ -3077,9 +3077,62 @@ func TestStreamServiceImpl_ProcessFacesStream(t *testing.T) {
 			Filename: "video.mp4",
 		}
 		require.NoError(t, expectedStream.SetStorageInfo(storageInfo))
+		hlsKey := fmt.Sprintf("processed/%s/index.m3u8", streamUUID)
 		mockRepo.EXPECT().Read(ctx, streamUUID).Return(expectedStream, nil)
 		mockStor.EXPECT().Exists(ctx, storageInfo.Key).Return(false, nil)
+		mockStor.EXPECT().Exists(ctx, hlsKey).Return(false, nil)
 		err := svc.ProcessFacesStream(ctx, streamUUID)
 		require.ErrorIs(t, err, service.ErrSourceFileMissing)
+	})
+
+	t.Run("source missing falls back to hls playlist", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+			nil,
+			srvCfg(),
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusReady,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+		}
+		require.NoError(t, expectedStream.SetStorageInfo(storageInfo))
+		hlsKey := fmt.Sprintf("processed/%s/index.m3u8", streamUUID)
+		facesID := "faces-task-2"
+		mockRepo.EXPECT().Read(ctx, streamUUID).Return(expectedStream, nil)
+		mockStor.EXPECT().Exists(ctx, storageInfo.Key).Return(false, nil)
+		mockStor.EXPECT().Exists(ctx, hlsKey).Return(true, nil)
+		mockQueue.EXPECT().
+			DistributeFacesProcessor(ctx, streamUUID, hlsKey).
+			Return(&facesID, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).
+			Do(func(_ context.Context, s *models.Stream) error {
+				assert.Contains(t, s.Processing.String(), models.TaskTypeFaces)
+				return nil
+			}).
+			Return(nil)
+		err := svc.ProcessFacesStream(ctx, streamUUID)
+		require.NoError(t, err)
 	})
 }

@@ -902,11 +902,21 @@ func (s *StreamServiceImpl) ProcessFacesStream(ctx context.Context, streamID uui
 	if err != nil {
 		return fmt.Errorf("error check source file: %w", err)
 	}
+	inputPath := storageInfo.Key
 	if !exists {
-		return ErrSourceFileMissing
+		hlsKey := fmt.Sprintf("processed/%s/index.m3u8", streamID)
+		hlsExists, err := s.storage.Exists(ctx, hlsKey)
+		if err != nil {
+			return fmt.Errorf("error check hls playlist: %w", err)
+		}
+		if !hlsExists {
+			return ErrSourceFileMissing
+		}
+		slog.Info("source missing, falling back to hls", "stream", stream.ID, "hls", hlsKey)
+		inputPath = hlsKey
 	}
 
-	facesID, err := s.queue.DistributeFacesProcessor(ctx, stream.ID, storageInfo.Key)
+	facesID, err := s.queue.DistributeFacesProcessor(ctx, stream.ID, inputPath)
 	if err != nil {
 		return fmt.Errorf("failed to enqueue faces task: %w", err)
 	}
