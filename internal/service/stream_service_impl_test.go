@@ -3010,7 +3010,7 @@ func TestStreamServiceImpl_ProcessFacesStream(t *testing.T) {
 		mockRepo.EXPECT().Read(ctx, streamUUID).Return(expectedStream, nil)
 		mockStor.EXPECT().Exists(ctx, storageInfo.Key).Return(true, nil)
 		mockQueue.EXPECT().
-			DistributeFacesProcessor(ctx, streamUUID, storageInfo.Key).
+			ReprocessFacesProcessor(ctx, streamUUID, storageInfo.Key).
 			Return(&facesID, nil)
 		mockRepo.EXPECT().Update(ctx, gomock.Any()).
 			Do(func(_ context.Context, s *models.Stream) error {
@@ -3124,7 +3124,7 @@ func TestStreamServiceImpl_ProcessFacesStream(t *testing.T) {
 		mockStor.EXPECT().Exists(ctx, storageInfo.Key).Return(false, nil)
 		mockStor.EXPECT().Exists(ctx, hlsKey).Return(true, nil)
 		mockQueue.EXPECT().
-			DistributeFacesProcessor(ctx, streamUUID, hlsKey).
+			ReprocessFacesProcessor(ctx, streamUUID, hlsKey).
 			Return(&facesID, nil)
 		mockRepo.EXPECT().Update(ctx, gomock.Any()).
 			Do(func(_ context.Context, s *models.Stream) error {

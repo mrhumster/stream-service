@@ -916,7 +916,7 @@ func (s *StreamServiceImpl) ProcessFacesStream(ctx context.Context, streamID uui
 		inputPath = hlsKey
 	}
 
-	facesID, err := s.queue.DistributeFacesProcessor(ctx, stream.ID, inputPath)
+	facesID, err := s.queue.ReprocessFacesProcessor(ctx, stream.ID, inputPath)
 	if err != nil {
 		return fmt.Errorf("failed to enqueue faces task: %w", err)
 	}
