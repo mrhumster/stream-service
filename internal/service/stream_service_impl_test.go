@@ -21,6 +21,7 @@ import (
 	"github.com/mrhumster/stream-service/internal/repository"
 	repomock "github.com/mrhumster/stream-service/internal/repository/mock"
 	"github.com/mrhumster/stream-service/internal/service"
+	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/stream-service/internal/storage/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -2863,6 +2864,110 @@ func TestStreamServiceImpl_GetFileByKey(t *testing.T) {
 		svcRes, err := svc.GetFileByKey(ctx, svcReq)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "download error")
+		assert.Nil(t, svcRes)
+	})
+	t.Run("missing ts segment falls back to concat neighbours", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+			nil,
+			srvCfg(),
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusReady,
+		}
+		svcReq := &service.GetFileByKeyRequest{
+			StreamUUID: streamUUID,
+			FileName:   "seg_5.ts",
+		}
+		mockRepo.EXPECT().Read(ctx, streamUUID).Return(expectedStream, nil)
+		mockStor.EXPECT().
+			Download(ctx, path.Join("processed", streamUUID.String(), "seg_5.ts")).
+			Return(nil, int64(0), storage.ErrNotFound)
+		// Neighbours seg_4.ts and seg_6.ts exist and are merged.
+		mockStor.EXPECT().
+			Download(ctx, path.Join("processed", streamUUID.String(), "seg_4.ts")).
+			Return(io.NopCloser(strings.NewReader("part-4")), int64(6), nil)
+		mockStor.EXPECT().
+			Download(ctx, path.Join("processed", streamUUID.String(), "seg_6.ts")).
+			Return(io.NopCloser(strings.NewReader("part-6")), int64(6), nil)
+		// Default: no other neighbours exist.
+		for i := 2; i <= 8; i++ {
+			if i == 4 || i == 5 || i == 6 {
+				continue
+			}
+			mockStor.EXPECT().
+				Download(ctx, path.Join("processed", streamUUID.String(), fmt.Sprintf("seg_%d.ts", i))).
+				Return(nil, int64(0), storage.ErrNotFound)
+		}
+		svcRes, err := svc.GetFileByKey(ctx, svcReq)
+		require.NoError(t, err)
+		assert.Equal(t, "video/MP2T", svcRes.ContentType)
+		assert.Equal(t, int64(12), svcRes.Size)
+		body, rErr := io.ReadAll(svcRes.Content)
+		require.NoError(t, rErr)
+		assert.Equal(t, "part-4part-6", string(body))
+		assert.NoError(t, svcRes.Content.Close())
+	})
+	t.Run("missing ts segment with no neighbours returns storage error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+			nil,
+			srvCfg(),
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:   "Stream",
+			OwnerID: userUUID,
+			Status:  models.StatusReady,
+		}
+		svcReq := &service.GetFileByKeyRequest{
+			StreamUUID: streamUUID,
+			FileName:   "seg_5.ts",
+		}
+		mockRepo.EXPECT().Read(ctx, streamUUID).Return(expectedStream, nil)
+		mockStor.EXPECT().
+			Download(ctx, path.Join("processed", streamUUID.String(), "seg_5.ts")).
+			Return(nil, int64(0), storage.ErrNotFound)
+		for i := 2; i <= 8; i++ {
+			if i == 5 {
+				continue
+			}
+			mockStor.EXPECT().
+				Download(ctx, path.Join("processed", streamUUID.String(), fmt.Sprintf("seg_%d.ts", i))).
+				Return(nil, int64(0), storage.ErrNotFound)
+		}
+		svcRes, err := svc.GetFileByKey(ctx, svcReq)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
 		assert.Nil(t, svcRes)
 	})
 }

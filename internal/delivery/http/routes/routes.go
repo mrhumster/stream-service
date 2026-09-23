@@ -83,6 +83,7 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 	asyncDistributor := queue.NewAsyncDistributor(redisOpt)
 	streamService := service.NewStreamServiceImpl(database, permissionClient, storage, asyncDistributor, hub, &cfg.Server)
 	streamService.WithActivityRecorder(queue.NewAsyncActivityRecorder(eventsRedisOpt))
+	streamService.WithFacesCascadeRecorder(queue.NewAsyncFacesCascadeRecorder(redisOpt))
 	streamHandler := handlers.NewStreamHandlerWithOrigins(streamService, hub, cfg.Server.AllowedOrigins)
 
 	r.GET("/stream/health", func(c *gin.Context) {

@@ -1,14 +1,18 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"path"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +21,7 @@ import (
 	"github.com/mrhumster/identity-service/pkg/auth"
 	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/domain/models"
+	streammetrics "github.com/mrhumster/stream-service/internal/metrics"
 	"github.com/mrhumster/stream-service/internal/queue"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/storage"
@@ -24,6 +29,8 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
+
+var segmentNamePattern = regexp.MustCompile(`^seg_(\d+)\.ts$`)
 
 type StreamServiceImpl struct {
 	repo             repository.StreamRepository
@@ -33,6 +40,7 @@ type StreamServiceImpl struct {
 	hub              wss.Hub
 	cfg              *config.Server
 	eventsRecorder   queue.ActivityEventRecorder
+	cascadeRecorder  queue.FacesCascadeRecorder
 }
 
 func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor, hub wss.Hub, cfg *config.Server) *StreamServiceImpl {
@@ -51,6 +59,25 @@ func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.Permission
 func (s *StreamServiceImpl) WithActivityRecorder(r queue.ActivityEventRecorder) *StreamServiceImpl {
 	s.eventsRecorder = r
 	return s
+}
+
+// WithFacesCascadeRecorder attaches the faces cascade recorder (best-effort,
+// nil-safe): when a stream is deleted, faces-worker is asked to drop all stored
+// face data for it.
+func (s *StreamServiceImpl) WithFacesCascadeRecorder(r queue.FacesCascadeRecorder) *StreamServiceImpl {
+	s.cascadeRecorder = r
+	return s
+}
+
+// recordFaceCascade best-effort enqueues a faces cascade task after a stream
+// has been deleted from the database.
+func (s *StreamServiceImpl) recordFaceCascade(ctx context.Context, streamID uuid.UUID) {
+	if s.cascadeRecorder == nil {
+		return
+	}
+	if err := s.cascadeRecorder.RecordStreamDeleted(ctx, streamID); err != nil {
+		slog.Warn("record faces cascade failed", "stream", streamID, "error", err)
+	}
 }
 
 // eventPayload builds the activity-event payload for a stream event. The
@@ -254,6 +281,7 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 		return fmt.Errorf("failed to delete stream: %w", err)
 	}
 	s.recordEvent(ctx, stream, "stream.deleted", nil)
+	s.recordFaceCascade(ctx, id)
 
 	// PERMS
 	obj := stream.OwnerID.String()
@@ -944,6 +972,25 @@ func (s *StreamServiceImpl) GetFileByKey(ctx context.Context, req *GetFileByKeyR
 	key := path.Join("processed", req.StreamUUID.String(), fileName)
 	content, size, err := s.storage.Download(ctx, key)
 	if err != nil {
+		// Fallback: a missing TS segment (a "dead" HLS segment) is replaced
+		// with the concatenation of its direct neighbours, so playback does
+		// not hard-fail on 404-level gaps in the playlist.
+		if errors.Is(err, storage.ErrNotFound) && strings.HasSuffix(fileName, ".ts") {
+			merged, mergedSize, ferr := s.concatNeighbourSegments(ctx, req.StreamUUID, fileName)
+			if ferr != nil {
+				return nil, fmt.Errorf("error download file from storage: %w", ferr)
+			}
+			if merged != nil {
+				streammetrics.HLSRequests.WithLabelValues("200-fallback").Inc()
+				slog.Warn("hls segment missing, served concatenated neighbours",
+					"stream", req.StreamUUID.String(), "file", fileName, "size", mergedSize)
+				return &GetFileByKeyResponse{
+					Content:     merged,
+					ContentType: getContentType(fileName),
+					Size:        mergedSize,
+				}, nil
+			}
+		}
 		return nil, fmt.Errorf("error download file from storage: %w", err)
 	}
 	return &GetFileByKeyResponse{
@@ -951,4 +998,62 @@ func (s *StreamServiceImpl) GetFileByKey(ctx context.Context, req *GetFileByKeyR
 		ContentType: getContentType(req.FileName),
 		Size:        size,
 	}, nil
+}
+
+// concatNeighbourSegments merges the TS segments directly around a missing one
+// (seg_<n-1> + seg_<n+1>, walking outwards until a run of missing segments ends)
+// into a single byte slice. It returns a nil reader when there is no recoverable
+// neighbour, letting the caller surface the original storage error.
+func (s *StreamServiceImpl) concatNeighbourSegments(ctx context.Context, streamUUID uuid.UUID, fileName string) (io.ReadCloser, int64, error) {
+	idx, ok := segmentIndex(fileName)
+	if !ok {
+		return nil, 0, nil
+	}
+
+	const maxRadius = 3
+	var (
+		merged bytes.Buffer
+		total  int64
+		found  bool
+	)
+	for i := idx - maxRadius; i <= idx+maxRadius; i++ {
+		if i == idx || i < 0 {
+			continue
+		}
+		key := path.Join("processed", streamUUID.String(), fmt.Sprintf("seg_%d.ts", i))
+		rc, size, err := s.storage.Download(ctx, key)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				slog.Debug("hls neighbour segment missing", "stream", streamUUID.String(), "file", key)
+				continue
+			}
+			return nil, 0, err
+		}
+		n, copyErr := io.Copy(&merged, io.LimitReader(rc, size))
+		rc.Close()
+		if copyErr != nil {
+			return nil, 0, copyErr
+		}
+		total += n
+		found = true
+	}
+	if !found {
+		return nil, 0, nil
+	}
+	return io.NopCloser(bytes.NewReader(merged.Bytes())), total, nil
+}
+
+// segmentIndex extracts the numeric part of an HLS segment filename of the form
+// seg_<n>.ts (as produced by ffmpeg's hls_segment_filename), returning false for
+// any other filename.
+func segmentIndex(fileName string) (int, bool) {
+	m := segmentNamePattern.FindStringSubmatch(fileName)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
