@@ -131,6 +131,21 @@ func (mr *MockStreamRepositoryMockRecorder) Read(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Read", reflect.TypeOf((*MockStreamRepository)(nil).Read), ctx, id)
 }
 
+// ReadMany mocks base method.
+func (m *MockStreamRepository) ReadMany(ctx context.Context, ids []uuid.UUID) ([]*models.Stream, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadMany", ctx, ids)
+	ret0, _ := ret[0].([]*models.Stream)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadMany indicates an expected call of ReadMany.
+func (mr *MockStreamRepositoryMockRecorder) ReadMany(ctx, ids any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadMany", reflect.TypeOf((*MockStreamRepository)(nil).ReadMany), ctx, ids)
+}
+
 // Update mocks base method.
 func (m *MockStreamRepository) Update(ctx context.Context, stream *models.Stream) error {
 	m.ctrl.T.Helper()

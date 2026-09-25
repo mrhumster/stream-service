@@ -21,7 +21,7 @@ type StreamService interface {
 	DeleteStream(ctx context.Context, id uuid.UUID) error
 
 	ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, int64, error)
-	ListUserStreams(ctx context.Context, userID uuid.UUID, limit, offset int) ([]*models.Stream, int64, error)
+	ListUserStreams(ctx context.Context, userID uuid.UUID, filter repository.StreamFilter) ([]*models.Stream, int64, error)
 
 	PublishStream(ctx context.Context, streamID uuid.UUID) error
 	UnpublishStream(ctx context.Context, streamID uuid.UUID) error
@@ -38,6 +38,7 @@ type StreamService interface {
 	UpdateStreamProcessing(ctx context.Context, req *UpdateStreamProcessingRequest) error
 	ReprocessStream(ctx context.Context, streamID uuid.UUID) error
 	ProcessFacesStream(ctx context.Context, streamID uuid.UUID) error
+	ProcessFacesBatch(ctx context.Context, userID uuid.UUID, isAdmin bool, ids []uuid.UUID) (*FacesBatchResult, error)
 
 	GetFileByKey(ctx context.Context, req *GetFileByKeyRequest) (*GetFileByKeyResponse, error)
 }

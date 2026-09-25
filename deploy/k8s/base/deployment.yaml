@@ -36,6 +36,8 @@ spec:
                 name: minio-credentials
             - secretRef:
                 name: casbin-redis
+            - secretRef:
+                name: faces-internal-token
           env:
             - name: GRPC_TLS_ENABLED
               value: "true"

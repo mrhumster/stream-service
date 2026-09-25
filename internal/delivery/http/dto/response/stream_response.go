@@ -9,32 +9,34 @@ import (
 )
 
 type StreamResponse struct {
-	ID          uuid.UUID               `json:"id"`
-	Title       string                  `json:"title"`
-	Description string                  `json:"description"`
-	Status      models.StreamStatus     `json:"status"`
-	OwnerID     uuid.UUID               `json:"owner_id"`
-	Visibility  models.StreamVisibility `json:"visibility"`
-	Tags        []string                `json:"tags"`
-	Metadata    models.StreamMetadata   `json:"metadata"`
-	CreatedAt   time.Time               `json:"created_at"`
-	UpdatedAt   time.Time               `json:"updated_at"`
-	PublishedAt *time.Time              `json:"published_at"`
-Storage    models.StreamStorage         `json:"storage"`
-	Processing []models.StreamProcessingTask `json:"processing"`
+	ID            uuid.UUID                     `json:"id"`
+	Title         string                        `json:"title"`
+	Description   string                        `json:"description"`
+	Status        models.StreamStatus           `json:"status"`
+	OwnerID       uuid.UUID                     `json:"owner_id"`
+	Visibility    models.StreamVisibility       `json:"visibility"`
+	Tags          []string                      `json:"tags"`
+	Metadata      models.StreamMetadata         `json:"metadata"`
+	CreatedAt     time.Time                     `json:"created_at"`
+	UpdatedAt     time.Time                     `json:"updated_at"`
+	PublishedAt   *time.Time                    `json:"published_at"`
+	Storage       models.StreamStorage          `json:"storage"`
+	Processing    []models.StreamProcessingTask `json:"processing"`
+	FacesDetected bool                          `json:"faces_detected"`
 }
 
 func FromDomainModel(stream *models.Stream) StreamResponse {
 	resp := StreamResponse{
-		ID:          stream.ID,
-		Title:       stream.Title,
-		Description: stream.Description,
-		Status:      stream.Status,
-		OwnerID:     stream.OwnerID,
-		Visibility:  stream.Visibility,
-		CreatedAt:   stream.CreatedAt,
-		UpdatedAt:   stream.UpdatedAt,
-		PublishedAt: stream.PublishedAt,
+		ID:            stream.ID,
+		Title:         stream.Title,
+		Description:   stream.Description,
+		Status:        stream.Status,
+		OwnerID:       stream.OwnerID,
+		Visibility:    stream.Visibility,
+		CreatedAt:     stream.CreatedAt,
+		UpdatedAt:     stream.UpdatedAt,
+		PublishedAt:   stream.PublishedAt,
+		FacesDetected: stream.FacesDetected,
 	}
 
 	if len(stream.Tags) > 0 {

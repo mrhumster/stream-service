@@ -13,6 +13,19 @@ type GormStreamRepository struct {
 	db *gorm.DB
 }
 
+var sortColumns = map[string]string{
+	"created_at": "created_at",
+	"title":      "title",
+	"status":     "status",
+}
+
+func sortColumnFor(sortBy string) string {
+	if col, ok := sortColumns[sortBy]; ok {
+		return col
+	}
+	return "created_at"
+}
+
 func NewGormStreamRepository(db *gorm.DB) *GormStreamRepository {
 	return &GormStreamRepository{db: db}
 }
@@ -33,6 +46,17 @@ func (r *GormStreamRepository) Read(ctx context.Context, id uuid.UUID) (*models.
 		return nil, result.Error
 	}
 	return stream, nil
+}
+
+func (r *GormStreamRepository) ReadMany(ctx context.Context, ids []uuid.UUID) ([]*models.Stream, error) {
+	if len(ids) == 0 {
+		return []*models.Stream{}, nil
+	}
+	var streams []*models.Stream
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&streams).Error; err != nil {
+		return nil, err
+	}
+	return streams, nil
 }
 
 func (r *GormStreamRepository) Update(ctx context.Context, stream *models.Stream) error {
@@ -77,6 +101,10 @@ func (r *GormStreamRepository) List(ctx context.Context, filter StreamFilter) ([
 		query = query.Where("visibility = ?", filter.Visibility)
 	}
 
+	if filter.FacesDetected != nil {
+		query = query.Where("faces_detected = ?", *filter.FacesDetected)
+	}
+
 	if filter.Search != "" {
 		searchPattern := "%" + filter.Search + "%"
 		query = query.Where("title ILIKE ? or description ILIKE ?", searchPattern, searchPattern)
@@ -96,7 +124,12 @@ func (r *GormStreamRepository) List(ctx context.Context, filter StreamFilter) ([
 
 	query = query.Limit(filter.Limit)
 
-	query = query.Order("created_at DESC")
+	sortColumn := sortColumnFor(filter.SortBy)
+	sortOrder := "DESC"
+	if filter.SortOrder == "asc" {
+		sortOrder = "ASC"
+	}
+	query = query.Order(sortColumn + " " + sortOrder)
 
 	var streams []*models.Stream
 	result := query.Find(&streams)

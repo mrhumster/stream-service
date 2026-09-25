@@ -116,7 +116,41 @@ func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
 		filter.Offset = offsetInt
 	}
 
-	streams, total, err := h.service.ListUserStreams(c.Request.Context(), userUUID, filter.Limit, filter.Offset)
+	if status := c.Query("status"); status != "" {
+		if !validStreamStatus(status) {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid status query"))
+			return
+		}
+		s := models.StreamStatus(status)
+		filter.Status = &s
+	}
+
+	if faces := c.Query("faces_detected"); faces != "" {
+		facesBool, err := strconv.ParseBool(faces)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid faces_detected query"))
+			return
+		}
+		filter.FacesDetected = &facesBool
+	}
+
+	if sortBy := c.Query("sort"); sortBy != "" {
+		if !validStreamSort(sortBy) {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid sort query"))
+			return
+		}
+		filter.SortBy = sortBy
+	}
+
+	if sortOrder := c.Query("order"); sortOrder != "" {
+		if sortOrder != "asc" && sortOrder != "desc" {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid order query"))
+			return
+		}
+		filter.SortOrder = sortOrder
+	}
+
+	streams, total, err := h.service.ListUserStreams(c.Request.Context(), userUUID, filter)
 	if err != nil {
 		slog.Error("list user streams failed", "error", err)
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
@@ -131,6 +165,25 @@ func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
 	resp.Offset = filter.Offset
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func validStreamStatus(status string) bool {
+	switch models.StreamStatus(status) {
+	case models.StatusDraft, models.StatusProcessing, models.StatusReady,
+		models.StatusPublished, models.StatusError, models.StatusUploading:
+		return true
+	default:
+		return false
+	}
+}
+
+func validStreamSort(sortBy string) bool {
+	switch sortBy {
+	case "created_at", "title", "status":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
@@ -728,4 +781,39 @@ func (h *StreamHandler) ProcessFacesStream(c *gin.Context) {
 	}
 	streammetrics.Lifecycle.WithLabelValues("faces").Inc()
 	c.JSON(http.StatusOK, nil)
+}
+
+// ProcessFacesBatch enqueues face detection for several streams at once. Only
+// streams owned by the requesting user (or any stream when the user is an
+// admin) are processed; the response reports per-id results for partial
+// success.
+func (h *StreamHandler) ProcessFacesBatch(c *gin.Context) {
+	userUUID := c.MustGet("user").(uuid.UUID)
+
+	var req request.FacesBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
+		return
+	}
+	if err := req.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	res, err := h.service.ProcessFacesBatch(c.Request.Context(), userUUID, h.isAdmin(c), req.IDs)
+	if err != nil {
+		slog.Error("process faces batch failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		return
+	}
+
+	processed := make([]string, 0, len(res.Processed))
+	for _, id := range res.Processed {
+		processed = append(processed, id.String())
+	}
+	failed := make([]response.FacesBatchFailureDTO, 0, len(res.Failed))
+	for _, f := range res.Failed {
+		failed = append(failed, response.FacesBatchFailureDTO{StreamID: f.StreamID.String(), Reason: f.Reason})
+	}
+	c.JSON(http.StatusOK, response.NewFacesBatchResponse(processed, failed))
 }

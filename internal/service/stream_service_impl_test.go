@@ -69,7 +69,7 @@ func TestStreamServiceImpl_ListUserStreams(t *testing.T) {
 			).
 			Return(expectedStreams, int64(2), nil)
 
-		streams, total, err := serviceImpl.ListUserStreams(ctx, userID, 50, 25)
+		streams, total, err := serviceImpl.ListUserStreams(ctx, userID, repository.StreamFilter{Limit: 50, Offset: 25})
 
 		require.NoError(t, err)
 		require.Len(t, streams, 2)
@@ -98,7 +98,36 @@ func TestStreamServiceImpl_ListUserStreams(t *testing.T) {
 			).
 			Return([]*models.Stream{}, int64(0), nil)
 
-		_, _, err := serviceImpl.ListUserStreams(ctx, userID, 50, 25)
+		_, _, err := serviceImpl.ListUserStreams(ctx, userID, repository.StreamFilter{Limit: 50, Offset: 25})
+		require.NoError(t, err)
+	})
+
+	t.Run("passes faces and sort into filter", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockPermissionClient := authmock.NewMockPermissionClient(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
+
+		userID := uuid.New()
+		faces := true
+
+		mockRepo.EXPECT().
+			List(
+				gomock.Any(),
+				gomock.Cond(func(x interface{}) bool {
+					f, ok := x.(repository.StreamFilter)
+					return ok && f.OwnerID != nil && *f.OwnerID == userID &&
+						f.FacesDetected != nil && *f.FacesDetected &&
+						f.SortBy == "title" && f.SortOrder == "asc"
+				}),
+			).
+			Return([]*models.Stream{}, int64(0), nil)
+
+		_, _, err := serviceImpl.ListUserStreams(ctx, userID, repository.StreamFilter{FacesDetected: &faces, SortBy: "title", SortOrder: "asc"})
 		require.NoError(t, err)
 	})
 }
@@ -3134,5 +3163,140 @@ func TestStreamServiceImpl_ProcessFacesStream(t *testing.T) {
 			Return(nil)
 		err := svc.ProcessFacesStream(ctx, streamUUID)
 		require.NoError(t, err)
+	})
+}
+
+func TestStreamServiceImpl_ProcessFacesBatch(t *testing.T) {
+	newSvc := func(ctrl *gomock.Controller) (*service.StreamServiceImpl, *repomock.MockStreamRepository, *mock.MockFileStorage, *queuemock.MockTaskDistributor) {
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil, srvCfg())
+		return svc, mockRepo, mockStor, mockQueue
+	}
+
+	streamWithStorage := func(id, owner uuid.UUID) (*models.Stream, *models.StreamStorage) {
+		st := &models.Stream{
+			BaseModel: models.BaseModel{ID: id},
+			Title:     "Stream",
+			OwnerID:   owner,
+			Status:    models.StatusReady,
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file-" + id.String(),
+			Filename: "video.mp4",
+		}
+		require.NoError(t, st.SetStorageInfo(storageInfo))
+		return st, storageInfo
+	}
+
+	t.Run("mixed batch: processed + forbidden + not found", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, mockStor, mockQueue := newSvc(ctrl)
+
+		ctx := context.Background()
+		userUUID := uuid.New()
+		ownedID := uuid.New()
+		foreignID := uuid.New()
+		missingID := uuid.New()
+
+		owned, ownedStorage := streamWithStorage(ownedID, userUUID)
+		foreign, _ := streamWithStorage(foreignID, uuid.New())
+
+		mockRepo.EXPECT().ReadMany(ctx, gomock.Any()).Return([]*models.Stream{owned, foreign}, nil)
+		mockStor.EXPECT().Exists(ctx, ownedStorage.Key).Return(true, nil)
+		facesID := "faces-batch-1"
+		mockQueue.EXPECT().
+			ReprocessFacesProcessor(ctx, ownedID, ownedStorage.Key).
+			Return(&facesID, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).
+			Do(func(_ context.Context, s *models.Stream) error {
+				assert.Contains(t, s.Processing.String(), models.TaskTypeFaces)
+				return nil
+			}).
+			Return(nil)
+
+		res, err := svc.ProcessFacesBatch(ctx, userUUID, false, []uuid.UUID{ownedID, foreignID, missingID})
+		require.NoError(t, err)
+		assert.Equal(t, []uuid.UUID{ownedID}, res.Processed)
+		require.Len(t, res.Failed, 2)
+		assert.Equal(t, foreignID, res.Failed[0].StreamID)
+		assert.Equal(t, service.FacesBatchReasonForbidden, res.Failed[0].Reason)
+		assert.Equal(t, missingID, res.Failed[1].StreamID)
+		assert.Equal(t, service.FacesBatchReasonNotFound, res.Failed[1].Reason)
+	})
+
+	t.Run("admin bypasses ownership", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, mockStor, mockQueue := newSvc(ctrl)
+
+		ctx := context.Background()
+		adminID := uuid.New()
+		foreignID := uuid.New()
+		foreign, foreignStorage := streamWithStorage(foreignID, uuid.New())
+
+		mockRepo.EXPECT().ReadMany(ctx, gomock.Any()).Return([]*models.Stream{foreign}, nil)
+		mockStor.EXPECT().Exists(ctx, foreignStorage.Key).Return(true, nil)
+		facesID := "faces-batch-admin"
+		mockQueue.EXPECT().
+			ReprocessFacesProcessor(ctx, foreignID, foreignStorage.Key).
+			Return(&facesID, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(nil)
+
+		res, err := svc.ProcessFacesBatch(ctx, adminID, true, []uuid.UUID{foreignID})
+		require.NoError(t, err)
+		assert.Equal(t, []uuid.UUID{foreignID}, res.Processed)
+		assert.Empty(t, res.Failed)
+	})
+
+	t.Run("source missing reported per id", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, mockStor, mockQueue := newSvc(ctrl)
+
+		ctx := context.Background()
+		userUUID := uuid.New()
+		id1 := uuid.New()
+		id2 := uuid.New()
+		st1, storage1 := streamWithStorage(id1, userUUID)
+		st2, storage2 := streamWithStorage(id2, userUUID)
+		_ = st2
+		hlsKey := fmt.Sprintf("processed/%s/index.m3u8", id2)
+
+		mockRepo.EXPECT().ReadMany(ctx, gomock.Any()).Return([]*models.Stream{st1, st2}, nil)
+		mockStor.EXPECT().Exists(ctx, storage1.Key).Return(true, nil)
+		facesID := "faces-batch-ok"
+		mockQueue.EXPECT().
+			ReprocessFacesProcessor(ctx, id1, storage1.Key).
+			Return(&facesID, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(nil)
+		mockStor.EXPECT().Exists(ctx, storage2.Key).Return(false, nil)
+		mockStor.EXPECT().Exists(ctx, hlsKey).Return(false, nil)
+
+		res, err := svc.ProcessFacesBatch(ctx, userUUID, false, []uuid.UUID{id1, id2})
+		require.NoError(t, err)
+		assert.Equal(t, []uuid.UUID{id1}, res.Processed)
+		require.Len(t, res.Failed, 1)
+		assert.Equal(t, id2, res.Failed[0].StreamID)
+		assert.Equal(t, service.FacesBatchReasonSource, res.Failed[0].Reason)
+	})
+
+	t.Run("empty ids returns empty result", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, _, _ := newSvc(ctrl)
+
+		ctx := context.Background()
+		mockRepo.EXPECT().ReadMany(ctx, gomock.Any()).Return([]*models.Stream{}, nil)
+
+		res, err := svc.ProcessFacesBatch(ctx, uuid.New(), false, []uuid.UUID{})
+		require.NoError(t, err)
+		assert.Empty(t, res.Processed)
+		assert.Empty(t, res.Failed)
 	})
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/request"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
 	"github.com/mrhumster/stream-service/internal/domain/models"
+	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
 	servicemock "github.com/mrhumster/stream-service/internal/service/mock"
 	"github.com/mrhumster/stream-service/internal/wss/mock"
@@ -1469,7 +1470,11 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 			},
 		}
 		ctx := context.Background()
-		mockService.EXPECT().ListUserStreams(ctx, userID, 100, 0).Return(streams, int64(4), nil)
+		mockService.EXPECT().ListUserStreams(ctx, userID, gomock.Any()).DoAndReturn(
+			func(_ context.Context, _ uuid.UUID, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
+				return streams, int64(4), nil
+			},
+		)
 		req := httptest.NewRequest("GET", "/streams", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -1513,7 +1518,7 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 
 	t.Run("propagation service error", func(t *testing.T) {
 		router, mockService, _ := setupTest()
-		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, int64(0), errors.New("service error"))
+		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, int64(0), errors.New("service error"))
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "/streams", nil)
 		router.ServeHTTP(w, req)
@@ -1523,7 +1528,13 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 
 	t.Run("propagates limit and offset query params", func(t *testing.T) {
 		router, mockService, _ := setupTest()
-		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any(), 25, 50).Return([]*models.Stream{}, int64(0), nil)
+		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, _ uuid.UUID, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
+				require.Equal(t, 25, filter.Limit)
+				require.Equal(t, 50, filter.Offset)
+				return []*models.Stream{}, int64(0), nil
+			},
+		)
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "/streams?limit=25&offset=50", nil)
 		router.ServeHTTP(w, req)
@@ -1542,6 +1553,83 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 		router, _, _ := setupTest()
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "/streams?offset=-1", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
+	})
+
+	t.Run("propagates status filter", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, _ uuid.UUID, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
+				require.NotNil(t, filter.Status)
+				require.Equal(t, models.StatusReady, *filter.Status)
+				return []*models.Stream{}, int64(0), nil
+			},
+		)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?status=ready", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusOK)
+	})
+
+	t.Run("rejects invalid status", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?status=bogus", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
+	})
+
+	t.Run("propagates faces_detected filter", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, _ uuid.UUID, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
+				require.NotNil(t, filter.FacesDetected)
+				require.True(t, *filter.FacesDetected)
+				return []*models.Stream{}, int64(0), nil
+			},
+		)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?faces_detected=true", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusOK)
+	})
+
+	t.Run("rejects invalid faces_detected", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?faces_detected=maybe", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
+	})
+
+	t.Run("propagates sort and order", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, _ uuid.UUID, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
+				require.Equal(t, "title", filter.SortBy)
+				require.Equal(t, "asc", filter.SortOrder)
+				return []*models.Stream{}, int64(0), nil
+			},
+		)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?sort=title&order=asc", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusOK)
+	})
+
+	t.Run("rejects invalid sort", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?sort=owner_id", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
+	})
+
+	t.Run("rejects invalid order", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?order=sideways", nil)
 		router.ServeHTTP(w, req)
 		require.Equal(t, w.Code, http.StatusBadRequest)
 	})
@@ -2165,5 +2253,134 @@ func TestStreamHandler_ProcessFacesStream(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestStreamHandler_ProcessFacesBatch(t *testing.T) {
+	userID := uuid.New()
+	streamID := uuid.New()
+
+	setUser := func(claims *dto.AccessClaims) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			c.Set("user", userID)
+			if claims != nil {
+				c.Set("claims", claims)
+			}
+			c.Next()
+		}
+	}
+
+	t.Run("success returns processed and failed", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ProcessFacesBatch(gomock.Any(), userID, false, gomock.Any()).
+			Return(&service.FacesBatchResult{
+				Processed: []uuid.UUID{streamID},
+				Failed: []service.FacesBatchFailure{
+					{StreamID: uuid.New(), Reason: service.FacesBatchReasonForbidden},
+				},
+			}, nil)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/faces/batch", handlers.ProcessFacesBatch)
+
+		req := httptest.NewRequest("POST", "/streams/faces/batch", strings.NewReader(`{"ids":["`+streamID.String()+`"]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp response.FacesBatchResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Len(t, resp.Processed, 1)
+		assert.Len(t, resp.Failed, 1)
+		assert.Equal(t, "forbidden", resp.Failed[0].Reason)
+	})
+
+	t.Run("missing user in context returns 500", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		router := setupTestRouter()
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/faces/batch", handlers.ProcessFacesBatch)
+
+		req := httptest.NewRequest("POST", "/streams/faces/batch", strings.NewReader(`{"ids":["`+streamID.String()+`"]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+
+	t.Run("invalid body returns 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/faces/batch", handlers.ProcessFacesBatch)
+
+		req := httptest.NewRequest("POST", "/streams/faces/batch", strings.NewReader(`{"ids":[]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("too many ids returns 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/faces/batch", handlers.ProcessFacesBatch)
+
+		ids := make([]string, 0, request.MaxFacesBatchSize+1)
+		for i := 0; i <= request.MaxFacesBatchSize; i++ {
+			ids = append(ids, uuid.New().String())
+		}
+		body, _ := json.Marshal(map[string][]string{"ids": ids})
+
+		req := httptest.NewRequest("POST", "/streams/faces/batch", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("service error returns 500", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ProcessFacesBatch(gomock.Any(), userID, false, gomock.Any()).
+			Return(nil, errors.New("boom"))
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/faces/batch", handlers.ProcessFacesBatch)
+
+		req := httptest.NewRequest("POST", "/streams/faces/batch", strings.NewReader(`{"ids":["`+streamID.String()+`"]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }

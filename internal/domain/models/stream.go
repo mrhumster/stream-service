@@ -44,7 +44,8 @@ type Stream struct {
 	Storage    datatypes.JSON `gorm:"type:jsonb"`
 	Processing datatypes.JSON `gorm:"type:jsonb"`
 
-	PublishedAt *time.Time
+	PublishedAt   *time.Time
+	FacesDetected bool `gorm:"not null;default:false"`
 }
 
 type StreamMetadata struct {

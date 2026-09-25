@@ -309,12 +309,8 @@ func (s *StreamServiceImpl) ListStreams(ctx context.Context, filter repository.S
 	return streams, total, nil
 }
 
-func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUID, limit, offset int) ([]*models.Stream, int64, error) {
-	filter := repository.StreamFilter{
-		OwnerID: &userID,
-		Limit:   limit,
-		Offset:  offset,
-	}
+func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUID, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
+	filter.OwnerID = &userID
 	return s.ListStreams(ctx, filter)
 }
 
@@ -783,6 +779,12 @@ func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *Upd
 		stream.Status = models.StatusError
 	}
 
+	if req.Processing.TaskType == models.TaskTypeFaces &&
+		req.Processing.Progress >= 100 &&
+		errMsg == "" {
+		stream.FacesDetected = true
+	}
+
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
@@ -894,6 +896,13 @@ func (s *StreamServiceImpl) ProcessFacesStream(ctx context.Context, streamID uui
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
 
+	if err := s.enqueueFaces(ctx, stream); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *StreamServiceImpl) enqueueFaces(ctx context.Context, stream *models.Stream) error {
 	storageInfo, err := stream.GetStorageInfo()
 	if err != nil {
 		return fmt.Errorf("error read storage info: %w", err)
@@ -904,7 +913,7 @@ func (s *StreamServiceImpl) ProcessFacesStream(ctx context.Context, streamID uui
 	}
 	inputPath := storageInfo.Key
 	if !exists {
-		hlsKey := fmt.Sprintf("processed/%s/index.m3u8", streamID)
+		hlsKey := fmt.Sprintf("processed/%s/index.m3u8", stream.ID)
 		hlsExists, err := s.storage.Exists(ctx, hlsKey)
 		if err != nil {
 			return fmt.Errorf("error check hls playlist: %w", err)
@@ -932,6 +941,62 @@ func (s *StreamServiceImpl) ProcessFacesStream(ctx context.Context, streamID uui
 		slog.Info("faces task enqueued", "stream", stream.ID, "task_id", *facesID)
 	}
 	return nil
+}
+
+type FacesBatchResult struct {
+	Processed []uuid.UUID              `json:"processed"`
+	Failed    []FacesBatchFailure      `json:"failed"`
+}
+
+type FacesBatchFailure struct {
+	StreamID uuid.UUID `json:"stream_id"`
+	Reason   string    `json:"reason"`
+}
+
+const (
+	FacesBatchReasonForbidden = "forbidden"
+	FacesBatchReasonNotFound  = "not found"
+	FacesBatchReasonSource    = "source missing"
+	FacesBatchReasonError     = "error"
+)
+
+func (s *StreamServiceImpl) ProcessFacesBatch(ctx context.Context, userID uuid.UUID, isAdmin bool, ids []uuid.UUID) (*FacesBatchResult, error) {
+	streams, err := s.repo.ReadMany(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("error read streams from repository: %w", err)
+	}
+
+	byID := make(map[uuid.UUID]*models.Stream, len(streams))
+	for _, st := range streams {
+		byID[st.ID] = st
+	}
+
+	result := &FacesBatchResult{}
+	for _, id := range ids {
+		stream, ok := byID[id]
+		if !ok {
+			result.Failed = append(result.Failed, FacesBatchFailure{StreamID: id, Reason: FacesBatchReasonNotFound})
+			continue
+		}
+		if stream.OwnerID != userID && !isAdmin {
+			result.Failed = append(result.Failed, FacesBatchFailure{StreamID: id, Reason: FacesBatchReasonForbidden})
+			continue
+		}
+		if err := s.enqueueFaces(ctx, stream); err != nil {
+			reason := FacesBatchReasonError
+			if errors.Is(err, ErrSourceFileMissing) {
+				reason = FacesBatchReasonSource
+			}
+			result.Failed = append(result.Failed, FacesBatchFailure{StreamID: id, Reason: reason})
+			continue
+		}
+		result.Processed = append(result.Processed, id)
+	}
+
+	if n := len(result.Processed); n > 0 {
+		streammetrics.Lifecycle.WithLabelValues("faces").Add(float64(n))
+	}
+	return result, nil
 }
 
 func getContentType(fileName string) string {
