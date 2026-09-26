@@ -107,7 +107,10 @@ func (r *GormStreamRepository) List(ctx context.Context, filter StreamFilter) ([
 
 	if filter.Search != "" {
 		searchPattern := "%" + filter.Search + "%"
-		query = query.Where("title ILIKE ? or description ILIKE ?", searchPattern, searchPattern)
+		query = query.Where(
+			"title ILIKE ? OR description ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) AS tag WHERE tag ILIKE ?)",
+			searchPattern, searchPattern, searchPattern,
+		)
 	}
 
 	if err := query.Count(&total).Error; err != nil {

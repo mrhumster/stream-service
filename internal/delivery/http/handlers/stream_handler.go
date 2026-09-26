@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -221,6 +222,14 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 			return
 		}
 		filter.Offset = offsetInt
+	}
+
+	if q := c.Query("q"); q != "" {
+		if utf8.RuneCountInString(q) > 100 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("q must be 100 characters or less"))
+			return
+		}
+		filter.Search = q
 	}
 
 	streams, total, err := h.service.ListStreams(c.Request.Context(), filter)
