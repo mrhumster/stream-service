@@ -214,12 +214,37 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 		}
 		stream.Tags = datatypes.JSON(tagsJSON)
 	}
+	if req.Rotation != nil {
+		if err := setStreamRotation(stream, *req.Rotation); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return nil, fmt.Errorf("failed to update stream: %w", err)
 	}
 
 	s.notifyUpdate(stream)
 	return stream, nil
+}
+
+// setStreamRotation writes "rotation" into the stream's metadata JSONB while
+// preserving every other key already present (duration, size, resolution,
+// recorded_at, location, camera, ...). A nil/empty metadata blob is treated
+// as an empty object.
+func setStreamRotation(stream *models.Stream, rotation int) error {
+	meta := map[string]any{}
+	if len(stream.Metadata) > 0 && string(stream.Metadata) != "null" {
+		if err := json.Unmarshal(stream.Metadata, &meta); err != nil {
+			return fmt.Errorf("failed to read stream metadata: %w", err)
+		}
+	}
+	meta["rotation"] = rotation
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("failed to encode stream metadata: %w", err)
+	}
+	stream.Metadata = datatypes.JSON(data)
+	return nil
 }
 
 func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) error {
@@ -732,7 +757,17 @@ func (s *StreamServiceImpl) UpdateStreamMetadata(ctx context.Context, req *Updat
 	if err != nil {
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
-	if err := stream.SetMetadata(&req.Metadata); err != nil {
+	meta := req.Metadata
+	// The transcoder never sends a rotation value, so a zero rotation in the
+	// incoming metadata means "not provided" — carry over any rotation that was
+	// saved by the owner through the edit form instead of silently resetting it
+	// to 0 on every (re-)transcode.
+	if meta.Rotation == 0 {
+		if existing, err := stream.GetMetadata(); err == nil && existing != nil {
+			meta.Rotation = existing.Rotation
+		}
+	}
+	if err := stream.SetMetadata(&meta); err != nil {
 		return fmt.Errorf("error setting metadata to model: %w", err)
 	}
 	if err := s.repo.Update(ctx, stream); err != nil {

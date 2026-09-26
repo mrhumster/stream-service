@@ -111,6 +111,7 @@ type UpdateStreamRequest struct {
 	Description *string
 	Visibility  *models.StreamVisibility
 	Tags        *[]string
+	Rotation    *int
 }
 
 type UploadInfo struct {

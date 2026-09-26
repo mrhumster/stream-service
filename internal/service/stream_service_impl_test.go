@@ -526,6 +526,76 @@ func TestStreamServicImpl_UpdateStream(t *testing.T) {
 		require.NotNil(t, updated)
 	})
 
+	t.Run("update stream rotation preserves other metadata", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockPermissionClient := authmock.NewMockPermissionClient(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
+		streamID := uuid.New()
+		existingStream := &models.Stream{
+			Title:    "Test Stream",
+			OwnerID:  uuid.New(),
+			Status:   models.StatusReady,
+			Metadata: datatypes.JSON(`{"duration":12,"size":3456,"format":"hls","resolution":"1280x720","camera":"PixelCam"}`),
+		}
+		existingStream.ID = streamID
+
+		rotation := 90
+		req := service.UpdateStreamRequest{Rotation: &rotation}
+
+		mockRepo.EXPECT().Read(gomock.Any(), streamID).Return(existingStream, nil)
+		mockRepo.EXPECT().Update(gomock.Any(), gomock.Cond(func(s *models.Stream) bool {
+			var meta map[string]any
+			json.Unmarshal(s.Metadata, &meta)
+			return int(meta["rotation"].(float64)) == 90 &&
+				meta["duration"].(float64) == 12 &&
+				meta["size"].(float64) == 3456 &&
+				meta["format"] == "hls" &&
+				meta["resolution"] == "1280x720" &&
+				meta["camera"] == "PixelCam"
+		})).Return(nil)
+
+		updated, err := serviceImpl.UpdateStream(ctx, streamID, req)
+		require.NoError(t, err)
+		require.NotNil(t, updated)
+	})
+
+	t.Run("update rotation on stream without metadata", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockPermissionClient := authmock.NewMockPermissionClient(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPermissionClient, mockStorage, mockQueue, nil, srvCfg())
+		streamID := uuid.New()
+		existingStream := &models.Stream{
+			Title:   "Test Stream",
+			OwnerID: uuid.New(),
+			Status:  models.StatusDraft,
+		}
+		existingStream.ID = streamID
+
+		rotation := 270
+		req := service.UpdateStreamRequest{Rotation: &rotation}
+
+		mockRepo.EXPECT().Read(gomock.Any(), streamID).Return(existingStream, nil)
+		mockRepo.EXPECT().Update(gomock.Any(), gomock.Cond(func(s *models.Stream) bool {
+			var meta map[string]any
+			json.Unmarshal(s.Metadata, &meta)
+			return int(meta["rotation"].(float64)) == 270
+		})).Return(nil)
+
+		updated, err := serviceImpl.UpdateStream(ctx, streamID, req)
+		require.NoError(t, err)
+		require.NotNil(t, updated)
+	})
+
 	t.Run("should validate title before update", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
@@ -2559,6 +2629,70 @@ func TestStreamServiceImpl_UpdateStreamMetadata(t *testing.T) {
 				gomock.Any()).
 			Do(func(ctx context.Context, stream *models.Stream) {
 				require.Contains(t, stream.Metadata.String(), "1080")
+			}).
+			Return(nil)
+		err = svc.UpdateStreamMetadata(ctx, svcReq)
+		require.NoError(t, err)
+	})
+	t.Run("transcoder metadata update preserves saved rotation", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(
+			mockRepo,
+			mockAuth,
+			mockStor,
+			mockQueue,
+			nil,
+			srvCfg(),
+		)
+		ctx := context.Background()
+		streamUUID := uuid.New()
+		userUUID := uuid.New()
+		svcReq := &service.UpdateStreamMetadataRequest{
+			StreamUUID: streamUUID,
+			Metadata: models.StreamMetadata{
+				Duration:   100,
+				Size:       int64(1024),
+				Format:     "mp4",
+				Resolution: "1080",
+			},
+		}
+		expectedStream := &models.Stream{
+			BaseModel: models.BaseModel{
+				ID: streamUUID,
+			},
+			Title:    "Stream",
+			OwnerID:  userUUID,
+			Status:   models.StatusUploading,
+			Metadata: datatypes.JSON(`{"duration":50,"size":2048,"format":"hls","resolution":"720p","camera":"PixelCam","rotation":90}`),
+		}
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file",
+			Filename: "video.mp4",
+			UploadID: "upload-id-740",
+		}
+		err := expectedStream.SetStorageInfo(storageInfo)
+		assert.NoError(t, err)
+		mockRepo.EXPECT().
+			Read(gomock.Any(), streamUUID).
+			Return(expectedStream, nil)
+		mockRepo.EXPECT().
+			Update(
+				gomock.Any(),
+				gomock.Any()).
+			Do(func(ctx context.Context, stream *models.Stream) {
+				var meta map[string]any
+				json.Unmarshal(stream.Metadata, &meta)
+				assert.Equal(t, 90, int(meta["rotation"].(float64)))
+				assert.Equal(t, 100.0, meta["duration"].(float64))
+				assert.Equal(t, float64(1024), meta["size"].(float64))
+				assert.Equal(t, "1080", meta["resolution"])
+				assert.Equal(t, "mp4", meta["format"])
 			}).
 			Return(nil)
 		err = svc.UpdateStreamMetadata(ctx, svcReq)
