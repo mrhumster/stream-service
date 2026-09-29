@@ -12,8 +12,11 @@ Video upload, HLS serving, stream catalog and real-time updates for GoCast.
 - Publish/unpublish, per-owner access via identity permissions (gRPC);
 - HLS serving from MinIO with Bearer auth, anti-cache `?t=` and path-traversal protection;
 - Thumbnail + transcoding tasks dispatched to asynq workers (thumbnail/transcoder);
-- Video metadata (recorded_at / location / camera) extracted by the transcoder and stored in
-  the JSONB `streams.metadata` column;
+- Video metadata (recorded_at / location / camera / rotation) extracted by the transcoder and
+  stored in the JSONB `streams.metadata` column;
+- Face-detection dispatch (per-stream `POST /:id/faces` or batch `POST /faces/batch`) to the
+  asynq `faces` queue consumed by faces-service;
+- Server-side catalog search (`q`) and Own-view filters/sorting;
 - WebSocket hub (`STREAM_UPDATED` / `STREAM_READY`) to the stream owner;
 - Prometheus `/metrics` (RED + business counters).
 
@@ -30,14 +33,14 @@ Routes are defined in `internal/delivery/http/routes/routes.go`.
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/stream` | – | Public catalog (paged, limit ≤ 100) |
+| `GET` | `/stream` | – | Public catalog (`limit` ≤ 100, `offset` ≤ 10000, `q` search over title/description/tags, ≤ 100 runes) |
 | `GET` | `/stream/:id` | optional | Stream detail (access by owner/visibility) |
 | `GET` | `/stream/:id/status` | – | Public status probe (`status`/`visibility`, `owner_id`/`title`) — used by comments/stats gates |
 | `GET` | `/stream/:id/download` | bearer | Generate a signed download URL |
 | `GET` | `/stream/:id/hls/*file` | optional | HLS playlist/segments from MinIO |
 | `GET` | `/stream/ws/updates` | WS subprotocol | WebSocket updates for the owner |
 | `POST` | `/stream/` | bearer | Create stream |
-| `GET` | `/stream/own` | bearer | My streams (paged) |
+| `GET` | `/stream/own` | bearer | My streams (paged; `status`, `faces_detected`, `sort` = `created_at`\|`title`\|`status`, `order` = `asc`\|`desc`) |
 | `PATCH` | `/stream/:id` | bearer + `stream/write` | Update stream |
 | `DELETE` | `/stream/:id` | bearer + `stream/delete` | Delete stream |
 | `POST` | `/stream/:id/publish` | bearer + `stream/write` | Publish |
@@ -47,6 +50,8 @@ Routes are defined in `internal/delivery/http/routes/routes.go`.
 | `PUT` | `/stream/:id/upload/part` | bearer + `stream/write` | Upload a part (≥ 5 MB, except last) |
 | `POST` | `/stream/:id/upload/complete` | bearer + `stream/write` | Complete multipart → process |
 | `POST` | `/stream/:id/reprocess` | bearer + `stream/write` | Retry failed processing tasks (error → processing) |
+| `POST` | `/stream/:id/faces` | bearer + `stream/write` | Enqueue face detection for one stream (HLS fallback if the source is gone) |
+| `POST` | `/stream/faces/batch` | bearer | Enqueue face detection for up to 100 streams at once (per-stream auth in the service, partial-success body) |
 | `GET` | `/stream/health` | – | Liveness/DB check |
 | `GET` | `/metrics` | – | Prometheus metrics |
 
@@ -64,7 +69,7 @@ permissions come from the identity permission service via gRPC.
 ## Processing (task array)
 
 `stream.processing` is a JSON **array** of `StreamProcessingTask` entries
-(`task_type` `transcode` | `thumbnail`, `progress`, `steps`, `error`, `task_id`).
+(`task_type` `transcode` | `thumbnail` | `faces`, `progress`, `steps`, `error`, `task_id`).
 On upload completion stream-service enqueues **both** transcode and thumbnail tasks and
 persists the initial array in one save. Workers report progress per task via gRPC
 `UpdateStreamProcessingRequest.task`; a failed transcode task sets the stream status to
@@ -86,7 +91,8 @@ clears their errors and resets the stream to `processing`. Mapping: `404` not fo
   "resolution": "1280x720",
   "recorded_at": "2024-06-01T10:15:30Z",
   "location": "55.75580,37.61760",
-  "camera": "PixelCam XC-42"
+  "camera": "PixelCam XC-42",
+  "rotation": 90
 }
 ```
 
@@ -96,6 +102,29 @@ clears their errors and resets the stream to `processing`. Mapping: `404` not fo
 README). New optional fields are `omitempty`, and the gRPC mapping parses `recorded_at`
 tolerantly: an unparseable timestamp is ignored (`nil`) rather than failing the whole update
 (`parseOptionalTime` in `internal/delivery/grpc/stream_handler.go`).
+
+`rotation` ∈ {0, 90, 180, 270} tells the frontend how to orient portrait video. It is set by the
+owner via `PATCH /stream/:id` (`UpdateStreamRequest.rotation`) and merged into the existing
+metadata JSONB — sibling keys are preserved. The transcoder's gRPC `UpdateStreamMetadata`
+**preserves** a saved rotation on re-transcode (it only overwrites the metadata fields it
+explicitly reports).
+
+## Face detection
+
+Face detection is dispatched by stream-service but executed by the separate
+**faces-service** (CV pipeline; remote repo `mrhumster/faces-service`):
+
+- `POST /stream/:id/faces` — enqueue detection for one stream. If the original file has been
+  removed (`KEEP_ORIGINAL_FILE=false` happens at `ready`), it falls back to
+  `processed/<streamUUID>/index.m3u8`.
+- `POST /stream/faces/batch` — enqueue detection for up to `MaxFacesBatchSize` (100) streams in
+  one request (`FacesBatchRequest{ids}`). Ownership is checked **per stream inside the service**
+  (owner + admin); the response is HTTP 200 with a partial-success body
+  `{processed, failed:[{stream_id, reason}]}`.
+- Progress is reported through the stream's `processing` array (`task_type` `faces`); the
+  `faces_detected` boolean is exposed on `GET /stream/:id` and `GET /stream/own` (and filterable
+  there).
+- Tasks go to the asynq `faces` queue (Redis DB 2) and are consumed by faces-worker (KEDA).
 
 ## HLS / access control
 
