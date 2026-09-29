@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -469,41 +470,40 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 func (h *StreamHandler) DownloadStream(c *gin.Context) {
 	streamID := c.Param("id")
 	streamUUID, err := uuid.Parse(streamID)
-	userUUID := c.MustGet("user").(uuid.UUID)
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
 	}
 
-	serviceResp, err := h.service.GenerateDownloadURL(c, streamUUID, userUUID)
+	var userUUID *uuid.UUID
+	if userVal, ok := c.Get("user"); ok {
+		if u, ok := userVal.(uuid.UUID); ok && u != uuid.Nil {
+			userUUID = &u
+		}
+	}
+
+	info, err := h.service.DownloadStream(c.Request.Context(), streamUUID, userUUID)
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
 	}
+	defer info.Content.Close()
 
-	resp, err := response.NewDownloadResponse(serviceResp)
-	if err != nil {
-		h.handleDownloadError(c, err)
-		return
-	}
-
-	directDownload := c.Query("direct") == "true"
-	if directDownload {
-		c.Redirect(http.StatusTemporaryRedirect, resp.URL)
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, info.FileName))
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.DataFromReader(http.StatusOK, info.Size, info.ContentType, info.Content, nil)
 }
 
 func (h *StreamHandler) handleDownloadError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, service.ErrStreamForbidden):
+		c.JSON(http.StatusForbidden, response.ErrorResponse("forbidden"))
 	case errors.Is(err, service.ErrStreamNotFound):
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
 	case errors.Is(err, service.ErrStreamNotReady):
 		c.JSON(http.StatusBadRequest, response.ErrorResponse("stream not available for download"))
 	default:
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("failed to generate download link"))
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("failed to download stream"))
 	}
 }
 

@@ -87,19 +87,19 @@ func (mr *MockStreamServiceMockRecorder) DeleteStream(ctx, id any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteStream", reflect.TypeOf((*MockStreamService)(nil).DeleteStream), ctx, id)
 }
 
-// GenerateDownloadURL mocks base method.
-func (m *MockStreamService) GenerateDownloadURL(ctx context.Context, streamID, userUUID uuid.UUID) (*service.GenerateDownloadURLInfo, error) {
+// DownloadStream mocks base method.
+func (m *MockStreamService) DownloadStream(ctx context.Context, streamID uuid.UUID, userUUID *uuid.UUID) (*service.DownloadStreamInfo, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GenerateDownloadURL", ctx, streamID, userUUID)
-	ret0, _ := ret[0].(*service.GenerateDownloadURLInfo)
+	ret := m.ctrl.Call(m, "DownloadStream", ctx, streamID, userUUID)
+	ret0, _ := ret[0].(*service.DownloadStreamInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GenerateDownloadURL indicates an expected call of GenerateDownloadURL.
-func (mr *MockStreamServiceMockRecorder) GenerateDownloadURL(ctx, streamID, userUUID any) *gomock.Call {
+// DownloadStream indicates an expected call of DownloadStream.
+func (mr *MockStreamServiceMockRecorder) DownloadStream(ctx, streamID, userUUID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateDownloadURL", reflect.TypeOf((*MockStreamService)(nil).GenerateDownloadURL), ctx, streamID, userUUID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DownloadStream", reflect.TypeOf((*MockStreamService)(nil).DownloadStream), ctx, streamID, userUUID)
 }
 
 // GetFileByKey mocks base method.
