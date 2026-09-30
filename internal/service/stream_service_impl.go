@@ -674,8 +674,8 @@ func (s *StreamServiceImpl) OpenStreamDownload(ctx context.Context, streamID uui
 	}, nil
 }
 
-// CompleteStreamExport records the worker's outcome and, on success, tells the
-// owner's open websocket connections that the file is ready.
+// CompleteStreamExport records the worker's outcome and tells the owner's open
+// websocket connections how it went, ready or failed.
 func (s *StreamServiceImpl) CompleteStreamExport(ctx context.Context, streamID uuid.UUID, size int64, exportErr string) error {
 	export, err := s.exportRepo.ReadByStream(ctx, streamID)
 	if err != nil {
@@ -698,18 +698,30 @@ func (s *StreamServiceImpl) CompleteStreamExport(ctx context.Context, streamID u
 		return err
 	}
 
-	if export.Status == models.ExportStatusReady && s.hub != nil {
+	if s.hub != nil {
 		// user_id is a text column, so a bad value must not take the process
 		// down from an RPC handler.
 		ownerID, err := uuid.Parse(export.UserID)
 		if err != nil {
 			slog.Error("export owner is not a uuid, cannot notify", "stream", streamID, "user_id", export.UserID)
-		} else {
+			return nil
+		}
+		// Both outcomes are announced. A silent failure would leave the owner
+		// watching a spinner until they reloaded the page.
+		if export.Status == models.ExportStatusReady {
 			s.hub.SendMessgeToOwner(ownerID, gin.H{
 				"type": "STREAM_EXPORT_READY",
 				"payload": gin.H{
 					"stream_id": streamID,
 					"size":      export.Size,
+				},
+			})
+		} else {
+			s.hub.SendMessgeToOwner(ownerID, gin.H{
+				"type": "STREAM_EXPORT_FAILED",
+				"payload": gin.H{
+					"stream_id": streamID,
+					"error":     export.Error,
 				},
 			})
 		}

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -2284,8 +2285,11 @@ func TestStreamHandler_HandleWS(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		router, _, _, mockHub := setupTest()
+		unregistered := make(chan struct{})
 		mockHub.EXPECT().Register(userID, gomock.Any()).Return()
-		mockHub.EXPECT().Unregister(userID, gomock.Any()).Return()
+		mockHub.EXPECT().Unregister(userID, gomock.Any()).DoAndReturn(func(uuid.UUID, *websocket.Conn) {
+			close(unregistered)
+		})
 		ts := httptest.NewServer(router)
 		defer ts.Close()
 		u := "ws" + strings.TrimPrefix(ts.URL, "http") + "/streams/ws/upgrade"
@@ -2294,7 +2298,18 @@ func TestStreamHandler_HandleWS(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to dial websocket: %v", err)
 		}
-		defer conn.Close()
+
+		// Unregister runs in the handler's goroutine once the read loop ends,
+		// so closing the socket is not enough: without waiting for the call
+		// itself, gomock's cleanup can finish first and report the expectation
+		// as unmet. That race is what made this test red on a few runs out of
+		// a dozen.
+		require.NoError(t, conn.Close())
+		select {
+		case <-unregistered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the handler never unregistered the closed connection")
+		}
 	})
 }
 

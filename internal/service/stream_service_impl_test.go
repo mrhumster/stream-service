@@ -1405,8 +1405,8 @@ func TestStreamServiceImpl_CompleteStreamExport(t *testing.T) {
 		require.NoError(t, svc.CompleteStreamExport(ctx, row.StreamID, 777, ""))
 	})
 
-	t.Run("failed export sends no notification", func(t *testing.T) {
-		svc, exportRepo, _ := exportSvcWithHub(t)
+	t.Run("failed export notifies the owner with the reason", func(t *testing.T) {
+		svc, exportRepo, hub := exportSvcWithHub(t)
 		row := &models.StreamExport{
 			BaseModel: models.BaseModel{ID: uuid.New()},
 			StreamID:  uuid.New(),
@@ -1415,9 +1415,18 @@ func TestStreamServiceImpl_CompleteStreamExport(t *testing.T) {
 		}
 		exportRepo.EXPECT().ReadByStream(ctx, row.StreamID).Return(row, nil)
 		exportRepo.EXPECT().Update(ctx, row).Return(nil)
-		// No hub expectation: any notification fails the test.
+		hub.EXPECT().SendMessgeToOwner(gomock.Any(), gomock.Any()).DoAndReturn(func(_ uuid.UUID, data any) {
+			env, ok := data.(gin.H)
+			require.True(t, ok, "the hub payload must be a gin.H envelope")
+			assert.Equal(t, "STREAM_EXPORT_FAILED", env["type"])
+			// Without the reason the UI can only say "it failed".
+			payload, ok := env["payload"].(gin.H)
+			require.True(t, ok)
+			assert.Equal(t, "boom", payload["error"])
+		})
 
 		require.NoError(t, svc.CompleteStreamExport(ctx, row.StreamID, 0, "boom"))
+		assert.Equal(t, models.ExportStatusFailed, row.Status)
 	})
 
 	t.Run("unparsable owner id does not panic the rpc handler", func(t *testing.T) {
