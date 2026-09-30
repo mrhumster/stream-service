@@ -1228,6 +1228,41 @@ func TestStreamServiceImpl_GetStreamExport(t *testing.T) {
 		// Pending alone cannot tell the UI "nothing yet" from "building"; this
 		// flag is what lets it offer the button in the first place.
 		assert.False(t, info.Requested)
+		// The name is filled in even before anything was requested, so the save
+		// dialog is offered the same thing whichever path led to it.
+		assert.Equal(t, "stream.mp4", info.FileName)
+	})
+
+	t.Run("the name comes from the stream title", func(t *testing.T) {
+		svc, repo, exportRepo, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		stream.Title = "Summer in Kaliningrad"
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(&models.StreamExport{
+			StreamID: stream.ID, Status: models.ExportStatusReady, Size: 900,
+		}, nil)
+
+		info, err := svc.GetStreamExport(ctx, stream.ID, owner)
+
+		require.NoError(t, err)
+		assert.Equal(t, "Summer in Kaliningrad.mp4", info.FileName)
+	})
+
+	t.Run("a title that sanitizes to nothing falls back", func(t *testing.T) {
+		svc, repo, exportRepo, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		stream.Title = "///"
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(&models.StreamExport{
+			StreamID: stream.ID, Status: models.ExportStatusReady, Size: 900,
+		}, nil)
+
+		info, err := svc.GetStreamExport(ctx, stream.ID, owner)
+
+		require.NoError(t, err)
+		assert.Equal(t, "stream.mp4", info.FileName)
 	})
 
 	t.Run("a queued export reports pending and requested", func(t *testing.T) {

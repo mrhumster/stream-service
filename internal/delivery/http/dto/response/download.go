@@ -17,6 +17,10 @@ type ExportResponse struct {
 	// Requested is false for a stream nobody has exported yet, which is the
 	// only thing separating "idle" from "being built" since both are pending.
 	Requested bool `json:"requested"`
+	// FileName is the name the download will be saved under. It travels with
+	// the state because the client's save dialog is opened before the file is
+	// fetched, and a browser only grants that to a live click.
+	FileName string `json:"file_name,omitempty"`
 }
 
 func NewExportResponse(export *service.StreamExportInfo) *ExportResponse {
@@ -26,5 +30,6 @@ func NewExportResponse(export *service.StreamExportInfo) *ExportResponse {
 		Size:      export.Size,
 		Error:     export.Error,
 		Requested: export.Requested,
+		FileName:  export.FileName,
 	}
 }

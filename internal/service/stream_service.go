@@ -102,6 +102,12 @@ type StreamExportInfo struct {
 	// is running". Both report StatusPending, so without this flag the UI can
 	// only ever show a spinner and never offer to start one.
 	Requested bool
+	// FileName is the name the download will be saved under, built from the
+	// stream title. It is part of the state and not only of the download
+	// response because a save dialog has to be opened before the file itself is
+	// fetched: the browser grants one only to a click, so the client cannot ask
+	// the server for the name first and still get one.
+	FileName string
 }
 
 // DownloadStreamInfo is an open reader over the cached mp4. The HTTP layer

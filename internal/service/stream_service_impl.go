@@ -560,10 +560,10 @@ func (s *StreamServiceImpl) RequestStreamExport(ctx context.Context, streamID uu
 	switch {
 	case err == nil:
 		if existing.Status == models.ExportStatusReady {
-			return exportInfo(existing), nil
+			return exportInfo(existing, stream.Title), nil
 		}
 		if existing.Status == models.ExportStatusPending {
-			return exportInfo(existing), nil
+			return exportInfo(existing, stream.Title), nil
 		}
 		// Failed: retry it below. The reset is conditional on the row still
 		// being failed, so of two retries that arrive together only one gets
@@ -577,7 +577,7 @@ func (s *StreamServiceImpl) RequestStreamExport(ctx context.Context, streamID uu
 			if cerr != nil {
 				return nil, cerr
 			}
-			return exportInfo(current), nil
+			return exportInfo(current, stream.Title), nil
 		}
 		existing.Status = models.ExportStatusPending
 		existing.Error = ""
@@ -607,7 +607,7 @@ func (s *StreamServiceImpl) RequestStreamExport(ctx context.Context, streamID uu
 		return nil, fmt.Errorf("failed to queue export: %w", err)
 	}
 
-	return exportInfo(existing), nil
+	return exportInfo(existing, stream.Title), nil
 }
 
 // GetStreamExport reports the current export state for the owner. A stream that
@@ -628,13 +628,19 @@ func (s *StreamServiceImpl) GetStreamExport(ctx context.Context, streamID uuid.U
 	export, err := s.exportRepo.ReadByStream(ctx, streamID)
 	if repository.IsExportNotFound(err) {
 		// Not an error: the UI asks before anyone has pressed the button, and
-		// has to be able to say so.
-		return &StreamExportInfo{StreamID: streamID, Status: models.ExportStatusPending, Requested: false}, nil
+		// has to be able to say so. The name is filled in anyway so the client
+		// can offer the same one for an export started later.
+		return &StreamExportInfo{
+			StreamID:  streamID,
+			Status:    models.ExportStatusPending,
+			Requested: false,
+			FileName:  downloadFileName(stream.Title),
+		}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read stream export: %w", err)
 	}
-	return exportInfo(export), nil
+	return exportInfo(export, stream.Title), nil
 }
 
 // OpenStreamDownload opens the cached mp4 for the owner. It is a straight proxy
@@ -750,13 +756,14 @@ func (s *StreamServiceImpl) CompleteStreamExport(ctx context.Context, streamID u
 	return nil
 }
 
-func exportInfo(export *models.StreamExport) *StreamExportInfo {
+func exportInfo(export *models.StreamExport, title string) *StreamExportInfo {
 	return &StreamExportInfo{
 		StreamID:  export.StreamID,
 		Status:    export.Status,
 		Size:      export.Size,
 		Error:     export.Error,
 		Requested: true,
+		FileName:  downloadFileName(title),
 	}
 }
 

@@ -1,12 +1,14 @@
 package response
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/service"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewExportResponse(t *testing.T) {
@@ -48,5 +50,21 @@ func TestNewExportResponse(t *testing.T) {
 
 		assert.Equal(t, models.ExportStatusFailed, got.Status)
 		assert.Equal(t, "ffmpeg mux failed: no streams", got.Error)
+	})
+
+	t.Run("carries the name the client suggests to the save dialog", func(t *testing.T) {
+		got := NewExportResponse(&service.StreamExportInfo{
+			StreamID:  streamID,
+			Status:    models.ExportStatusReady,
+			Requested: true,
+			FileName:  "My vacation.mp4",
+		})
+
+		assert.Equal(t, "My vacation.mp4", got.FileName)
+		// It has to survive the trip to the browser, or the client is back to
+		// inventing a name of its own.
+		encoded, err := json.Marshal(got)
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"file_name":"My vacation.mp4"`)
 	})
 }
