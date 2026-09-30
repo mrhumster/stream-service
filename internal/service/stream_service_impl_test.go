@@ -1442,6 +1442,27 @@ func TestStreamServiceImpl_CompleteStreamExport(t *testing.T) {
 
 		require.NoError(t, svc.CompleteStreamExport(ctx, row.StreamID, 10, ""))
 	})
+
+	t.Run("a second report for a settled export is dropped", func(t *testing.T) {
+		// The worker reports the outcome itself and asynq's error handler
+		// reports the same task again when it ends in error. The second report
+		// must not overwrite the real reason with its wrapper, and must not
+		// announce itself a second time. Update and hub get no expectations, so
+		// the controller fails the test if either is reached.
+		svc, exportRepo, _ := exportSvcWithHub(t)
+		row := &models.StreamExport{
+			BaseModel: models.BaseModel{ID: uuid.New()},
+			StreamID:  uuid.New(),
+			UserID:    uuid.New().String(),
+			Status:    models.ExportStatusFailed,
+			Error:     "download rendition: no objects under processed/x/",
+		}
+		exportRepo.EXPECT().ReadByStream(ctx, row.StreamID).Return(row, nil)
+
+		require.NoError(t, svc.CompleteStreamExport(ctx, row.StreamID, 0, "worker lost the task: download rendition: no objects under processed/x/"))
+		assert.Equal(t, models.ExportStatusFailed, row.Status)
+		assert.Equal(t, "download rendition: no objects under processed/x/", row.Error)
+	})
 }
 
 func TestStreamServiceImpl_StartStreamUpload(t *testing.T) {

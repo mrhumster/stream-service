@@ -685,6 +685,17 @@ func (s *StreamServiceImpl) CompleteStreamExport(ctx context.Context, streamID u
 		return fmt.Errorf("failed to read stream export: %w", err)
 	}
 
+	// The worker reports the outcome itself and asynq's error handler reports
+	// the same task again if it ends in error, so a second report for one
+	// export is expected rather than exceptional. Only a pending row has an
+	// outcome still to record: a retry resets the row to pending first, so its
+	// own report is never swallowed by this guard. Taking the first report also
+	// keeps the stored error the real one instead of a wrapper around it.
+	if export.Status != models.ExportStatusPending {
+		slog.Warn("ignoring duplicate export report", "stream", streamID, "status", export.Status, "error", exportErr)
+		return nil
+	}
+
 	if exportErr != "" {
 		export.Status = models.ExportStatusFailed
 		export.Error = exportErr
