@@ -1197,6 +1197,42 @@ func TestStreamServiceImpl_GetStreamExport(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, models.ExportStatusPending, info.Status)
+		// Pending alone cannot tell the UI "nothing yet" from "building"; this
+		// flag is what lets it offer the button in the first place.
+		assert.False(t, info.Requested)
+	})
+
+	t.Run("a queued export reports pending and requested", func(t *testing.T) {
+		svc, repo, exportRepo, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(&models.StreamExport{
+			StreamID: stream.ID, Status: models.ExportStatusPending,
+		}, nil)
+
+		info, err := svc.GetStreamExport(ctx, stream.ID, owner)
+
+		require.NoError(t, err)
+		assert.Equal(t, models.ExportStatusPending, info.Status)
+		assert.True(t, info.Requested)
+	})
+
+	t.Run("a finished export carries its size", func(t *testing.T) {
+		svc, repo, exportRepo, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(&models.StreamExport{
+			StreamID: stream.ID, Status: models.ExportStatusReady, Size: 4096,
+		}, nil)
+
+		info, err := svc.GetStreamExport(ctx, stream.ID, owner)
+
+		require.NoError(t, err)
+		assert.Equal(t, models.ExportStatusReady, info.Status)
+		assert.Equal(t, int64(4096), info.Size)
+		assert.True(t, info.Requested)
 	})
 
 	t.Run("non-owner is refused", func(t *testing.T) {

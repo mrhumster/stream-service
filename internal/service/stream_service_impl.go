@@ -617,7 +617,9 @@ func (s *StreamServiceImpl) GetStreamExport(ctx context.Context, streamID uuid.U
 
 	export, err := s.exportRepo.ReadByStream(ctx, streamID)
 	if repository.IsExportNotFound(err) {
-		return &StreamExportInfo{StreamID: streamID, Status: models.ExportStatusPending}, nil
+		// Not an error: the UI asks before anyone has pressed the button, and
+		// has to be able to say so.
+		return &StreamExportInfo{StreamID: streamID, Status: models.ExportStatusPending, Requested: false}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read stream export: %w", err)
@@ -717,10 +719,11 @@ func (s *StreamServiceImpl) CompleteStreamExport(ctx context.Context, streamID u
 
 func exportInfo(export *models.StreamExport) *StreamExportInfo {
 	return &StreamExportInfo{
-		StreamID: export.StreamID,
-		Status:   export.Status,
-		Size:     export.Size,
-		Error:    export.Error,
+		StreamID:  export.StreamID,
+		Status:    export.Status,
+		Size:      export.Size,
+		Error:     export.Error,
+		Requested: true,
 	}
 }
 

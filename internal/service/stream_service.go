@@ -98,6 +98,10 @@ type StreamExportInfo struct {
 	Status   models.StreamExportStatus
 	Size     int64
 	Error    string
+	// Requested distinguishes "this stream was never exported" from "an export
+	// is running". Both report StatusPending, so without this flag the UI can
+	// only ever show a spinner and never offer to start one.
+	Requested bool
 }
 
 // DownloadStreamInfo is an open reader over the cached mp4. The HTTP layer

@@ -14,13 +14,17 @@ type ExportResponse struct {
 	Status   models.StreamExportStatus `json:"status"`
 	Size     int64                     `json:"size,omitempty"`
 	Error    string                    `json:"error,omitempty"`
+	// Requested is false for a stream nobody has exported yet, which is the
+	// only thing separating "idle" from "being built" since both are pending.
+	Requested bool `json:"requested"`
 }
 
 func NewExportResponse(export *service.StreamExportInfo) *ExportResponse {
 	return &ExportResponse{
-		StreamID: export.StreamID.String(),
-		Status:   export.Status,
-		Size:     export.Size,
-		Error:    export.Error,
+		StreamID:  export.StreamID.String(),
+		Status:    export.Status,
+		Size:      export.Size,
+		Error:     export.Error,
+		Requested: export.Requested,
 	}
 }
