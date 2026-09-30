@@ -565,13 +565,23 @@ func (s *StreamServiceImpl) RequestStreamExport(ctx context.Context, streamID uu
 		if existing.Status == models.ExportStatusPending {
 			return exportInfo(existing), nil
 		}
-		// failed: retry below by resetting the same row
+		// Failed: retry it below. The reset is conditional on the row still
+		// being failed, so of two retries that arrive together only one gets
+		// to queue a mux and the other is answered with the pending row.
+		reset, rerr := s.exportRepo.ResetFailed(ctx, existing.ID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		if !reset {
+			current, cerr := s.exportRepo.ReadByStream(ctx, streamID)
+			if cerr != nil {
+				return nil, cerr
+			}
+			return exportInfo(current), nil
+		}
 		existing.Status = models.ExportStatusPending
 		existing.Error = ""
 		existing.Size = 0
-		if err := s.exportRepo.Update(ctx, existing); err != nil {
-			return nil, err
-		}
 	case repository.IsExportNotFound(err):
 		export := &models.StreamExport{
 			StreamID: streamID,

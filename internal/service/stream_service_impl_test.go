@@ -1118,12 +1118,40 @@ func TestStreamServiceImpl_RequestStreamExport(t *testing.T) {
 		}
 		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
 		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(row, nil)
-		exportRepo.EXPECT().Update(ctx, row).DoAndReturn(func(_ context.Context, e *models.StreamExport) error {
-			assert.Equal(t, models.ExportStatusPending, e.Status)
-			assert.Empty(t, e.Error)
-			return nil
-		})
+		exportRepo.EXPECT().ResetFailed(ctx, row.ID).Return(true, nil)
 		exportQueue.EXPECT().DistributeVideoExport(ctx, stream.ID, owner, "owner@example.com").Return(nil, nil)
+
+		info, err := svc.RequestStreamExport(ctx, stream.ID, owner, "owner@example.com")
+
+		require.NoError(t, err)
+		assert.Equal(t, models.ExportStatusPending, info.Status)
+		assert.Empty(t, info.Error)
+	})
+
+	t.Run("the loser of two racing retries does not queue a second mux", func(t *testing.T) {
+		// The reset is conditional on the row still being failed. When the
+		// other retry got there first, this one reads the pending row back and
+		// reports it instead of queueing work that would race the first mux.
+		svc, repo, exportRepo, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		failed := &models.StreamExport{
+			BaseModel: models.BaseModel{ID: uuid.New()},
+			StreamID:  stream.ID,
+			UserID:    owner.String(),
+			Status:    models.ExportStatusFailed,
+			Error:     "mux failed",
+		}
+		pending := &models.StreamExport{
+			BaseModel: models.BaseModel{ID: failed.ID},
+			StreamID:  stream.ID,
+			UserID:    owner.String(),
+			Status:    models.ExportStatusPending,
+		}
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(failed, nil)
+		exportRepo.EXPECT().ResetFailed(ctx, failed.ID).Return(false, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(pending, nil)
 
 		info, err := svc.RequestStreamExport(ctx, stream.ID, owner, "owner@example.com")
 

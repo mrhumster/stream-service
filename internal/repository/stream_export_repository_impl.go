@@ -43,6 +43,24 @@ func (r *GormStreamExportRepository) Update(ctx context.Context, export *models.
 	return nil
 }
 
+// ResetFailed moves a failed export back to pending and reports whether this
+// caller was the one that did it. The status is part of the WHERE clause, so
+// two retries racing each other cannot both win and both queue a mux for the
+// same stream.
+func (r *GormStreamExportRepository) ResetFailed(ctx context.Context, exportID uuid.UUID) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&models.StreamExport{}).
+		Where("id = ? AND status = ?", exportID, models.ExportStatusFailed).
+		Updates(map[string]any{
+			"status": models.ExportStatusPending,
+			"error":  "",
+			"size":   0,
+		})
+	if res.Error != nil {
+		return false, fmt.Errorf("failed to reset stream export: %w", res.Error)
+	}
+	return res.RowsAffected > 0, nil
+}
+
 // IsExportNotFound reports whether err came from a missing export row, so
 // callers can map it to their own error without importing gorm.
 func IsExportNotFound(err error) bool {

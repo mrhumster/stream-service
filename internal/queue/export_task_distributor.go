@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -38,8 +39,12 @@ func (d *AsyncExportDistributor) DistributeVideoExport(ctx context.Context, stre
 	if err != nil {
 		return nil, err
 	}
-	// One export per stream at a time: the task id makes a second request while
-	// the first is queued or running a no-op instead of a duplicate mux.
+	// The id carries the attempt, not just the stream. A fixed id per stream
+	// blocks the retry button for as long as asynq keeps the finished task
+	// around, which made a retry fail with "task ID conflicts with another
+	// task" long after the export had already settled. One export at a time per
+	// stream is decided by the export row, which is reset conditionally so two
+	// retries cannot both queue a mux.
 	info, err := d.client.EnqueueContext(ctx, task,
 		asynq.TaskID(exportTaskID(streamUUID)),
 		asynq.MaxRetry(1),
@@ -68,6 +73,9 @@ func newVideoExportTask(streamUUID, ownerUUID uuid.UUID, ownerEmail string) (*as
 	return asynq.NewTask(TaskVideoExport, payload), nil
 }
 
+// exportTaskID names a single attempt. The timestamp suffix keeps a retry from
+// colliding with the id of the attempt that just failed, which asynq keeps
+// holding for its retention window.
 func exportTaskID(streamUUID uuid.UUID) string {
-	return fmt.Sprintf("export-%s", streamUUID)
+	return fmt.Sprintf("export-%s-%d", streamUUID, time.Now().UnixNano())
 }

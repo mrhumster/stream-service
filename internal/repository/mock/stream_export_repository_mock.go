@@ -71,6 +71,21 @@ func (mr *MockStreamExportRepositoryMockRecorder) ReadByStream(ctx, streamID any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadByStream", reflect.TypeOf((*MockStreamExportRepository)(nil).ReadByStream), ctx, streamID)
 }
 
+// ResetFailed mocks base method.
+func (m *MockStreamExportRepository) ResetFailed(ctx context.Context, exportID uuid.UUID) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetFailed", ctx, exportID)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ResetFailed indicates an expected call of ResetFailed.
+func (mr *MockStreamExportRepositoryMockRecorder) ResetFailed(ctx, exportID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetFailed", reflect.TypeOf((*MockStreamExportRepository)(nil).ResetFailed), ctx, exportID)
+}
+
 // Update mocks base method.
 func (m *MockStreamExportRepository) Update(ctx context.Context, export *models.StreamExport) error {
 	m.ctrl.T.Helper()

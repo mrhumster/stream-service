@@ -16,4 +16,7 @@ type StreamExportRepository interface {
 	Create(ctx context.Context, export *models.StreamExport) error
 	ReadByStream(ctx context.Context, streamID uuid.UUID) (*models.StreamExport, error)
 	Update(ctx context.Context, export *models.StreamExport) error
+	// ResetFailed puts a failed export back to pending, returning false if it
+	// was no longer failed, which is how two concurrent retries are resolved.
+	ResetFailed(ctx context.Context, exportID uuid.UUID) (bool, error)
 }
