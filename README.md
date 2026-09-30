@@ -17,7 +17,10 @@ Video upload, HLS serving, stream catalog and real-time updates for GoCast.
 - Face-detection dispatch (per-stream `POST /:id/faces` or batch `POST /faces/batch`) to the
   asynq `faces` queue consumed by faces-service;
 - Server-side catalog search (`q`) and Own-view filters/sorting;
-- WebSocket hub (`STREAM_UPDATED` / `STREAM_READY`) to the stream owner;
+- On-demand single-file export: `POST /stream/:id/export` asks exporter-worker (asynq `export`
+  queue, Redis DB 4) to mux the existing HLS into `processed/<id>/video.mp4`, and the service
+  streams that object back for `GET /stream/:id/download` — no ffmpeg here, no presigned URL;
+- WebSocket hub (`STREAM_UPDATED` / `STREAM_READY` / `STREAM_EXPORT_READY`) to the stream owner;
 - Prometheus `/metrics` (RED + business counters).
 
 ## Ports
@@ -36,7 +39,9 @@ Routes are defined in `internal/delivery/http/routes/routes.go`.
 | `GET` | `/stream` | – | Public catalog (`limit` ≤ 100, `offset` ≤ 10000, `q` search over title/description/tags, ≤ 100 runes) |
 | `GET` | `/stream/:id` | optional | Stream detail (access by owner/visibility) |
 | `GET` | `/stream/:id/status` | – | Public status probe (`status`/`visibility`, `owner_id`/`title`) — used by comments/stats gates |
-| `GET` | `/stream/:id/download` | bearer | Generate a signed download URL |
+| `GET` | `/stream/:id/download` | bearer | Stream the cached mp4 (`Content-Disposition` attachment, owner only, `409` while pending) |
+| `GET` | `/stream/:id/export` | bearer | Export state (`pending`/`ready`/`failed`, `size`) — owner only |
+| `POST` | `/stream/:id/export` | bearer + `stream/write` | Queue the single-file export (202, idempotent) |
 | `GET` | `/stream/:id/hls/*file` | optional | HLS playlist/segments from MinIO |
 | `GET` | `/stream/ws/updates` | WS subprotocol | WebSocket updates for the owner |
 | `POST` | `/stream/` | bearer | Create stream |
@@ -159,6 +164,8 @@ is restricted to the configured allowed origins. The hub addresses updates by us
 | `DB_HOST` / `DB_PORT` / `DB_NAME` | Postgres | `postgresql`/`5432`/`database1` |
 | `DB_USER` / `DB_PASS` | Postgres credentials | _secret_ |
 | `REDIS_ADDR` / `REDIS_PASS` | asynq queue + WS (asynq uses DB 2) | `localhost` / `password` |
+| `EVENTS_QUEUE_DB` | Redis DB for the events queue (default 3) | `3` |
+| `EXPORT_QUEUE_DB` | Redis DB for the export queue (default 4) | `4` |
 | `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | MinIO | `minio:9000` / `admin` / `minio123` |
 | `MINIO_BUCKET_NAME` / `MINIO_REGION` / `MINIO_USE_SSL` | bucket | `go-app-bucket` / `us-east-1` / `false` |
 | `JWT_ACCESS_PUBLIC_KEY_URL` | identity public key (token verification) | – |

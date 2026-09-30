@@ -11,9 +11,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -1234,124 +1235,244 @@ func TestStreamHandler_StartStreamUpload(t *testing.T) {
 }
 
 func TestStreamHandler_DownloadStream(t *testing.T) {
-	setupTest := func() (*gin.Engine, *servicemock.MockStreamService, *StreamHandler) {
+	setupTest := func() (*gin.Engine, *servicemock.MockStreamService) {
 		router := setupTestRouter()
+		user := uuid.New()
 		router.Use(func(c *gin.Context) {
-			c.Set("user", uuid.New())
+			c.Set("user", user)
 			c.Next()
 		})
 		ctrl := gomock.NewController(t)
 		mockService := servicemock.NewMockStreamService(ctrl)
 		handler := NewStreamHandler(mockService, nil)
 		router.GET("/streams/:id/download", handler.DownloadStream)
-		return router, mockService, handler
+		return router, mockService
 	}
-	t.Run("successfull download request", func(t *testing.T) {
-		router, mockService, _ := setupTest()
+
+	t.Run("streams bytes with a download filename", func(t *testing.T) {
+		router, mockService := setupTest()
 		streamID := uuid.New()
-		expectedURL := "https://storage.example.com/streams/user-id/videos/file-key.mp4?signature=..."
-		expiresAt := time.Now().Add(1 * time.Hour)
+		payload := "fake-mp4-bytes"
 		mockService.EXPECT().
-			GenerateDownloadURL(gomock.Any(), streamID, gomock.Any()).
-			Return(&service.GenerateDownloadURLInfo{
-				DownloadURL: &url.URL{
-					Scheme:   "https",
-					Host:     "storage.example.com",
-					Path:     "/streams/user-id/videos/file-key.mp4",
-					RawQuery: "signature=...",
-				},
-				ExpiresAt: time.Now().Add(1 * time.Hour),
-				FileName:  "filename.ext",
-				Size:      int64(100),
+			OpenStreamDownload(gomock.Any(), streamID, gomock.Any()).
+			Return(&service.DownloadStreamInfo{
+				Content:     io.NopCloser(strings.NewReader(payload)),
+				ContentType: "video/mp4",
+				FileName:    "Отпуск на море.mp4",
+				Size:        int64(len(payload)),
 			}, nil)
+
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
-		req.Header.Set("Accept", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusOK, w.Code)
 
-		var resp response.DownloadResponse
-		err := json.Unmarshal(w.Body.Bytes(), &resp)
-		require.NoError(t, err)
-		assert.Equal(t, expectedURL, resp.URL)
-		assert.Equal(t, expiresAt.Format(time.RFC3339), resp.ExpiresAt.Format(time.RFC3339))
+		require.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, payload, w.Body.String())
+		assert.Equal(t, "video/mp4", w.Header().Get("Content-Type"))
+		assert.Equal(t, strconv.Itoa(len(payload)), w.Header().Get("Content-Length"))
+		// A Cyrillic title must still produce a valid header: the quoted
+		// parameter is downgraded to ASCII so old clients cannot choke on it,
+		// and filename* carries the real name.
+		disposition := w.Header().Get("Content-Disposition")
+		const marker = `filename="`
+		from := strings.Index(disposition, marker) + len(marker)
+		quoted := disposition[from : from+strings.Index(disposition[from:], `"`)]
+		for _, r := range quoted {
+			assert.LessOrEqual(t, int(r), 127, "quoted filename must stay ASCII: %q", quoted)
+		}
+		assert.Contains(t, disposition, "filename*=UTF-8''"+url.PathEscape("Отпуск на море.mp4"))
+		assert.Equal(t, ".mp4", filepath.Ext(quoted), "fallback keeps the extension so the OS opens it")
 	})
 
 	t.Run("wrong uuid", func(t *testing.T) {
-		router, _, _ := setupTest()
-		streamID := "bad-uuid-format"
-		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
-		req.Header.Set("Accept", "application/json")
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusInternalServerError, w.Code)
-	})
-
-	t.Run("stream not found", func(t *testing.T) {
-		router, mockService, _ := setupTest()
-		streamID := uuid.New()
-		mockService.EXPECT().GenerateDownloadURL(gomock.Any(), streamID, gomock.Any()).Return(nil, service.ErrStreamNotFound)
-		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code)
-		var resp response.Error
-		err := json.Unmarshal(w.Body.Bytes(), &resp)
-		require.NoError(t, err)
-		require.Contains(t, resp.Error, "stream not found")
-	})
-	t.Run("stream not ready for download", func(t *testing.T) {
-		router, mockService, _ := setupTest()
-		streamID := uuid.New()
-		mockService.EXPECT().GenerateDownloadURL(gomock.Any(), streamID, gomock.Any()).Return(nil, service.ErrStreamNotReady)
-		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
+		router, _ := setupTest()
+		req := httptest.NewRequest("GET", "/streams/bad-uuid-format/download", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusBadRequest, w.Code)
-		var resp response.Error
-		err := json.Unmarshal(w.Body.Bytes(), &resp)
-		require.NoError(t, err)
-		require.Contains(t, resp.Error, "stream not available for download")
 	})
 
-	t.Run("error conver service respose", func(t *testing.T) {
-		router, serviceMock, _ := setupTest()
+	t.Run("stream not found", func(t *testing.T) {
+		router, mockService := setupTest()
 		streamID := uuid.New()
-		serviceMock.EXPECT().GenerateDownloadURL(gomock.Any(), streamID, gomock.Any()).Return(
-			&service.GenerateDownloadURLInfo{
-				DownloadURL: nil,
-			}, nil)
+		mockService.EXPECT().OpenStreamDownload(gomock.Any(), streamID, gomock.Any()).Return(nil, service.ErrStreamNotFound)
+
 		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusInternalServerError, w.Code)
+
+		require.Equal(t, http.StatusNotFound, w.Code)
 		var resp response.Error
-		err := json.Unmarshal(w.Body.Bytes(), &resp)
-		require.NoError(t, err)
-		require.Contains(t, resp.Error, "failed to generate download link")
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Contains(t, resp.Error, "stream not found")
 	})
 
-	t.Run("direct download", func(t *testing.T) {
-		router, mockService, _ := setupTest()
+	t.Run("export not requested yet", func(t *testing.T) {
+		router, mockService := setupTest()
 		streamID := uuid.New()
-		mockService.EXPECT().
-			GenerateDownloadURL(gomock.Any(), streamID, gomock.Any()).
-			Return(&service.GenerateDownloadURLInfo{
-				DownloadURL: &url.URL{
-					Scheme:   "https",
-					Host:     "storage.example.com",
-					Path:     "/streams/user-id/videos/file-key.mp4",
-					RawQuery: "signature=...",
-				},
-				ExpiresAt: time.Now().Add(1 * time.Hour),
-				FileName:  "filename.ext",
-				Size:      int64(100),
-			}, nil)
-		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download?direct=true", streamID), nil)
-		req.Header.Set("Accept", "application/json")
+		mockService.EXPECT().OpenStreamDownload(gomock.Any(), streamID, gomock.Any()).Return(nil, service.ErrExportNotFound)
+
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusTemporaryRedirect, w.Code)
+
+		require.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("export still being prepared", func(t *testing.T) {
+		router, mockService := setupTest()
+		streamID := uuid.New()
+		mockService.EXPECT().OpenStreamDownload(gomock.Any(), streamID, gomock.Any()).Return(nil, service.ErrExportPending)
+
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusConflict, w.Code)
+		var resp response.Error
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Contains(t, resp.Error, "still being prepared")
+	})
+
+	t.Run("export failed", func(t *testing.T) {
+		router, mockService := setupTest()
+		streamID := uuid.New()
+		mockService.EXPECT().OpenStreamDownload(gomock.Any(), streamID, gomock.Any()).
+			Return(nil, fmt.Errorf("export failed: %s", "ffmpeg exited 1"))
+
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusConflict, w.Code)
+		var resp response.Error
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		// The worker error must not leak into the response body.
+		assert.NotContains(t, resp.Error, "ffmpeg")
+	})
+
+	t.Run("not the owner", func(t *testing.T) {
+		router, mockService := setupTest()
+		streamID := uuid.New()
+		mockService.EXPECT().OpenStreamDownload(gomock.Any(), streamID, gomock.Any()).Return(nil, service.ErrStreamForbidden)
+
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("unexpected error", func(t *testing.T) {
+		router, mockService := setupTest()
+		streamID := uuid.New()
+		mockService.EXPECT().OpenStreamDownload(gomock.Any(), streamID, gomock.Any()).Return(nil, errors.New("minio down"))
+
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/download", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		var resp response.Error
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Contains(t, resp.Error, "failed to prepare download")
+	})
+}
+
+func TestStreamHandler_Export(t *testing.T) {
+	setupTest := func() (*gin.Engine, *servicemock.MockStreamService) {
+		router := setupTestRouter()
+		user := uuid.New()
+		router.Use(func(c *gin.Context) {
+			c.Set("user", user)
+			c.Set("claims", &dto.AccessClaims{Email: "owner@example.com", EmailVerified: true})
+			c.Next()
+		})
+		ctrl := gomock.NewController(t)
+		mockService := servicemock.NewMockStreamService(ctrl)
+		handler := NewStreamHandler(mockService, nil)
+		router.GET("/streams/:id/export", handler.GetExport)
+		router.POST("/streams/:id/export", handler.RequestExport)
+		return router, mockService
+	}
+
+	t.Run("request queues the export and returns 202", func(t *testing.T) {
+		router, mockService := setupTest()
+		streamID := uuid.New()
+		// The email is taken from the signed token, not from a body field, so a
+		// caller cannot redirect the notification to someone else.
+		mockService.EXPECT().
+			RequestStreamExport(gomock.Any(), streamID, gomock.Any(), "owner@example.com").
+			Return(&service.StreamExportInfo{StreamID: streamID, Status: models.ExportStatusPending}, nil)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/export", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusAccepted, w.Code)
+		var resp response.ExportResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, models.ExportStatusPending, resp.Status)
+		assert.Equal(t, streamID.String(), resp.StreamID)
+	})
+
+	t.Run("already ready is reported as ready", func(t *testing.T) {
+		router, mockService := setupTest()
+		streamID := uuid.New()
+		mockService.EXPECT().RequestStreamExport(gomock.Any(), streamID, gomock.Any(), "owner@example.com").
+			Return(&service.StreamExportInfo{StreamID: streamID, Status: models.ExportStatusReady, Size: 2048}, nil)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/export", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusAccepted, w.Code)
+		var resp response.ExportResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, models.ExportStatusReady, resp.Status)
+		assert.Equal(t, int64(2048), resp.Size)
+	})
+
+	t.Run("request on a stream that is not ready", func(t *testing.T) {
+		router, mockService := setupTest()
+		streamID := uuid.New()
+		mockService.EXPECT().RequestStreamExport(gomock.Any(), streamID, gomock.Any(), gomock.Any()).
+			Return(nil, service.ErrStreamNotReady)
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/export", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("status read", func(t *testing.T) {
+		router, mockService := setupTest()
+		streamID := uuid.New()
+		mockService.EXPECT().GetStreamExport(gomock.Any(), streamID, gomock.Any()).
+			Return(&service.StreamExportInfo{StreamID: streamID, Status: models.ExportStatusFailed, Error: "ffmpeg exited 1"}, nil)
+
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/export", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp response.ExportResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, models.ExportStatusFailed, resp.Status)
+		assert.Equal(t, "ffmpeg exited 1", resp.Error)
+	})
+
+	t.Run("status read by a non-owner", func(t *testing.T) {
+		router, mockService := setupTest()
+		streamID := uuid.New()
+		mockService.EXPECT().GetStreamExport(gomock.Any(), streamID, gomock.Any()).Return(nil, service.ErrStreamForbidden)
+
+		req := httptest.NewRequest("GET", fmt.Sprintf("/streams/%s/export", streamID), nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusForbidden, w.Code)
 	})
 }
 

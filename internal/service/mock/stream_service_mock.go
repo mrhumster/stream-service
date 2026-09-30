@@ -44,6 +44,20 @@ func (m *MockStreamService) EXPECT() *MockStreamServiceMockRecorder {
 	return m.recorder
 }
 
+// CompleteStreamExport mocks base method.
+func (m *MockStreamService) CompleteStreamExport(ctx context.Context, streamID uuid.UUID, size int64, exportErr string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CompleteStreamExport", ctx, streamID, size, exportErr)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CompleteStreamExport indicates an expected call of CompleteStreamExport.
+func (mr *MockStreamServiceMockRecorder) CompleteStreamExport(ctx, streamID, size, exportErr any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteStreamExport", reflect.TypeOf((*MockStreamService)(nil).CompleteStreamExport), ctx, streamID, size, exportErr)
+}
+
 // CompleteStreamUpload mocks base method.
 func (m *MockStreamService) CompleteStreamUpload(ctx context.Context, req service.CompleteStreamUploadRequest) error {
 	m.ctrl.T.Helper()
@@ -87,21 +101,6 @@ func (mr *MockStreamServiceMockRecorder) DeleteStream(ctx, id any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteStream", reflect.TypeOf((*MockStreamService)(nil).DeleteStream), ctx, id)
 }
 
-// GenerateDownloadURL mocks base method.
-func (m *MockStreamService) GenerateDownloadURL(ctx context.Context, streamID, userUUID uuid.UUID) (*service.GenerateDownloadURLInfo, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GenerateDownloadURL", ctx, streamID, userUUID)
-	ret0, _ := ret[0].(*service.GenerateDownloadURLInfo)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GenerateDownloadURL indicates an expected call of GenerateDownloadURL.
-func (mr *MockStreamServiceMockRecorder) GenerateDownloadURL(ctx, streamID, userUUID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateDownloadURL", reflect.TypeOf((*MockStreamService)(nil).GenerateDownloadURL), ctx, streamID, userUUID)
-}
-
 // GetFileByKey mocks base method.
 func (m *MockStreamService) GetFileByKey(ctx context.Context, req *service.GetFileByKeyRequest) (*service.GetFileByKeyResponse, error) {
 	m.ctrl.T.Helper()
@@ -130,6 +129,21 @@ func (m *MockStreamService) GetStream(ctx context.Context, id uuid.UUID) (*model
 func (mr *MockStreamServiceMockRecorder) GetStream(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStream", reflect.TypeOf((*MockStreamService)(nil).GetStream), ctx, id)
+}
+
+// GetStreamExport mocks base method.
+func (m *MockStreamService) GetStreamExport(ctx context.Context, streamID, userUUID uuid.UUID) (*service.StreamExportInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetStreamExport", ctx, streamID, userUUID)
+	ret0, _ := ret[0].(*service.StreamExportInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetStreamExport indicates an expected call of GetStreamExport.
+func (mr *MockStreamServiceMockRecorder) GetStreamExport(ctx, streamID, userUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStreamExport", reflect.TypeOf((*MockStreamService)(nil).GetStreamExport), ctx, streamID, userUUID)
 }
 
 // GetStreamStatus mocks base method.
@@ -177,6 +191,21 @@ func (m *MockStreamService) ListUserStreams(ctx context.Context, userID uuid.UUI
 func (mr *MockStreamServiceMockRecorder) ListUserStreams(ctx, userID, filter any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUserStreams", reflect.TypeOf((*MockStreamService)(nil).ListUserStreams), ctx, userID, filter)
+}
+
+// OpenStreamDownload mocks base method.
+func (m *MockStreamService) OpenStreamDownload(ctx context.Context, streamID, userUUID uuid.UUID) (*service.DownloadStreamInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OpenStreamDownload", ctx, streamID, userUUID)
+	ret0, _ := ret[0].(*service.DownloadStreamInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// OpenStreamDownload indicates an expected call of OpenStreamDownload.
+func (mr *MockStreamServiceMockRecorder) OpenStreamDownload(ctx, streamID, userUUID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenStreamDownload", reflect.TypeOf((*MockStreamService)(nil).OpenStreamDownload), ctx, streamID, userUUID)
 }
 
 // ProcessFacesBatch mocks base method.
@@ -234,6 +263,21 @@ func (m *MockStreamService) ReprocessStream(ctx context.Context, streamID uuid.U
 func (mr *MockStreamServiceMockRecorder) ReprocessStream(ctx, streamID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReprocessStream", reflect.TypeOf((*MockStreamService)(nil).ReprocessStream), ctx, streamID)
+}
+
+// RequestStreamExport mocks base method.
+func (m *MockStreamService) RequestStreamExport(ctx context.Context, streamID, userUUID uuid.UUID, email string) (*service.StreamExportInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RequestStreamExport", ctx, streamID, userUUID, email)
+	ret0, _ := ret[0].(*service.StreamExportInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RequestStreamExport indicates an expected call of RequestStreamExport.
+func (mr *MockStreamServiceMockRecorder) RequestStreamExport(ctx, streamID, userUUID, email any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestStreamExport", reflect.TypeOf((*MockStreamService)(nil).RequestStreamExport), ctx, streamID, userUUID, email)
 }
 
 // StartStreamUpload mocks base method.

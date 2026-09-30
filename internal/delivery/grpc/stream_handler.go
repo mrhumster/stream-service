@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -139,4 +140,24 @@ func (s *StreamGRPCServer) UpdateStreamProcessing(ctx context.Context, req *stre
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &stream.UpdateStreamProcessingResponse{Updated: true}, nil
+}
+
+// CompleteStreamExport is the worker's only way to finish a job. A failed mux is
+// reported as a business outcome (success=false), not a transport error, so the
+// state row is always updated.
+func (s *StreamGRPCServer) CompleteStreamExport(ctx context.Context, req *stream.CompleteStreamExportRequest) (*stream.CompleteStreamExportResponse, error) {
+	streamID, err := uuid.Parse(req.StreamUuid)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if req.Success && req.Size <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "size must be positive for a successful export")
+	}
+	if err := s.streamService.CompleteStreamExport(ctx, streamID, req.Size, req.Error); err != nil {
+		if errors.Is(err, service.ErrExportNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &stream.CompleteStreamExportResponse{Updated: true}, nil
 }

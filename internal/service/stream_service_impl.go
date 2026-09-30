@@ -41,6 +41,8 @@ type StreamServiceImpl struct {
 	cfg              *config.Server
 	eventsRecorder   queue.ActivityEventRecorder
 	cascadeRecorder  queue.FacesCascadeRecorder
+	exportRepo       repository.StreamExportRepository
+	exportQueue      queue.ExportTaskDistributor
 }
 
 func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor, hub wss.Hub, cfg *config.Server) *StreamServiceImpl {
@@ -66,6 +68,21 @@ func (s *StreamServiceImpl) WithActivityRecorder(r queue.ActivityEventRecorder) 
 // face data for it.
 func (s *StreamServiceImpl) WithFacesCascadeRecorder(r queue.FacesCascadeRecorder) *StreamServiceImpl {
 	s.cascadeRecorder = r
+	return s
+}
+
+// WithExportQueue attaches the distributor used to ask the export worker for a
+// single-file rendition. It is separate from TaskDistributor because the export
+// queue lives in its own Redis DB, so the export service can be scaled and
+// restarted without touching transcoding.
+func (s *StreamServiceImpl) WithExportQueue(q queue.ExportTaskDistributor) *StreamServiceImpl {
+	s.exportQueue = q
+	return s
+}
+
+// WithExportRepository attaches the store for export state.
+func (s *StreamServiceImpl) WithExportRepository(r repository.StreamExportRepository) *StreamServiceImpl {
+	s.exportRepo = r
 	return s
 }
 
@@ -120,6 +137,17 @@ var (
 	ErrSourceFileMissing     = errors.New("source file is missing")
 	ErrCannotPublish         = errors.New("stream must be ready before publishing")
 	ErrCannotUnpublish       = errors.New("only published streams can be unpublished")
+	ErrStreamForbidden       = errors.New("only the stream owner can do this")
+	ErrExportNotFound        = errors.New("no export has been prepared for this stream")
+	ErrExportPending         = errors.New("export is still being prepared")
+)
+
+const (
+	// defaultDownloadName is used when a title sanitizes down to nothing.
+	defaultDownloadName = "stream.mp4"
+	// maxDownloadNameLen keeps the attachment name inside what common
+	// filesystems accept once a multi-byte title is counted in bytes.
+	maxDownloadNameLen = 120
 )
 
 func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRequest) (*models.Stream, error) {
@@ -509,51 +537,219 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 	return nil
 }
 
-func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*GenerateDownloadURLInfo, error) {
-	stream, err := s.GetStream(ctx, streamID)
+// RequestStreamExport queues a single-file export of the stream and returns the
+// resulting state. Re-requesting an export that is already ready is a no-op;
+// one that is pending is not re-queued, because the worker is already on it.
+func (s *StreamServiceImpl) RequestStreamExport(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID, email string) (*StreamExportInfo, error) {
+	stream, err := s.repo.Read(ctx, streamID)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrStreamNotFound
+		}
+		return nil, fmt.Errorf("failed to read stream: %w", err)
 	}
 
+	if stream.OwnerID != userUUID {
+		return nil, ErrStreamForbidden
+	}
 	if stream.Status != models.StatusReady && stream.Status != models.StatusPublished {
 		return nil, ErrStreamNotReady
 	}
 
-	var storageInfo models.StreamStorage
-	if err := json.Unmarshal(stream.Storage, &storageInfo); err != nil {
-		return nil, fmt.Errorf("failed to parse storage info: %w", err)
+	existing, err := s.exportRepo.ReadByStream(ctx, streamID)
+	switch {
+	case err == nil:
+		if existing.Status == models.ExportStatusReady {
+			return exportInfo(existing), nil
+		}
+		if existing.Status == models.ExportStatusPending {
+			return exportInfo(existing), nil
+		}
+		// failed: retry below by resetting the same row
+		existing.Status = models.ExportStatusPending
+		existing.Error = ""
+		existing.Size = 0
+		if err := s.exportRepo.Update(ctx, existing); err != nil {
+			return nil, err
+		}
+	case repository.IsExportNotFound(err):
+		export := &models.StreamExport{
+			StreamID: streamID,
+			UserID:   userUUID.String(),
+			Status:   models.ExportStatusPending,
+		}
+		if err := s.exportRepo.Create(ctx, export); err != nil {
+			return nil, err
+		}
+		existing = export
+	default:
+		return nil, fmt.Errorf("failed to read stream export: %w", err)
 	}
 
-	if storageInfo.Key == "" {
-		return nil, fmt.Errorf("storage key is empty")
+	if _, err := s.exportQueue.DistributeVideoExport(ctx, streamID, userUUID, email); err != nil {
+		// Surface the queue failure and drop the row back to a clean state so a
+		// retry does not look like a duplicate no-op.
+		existing.Status = models.ExportStatusFailed
+		existing.Error = "failed to queue export"
+		if uerr := s.exportRepo.Update(ctx, existing); uerr != nil {
+			slog.Error("failed to mark export as failed", "stream", streamID, "error", uerr)
+		}
+		return nil, fmt.Errorf("failed to queue export: %w", err)
 	}
 
-	var streamMeta models.StreamMetadata
-	if err := json.Unmarshal(stream.Metadata, &streamMeta); err != nil {
-		return nil, fmt.Errorf("failed to parse meta info: %w", err)
+	return exportInfo(existing), nil
+}
+
+// GetStreamExport reports the current export state for the owner. A stream that
+// was never exported reports pending=false rather than an error, so the UI can
+// tell "nothing yet" from "still working".
+func (s *StreamServiceImpl) GetStreamExport(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*StreamExportInfo, error) {
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrStreamNotFound
+		}
+		return nil, fmt.Errorf("failed to read stream: %w", err)
+	}
+	if stream.OwnerID != userUUID {
+		return nil, ErrStreamForbidden
 	}
 
-	if stream.Visibility != models.VisibilityPublic {
-		if stream.OwnerID != userUUID {
-			return nil, fmt.Errorf("not owner and not public")
+	export, err := s.exportRepo.ReadByStream(ctx, streamID)
+	if repository.IsExportNotFound(err) {
+		return &StreamExportInfo{StreamID: streamID, Status: models.ExportStatusPending}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read stream export: %w", err)
+	}
+	return exportInfo(export), nil
+}
+
+// OpenStreamDownload opens the cached mp4 for the owner. It is a straight proxy
+// of the object the export worker wrote: no transcoding happens here, so the
+// cost is one storage read regardless of the video length.
+func (s *StreamServiceImpl) OpenStreamDownload(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*DownloadStreamInfo, error) {
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrStreamNotFound
+		}
+		return nil, fmt.Errorf("failed to read stream: %w", err)
+	}
+	if stream.OwnerID != userUUID {
+		return nil, ErrStreamForbidden
+	}
+
+	export, err := s.exportRepo.ReadByStream(ctx, streamID)
+	if repository.IsExportNotFound(err) {
+		return nil, ErrExportNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read stream export: %w", err)
+	}
+	switch export.Status {
+	case models.ExportStatusPending:
+		return nil, ErrExportPending
+	case models.ExportStatusFailed:
+		return nil, fmt.Errorf("export failed: %s", export.Error)
+	}
+
+	key := export.ObjectKey()
+	content, size, err := s.storage.Download(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open export: %w", err)
+	}
+	if size <= 0 {
+		_ = content.Close()
+		return nil, fmt.Errorf("export object is empty")
+	}
+
+	return &DownloadStreamInfo{
+		Content:     content,
+		ContentType: "video/mp4",
+		FileName:    downloadFileName(stream.Title),
+		Size:        size,
+	}, nil
+}
+
+// CompleteStreamExport records the worker's outcome and, on success, tells the
+// owner's open websocket connections that the file is ready.
+func (s *StreamServiceImpl) CompleteStreamExport(ctx context.Context, streamID uuid.UUID, size int64, exportErr string) error {
+	export, err := s.exportRepo.ReadByStream(ctx, streamID)
+	if err != nil {
+		if repository.IsExportNotFound(err) {
+			return ErrExportNotFound
+		}
+		return fmt.Errorf("failed to read stream export: %w", err)
+	}
+
+	if exportErr != "" {
+		export.Status = models.ExportStatusFailed
+		export.Error = exportErr
+		export.Size = 0
+	} else {
+		export.Status = models.ExportStatusReady
+		export.Error = ""
+		export.Size = size
+	}
+	if err := s.exportRepo.Update(ctx, export); err != nil {
+		return err
+	}
+
+	if export.Status == models.ExportStatusReady && s.hub != nil {
+		// user_id is a text column, so a bad value must not take the process
+		// down from an RPC handler.
+		ownerID, err := uuid.Parse(export.UserID)
+		if err != nil {
+			slog.Error("export owner is not a uuid, cannot notify", "stream", streamID, "user_id", export.UserID)
+		} else {
+			s.hub.SendMessgeToOwner(ownerID, gin.H{
+				"type": "STREAM_EXPORT_READY",
+				"payload": gin.H{
+					"stream_id": streamID,
+					"size":      export.Size,
+				},
+			})
 		}
 	}
+	return nil
+}
 
-	expires := 1 * time.Hour
-
-	url, err := s.storage.GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, expires)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate Download URL: %w", err)
+func exportInfo(export *models.StreamExport) *StreamExportInfo {
+	return &StreamExportInfo{
+		StreamID: export.StreamID,
+		Status:   export.Status,
+		Size:     export.Size,
+		Error:    export.Error,
 	}
+}
 
-	resp := &GenerateDownloadURLInfo{
-		DownloadURL: url,
-		ExpiresAt:   time.Now().Add(expires),
-		FileName:    storageInfo.Filename,
-		Size:        streamMeta.Size,
+// downloadFileName turns a stream title into a safe attachment name. Titles are
+// user input, so anything that could break out of the header, confuse a path or
+// upset a filesystem is replaced; the extension is always mp4 because that is
+// what the export worker writes.
+func downloadFileName(title string) string {
+	name := strings.TrimSpace(title)
+	if ext := path.Ext(name); ext != "" {
+		name = strings.TrimSuffix(name, ext)
 	}
-
-	return resp, nil
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r < 0x20 || r == 0x7f:
+			return -1
+		case strings.ContainsRune(`\/:*?"<>|`, r):
+			return -1
+		}
+		return r
+	}, name)
+	name = strings.TrimSpace(strings.Trim(name, "."))
+	if name == "" {
+		return defaultDownloadName
+	}
+	if len(name) > maxDownloadNameLen {
+		name = strings.TrimSpace(name[:maxDownloadNameLen])
+	}
+	return name + ".mp4"
 }
 
 // Multipart upload methods

@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"path"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	authmock "github.com/mrhumster/identity-service/pkg/auth/mock"
 	"github.com/mrhumster/stream-service/config"
@@ -23,6 +23,7 @@ import (
 	"github.com/mrhumster/stream-service/internal/service"
 	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/stream-service/internal/storage/mock"
+	wssmock "github.com/mrhumster/stream-service/internal/wss/mock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -993,125 +994,408 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 	})
 }
 
-func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
+// exportSvc wires the export collaborators onto a service so each case only has
+// to declare the behaviour it cares about.
+func exportSvc(t *testing.T) (service.StreamService, *repomock.MockStreamRepository, *repomock.MockStreamExportRepository, *mock.MockFileStorage, *queuemock.MockExportTaskDistributor) {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	repo := repomock.NewMockStreamRepository(ctrl)
+	exportRepo := repomock.NewMockStreamExportRepository(ctrl)
+	storage := mock.NewMockFileStorage(ctrl)
+	exportQueue := queuemock.NewMockExportTaskDistributor(ctrl)
+
+	svc := service.NewStreamServiceImpl(repo, authmock.NewMockPermissionClient(ctrl), storage, queuemock.NewMockTaskDistributor(ctrl), nil, srvCfg())
+	svc.WithExportRepository(exportRepo)
+	svc.WithExportQueue(exportQueue)
+	return svc, repo, exportRepo, storage, exportQueue
+}
+
+func exportStream(owner uuid.UUID, status models.StreamStatus) *models.Stream {
+	return &models.Stream{
+		BaseModel: models.BaseModel{ID: uuid.New()},
+		OwnerID:   owner,
+		Status:    status,
+	}
+}
+
+// exportSvcNoRepo is exportSvc without the stream repository, for the worker
+// callback which never touches a stream row.
+func exportSvcNoRepo(t *testing.T) (service.StreamService, *repomock.MockStreamExportRepository, *mock.MockFileStorage) {
+	t.Helper()
+	svc, _, exportRepo, storage, _ := exportSvc(t)
+	return svc, exportRepo, storage
+}
+
+// exportSvcWithHub attaches a hub so the ready notification can be asserted.
+func exportSvcWithHub(t *testing.T) (service.StreamService, *repomock.MockStreamExportRepository, *wssmock.MockHub) {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	exportRepo := repomock.NewMockStreamExportRepository(ctrl)
+	hub := wssmock.NewMockHub(ctrl)
+
+	svc := service.NewStreamServiceImpl(
+		repomock.NewMockStreamRepository(ctrl),
+		authmock.NewMockPermissionClient(ctrl),
+		mock.NewMockFileStorage(ctrl),
+		queuemock.NewMockTaskDistributor(ctrl),
+		hub,
+		srvCfg(),
+	)
+	svc.WithExportRepository(exportRepo)
+	svc.WithExportQueue(queuemock.NewMockExportTaskDistributor(ctrl))
+	return svc, exportRepo, hub
+}
+
+func TestStreamServiceImpl_RequestStreamExport(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("successful URL generation", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
+	t.Run("creates a pending row and queues the worker", func(t *testing.T) {
+		svc, repo, exportRepo, _, exportQueue := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(nil, gorm.ErrRecordNotFound)
+		exportRepo.EXPECT().Create(ctx, gomock.Any()).DoAndReturn(func(_ context.Context, e *models.StreamExport) error {
+			assert.Equal(t, models.ExportStatusPending, e.Status)
+			assert.Equal(t, stream.ID, e.StreamID)
+			assert.Equal(t, owner.String(), e.UserID)
+			return nil
+		})
+		exportQueue.EXPECT().DistributeVideoExport(ctx, stream.ID, owner, "owner@example.com").Return(nil, nil)
 
-		mockRepo := repomock.NewMockStreamRepository(ctrl)
-		mockStorage := mock.NewMockFileStorage(ctrl)
-		mockPerm := authmock.NewMockPermissionClient(ctrl)
-
-		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
-
-		streamID := uuid.New()
-		userID := uuid.New()
-
-		storageInfo := models.StreamStorage{
-			Provider: "minio",
-			Key:      "streams/user-id/videos/file-key.mp4",
-			Filename: "video.mp4",
-			Bucket:   "streams",
-		}
-
-		streamMeta := models.StreamMetadata{
-			Size: int64(100),
-		}
-
-		metaJSON, _ := json.Marshal(streamMeta)
-
-		storageJSON, _ := json.Marshal(storageInfo)
-
-		stream := &models.Stream{
-			BaseModel: models.BaseModel{ID: streamID},
-			OwnerID:   userID,
-			Status:    models.StatusReady,
-			Storage:   datatypes.JSON(storageJSON),
-			Metadata:  datatypes.JSON(metaJSON),
-		}
-
-		mockRepo.EXPECT().
-			Read(ctx, streamID).
-			Return(stream, nil)
-
-		expectedURL := "https://storage.example.com/streams/user-id/videos/file-key.mp4?signature=..."
-		mockStorage.EXPECT().
-			GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, gomock.Any()).
-			Return(&url.URL{
-				Scheme:   "https",
-				Host:     "storage.example.com",
-				Path:     "/streams/user-id/videos/file-key.mp4",
-				RawQuery: "signature=...",
-			}, nil)
-
-		resp, err := serviceImpl.GenerateDownloadURL(ctx, streamID, userID)
+		info, err := svc.RequestStreamExport(ctx, stream.ID, owner, "owner@example.com")
 
 		require.NoError(t, err)
-		assert.Equal(t, expectedURL, resp.DownloadURL.String())
-		assert.True(t, resp.ExpiresAt.After(time.Now()))
+		assert.Equal(t, models.ExportStatusPending, info.Status)
 	})
 
-	t.Run("stream not found", func(t *testing.T) {
-		// ...
-	})
+	t.Run("ready export is a no-op", func(t *testing.T) {
+		svc, repo, exportRepo, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusPublished)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(&models.StreamExport{
+			StreamID: stream.ID, Status: models.ExportStatusReady, Size: 4242,
+		}, nil)
+		// No DistributeVideoExport expectation: gomock fails on an unexpected call.
 
-	t.Run("access denied", func(t *testing.T) {
-		// ...
-	})
-
-	t.Run("stream not ready", func(t *testing.T) {
-		// ...
-	})
-
-	t.Run("published stream is downloadable", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-
-		mockRepo := repomock.NewMockStreamRepository(ctrl)
-		mockStorage := mock.NewMockFileStorage(ctrl)
-		mockPerm := authmock.NewMockPermissionClient(ctrl)
-		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
-
-		streamID := uuid.New()
-		userID := uuid.New()
-
-		storageInfo := models.StreamStorage{
-			Provider: "minio",
-			Key:      "streams/user-id/videos/file-key.mp4",
-			Filename: "video.mp4",
-			Bucket:   "streams",
-		}
-		streamMeta := models.StreamMetadata{Size: int64(200)}
-
-		metaJSON, _ := json.Marshal(streamMeta)
-		storageJSON, _ := json.Marshal(storageInfo)
-
-		stream := &models.Stream{
-			BaseModel: models.BaseModel{ID: streamID},
-			OwnerID:   userID,
-			Status:    models.StatusPublished,
-			Storage:   datatypes.JSON(storageJSON),
-			Metadata:  datatypes.JSON(metaJSON),
-		}
-
-		mockRepo.EXPECT().Read(ctx, streamID).Return(stream, nil)
-		mockStorage.EXPECT().
-			GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, gomock.Any()).
-			Return(&url.URL{
-				Scheme:   "https",
-				Host:     "storage.example.com",
-				Path:     "/streams/user-id/videos/file-key.mp4",
-				RawQuery: "signature=...",
-			}, nil)
-
-		resp, err := serviceImpl.GenerateDownloadURL(ctx, streamID, userID)
+		info, err := svc.RequestStreamExport(ctx, stream.ID, owner, "owner@example.com")
 
 		require.NoError(t, err)
-		assert.True(t, resp.ExpiresAt.After(time.Now()))
+		assert.Equal(t, models.ExportStatusReady, info.Status)
+		assert.Equal(t, int64(4242), info.Size)
+	})
+
+	t.Run("in-flight export is not queued twice", func(t *testing.T) {
+		svc, repo, exportRepo, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(&models.StreamExport{
+			StreamID: stream.ID, Status: models.ExportStatusPending,
+		}, nil)
+
+		info, err := svc.RequestStreamExport(ctx, stream.ID, owner, "owner@example.com")
+
+		require.NoError(t, err)
+		assert.Equal(t, models.ExportStatusPending, info.Status)
+	})
+
+	t.Run("failed export is retried on the same row", func(t *testing.T) {
+		svc, repo, exportRepo, _, exportQueue := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		row := &models.StreamExport{
+			BaseModel: models.BaseModel{ID: uuid.New()},
+			StreamID:  stream.ID,
+			UserID:    owner.String(),
+			Status:    models.ExportStatusFailed,
+			Error:     "mux failed",
+		}
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(row, nil)
+		exportRepo.EXPECT().Update(ctx, row).DoAndReturn(func(_ context.Context, e *models.StreamExport) error {
+			assert.Equal(t, models.ExportStatusPending, e.Status)
+			assert.Empty(t, e.Error)
+			return nil
+		})
+		exportQueue.EXPECT().DistributeVideoExport(ctx, stream.ID, owner, "owner@example.com").Return(nil, nil)
+
+		info, err := svc.RequestStreamExport(ctx, stream.ID, owner, "owner@example.com")
+
+		require.NoError(t, err)
+		assert.Equal(t, models.ExportStatusPending, info.Status)
+	})
+
+	t.Run("non-owner is refused", func(t *testing.T) {
+		svc, repo, _, _, _ := exportSvc(t)
+		stream := exportStream(uuid.New(), models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+
+		_, err := svc.RequestStreamExport(ctx, stream.ID, uuid.New(), "x@example.com")
+
+		require.ErrorIs(t, err, service.ErrStreamForbidden)
+	})
+
+	t.Run("unprocessed stream is refused", func(t *testing.T) {
+		svc, repo, _, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusProcessing)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+
+		_, err := svc.RequestStreamExport(ctx, stream.ID, owner, "owner@example.com")
+
+		require.ErrorIs(t, err, service.ErrStreamNotReady)
+	})
+
+	t.Run("queue failure marks the row failed", func(t *testing.T) {
+		svc, repo, exportRepo, _, exportQueue := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(nil, gorm.ErrRecordNotFound)
+		// The service builds the row itself, so capture it instead of asserting
+		// on a pre-made value: the follow-up Update must hit this same record.
+		var created *models.StreamExport
+		exportRepo.EXPECT().Create(ctx, gomock.Any()).
+			DoAndReturn(func(_ context.Context, e *models.StreamExport) error {
+				created = e
+				return nil
+			})
+		exportQueue.EXPECT().DistributeVideoExport(ctx, stream.ID, owner, "owner@example.com").
+			Return(nil, errors.New("redis down"))
+		// Matched with gomock.Any because gomock binds matcher arguments when the
+		// expectation is registered, before Create has run to fill in `created`.
+		exportRepo.EXPECT().Update(ctx, gomock.Any()).DoAndReturn(func(_ context.Context, e *models.StreamExport) error {
+			assert.Same(t, created, e, "the failure must be recorded on the row that was created")
+			assert.Equal(t, models.ExportStatusFailed, e.Status)
+			assert.NotEmpty(t, e.Error)
+			return nil
+		})
+
+		_, err := svc.RequestStreamExport(ctx, stream.ID, owner, "owner@example.com")
+
+		require.Error(t, err)
+	})
+}
+
+func TestStreamServiceImpl_GetStreamExport(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("never exported reads as pending", func(t *testing.T) {
+		svc, repo, exportRepo, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(nil, gorm.ErrRecordNotFound)
+
+		info, err := svc.GetStreamExport(ctx, stream.ID, owner)
+
+		require.NoError(t, err)
+		assert.Equal(t, models.ExportStatusPending, info.Status)
+	})
+
+	t.Run("non-owner is refused", func(t *testing.T) {
+		svc, repo, _, _, _ := exportSvc(t)
+		stream := exportStream(uuid.New(), models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+
+		_, err := svc.GetStreamExport(ctx, stream.ID, uuid.New())
+
+		require.ErrorIs(t, err, service.ErrStreamForbidden)
+	})
+}
+
+func TestStreamServiceImpl_OpenStreamDownload(t *testing.T) {
+	ctx := context.Background()
+	payload := []byte("fake mp4 bytes")
+
+	t.Run("streams the cached object to the owner", func(t *testing.T) {
+		svc, repo, exportRepo, storage, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusPublished)
+		stream.Title = "My vacation"
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(&models.StreamExport{
+			StreamID: stream.ID, Status: models.ExportStatusReady, Size: int64(len(payload)),
+		}, nil)
+		storage.EXPECT().Download(ctx, models.ExportObjectKey(stream.ID)).
+			Return(io.NopCloser(bytes.NewReader(payload)), int64(len(payload)), nil)
+
+		info, err := svc.OpenStreamDownload(ctx, stream.ID, owner)
+
+		require.NoError(t, err)
+		assert.Equal(t, "video/mp4", info.ContentType)
+		assert.Equal(t, "My vacation.mp4", info.FileName)
+		got, err := io.ReadAll(info.Content)
+		require.NoError(t, err)
+		assert.Equal(t, payload, got)
+		require.NoError(t, info.Content.Close())
+	})
+
+	t.Run("title is sanitized into a safe attachment name", func(t *testing.T) {
+		svc, repo, exportRepo, storage, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		stream.Title = `../../etc/pass wd"rm -rf|`
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(&models.StreamExport{
+			StreamID: stream.ID, Status: models.ExportStatusReady, Size: int64(len(payload)),
+		}, nil)
+		storage.EXPECT().Download(ctx, models.ExportObjectKey(stream.ID)).
+			Return(io.NopCloser(bytes.NewReader(payload)), int64(len(payload)), nil)
+
+		info, err := svc.OpenStreamDownload(ctx, stream.ID, owner)
+
+		require.NoError(t, err)
+		assert.Equal(t, "etcpass wdrm -rf.mp4", info.FileName)
+		assert.NotContains(t, info.FileName, "..")
+		require.NoError(t, info.Content.Close())
+	})
+
+	t.Run("empty object is refused", func(t *testing.T) {
+		svc, repo, exportRepo, storage, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(&models.StreamExport{
+			StreamID: stream.ID, Status: models.ExportStatusReady, Size: 0,
+		}, nil)
+		storage.EXPECT().Download(ctx, models.ExportObjectKey(stream.ID)).
+			Return(io.NopCloser(bytes.NewReader(nil)), int64(0), nil)
+
+		_, err := svc.OpenStreamDownload(ctx, stream.ID, owner)
+
+		require.Error(t, err)
+	})
+
+	t.Run("pending export is a conflict, not a 500", func(t *testing.T) {
+		svc, repo, exportRepo, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(&models.StreamExport{
+			StreamID: stream.ID, Status: models.ExportStatusPending,
+		}, nil)
+
+		_, err := svc.OpenStreamDownload(ctx, stream.ID, owner)
+
+		require.ErrorIs(t, err, service.ErrExportPending)
+	})
+
+	t.Run("no export row yet", func(t *testing.T) {
+		svc, repo, exportRepo, _, _ := exportSvc(t)
+		owner := uuid.New()
+		stream := exportStream(owner, models.StatusReady)
+		repo.EXPECT().Read(ctx, stream.ID).Return(stream, nil)
+		exportRepo.EXPECT().ReadByStream(ctx, stream.ID).Return(nil, gorm.ErrRecordNotFound)
+
+		_, err := svc.OpenStreamDownload(ctx, stream.ID, owner)
+
+		require.ErrorIs(t, err, service.ErrExportNotFound)
+	})
+}
+
+func TestStreamServiceImpl_CompleteStreamExport(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success marks the row ready", func(t *testing.T) {
+		svc, exportRepo, _ := exportSvcNoRepo(t)
+		row := &models.StreamExport{
+			BaseModel: models.BaseModel{ID: uuid.New()},
+			StreamID:  uuid.New(),
+			UserID:    uuid.New().String(),
+			Status:    models.ExportStatusPending,
+		}
+		exportRepo.EXPECT().ReadByStream(ctx, row.StreamID).Return(row, nil)
+		exportRepo.EXPECT().Update(ctx, row).DoAndReturn(func(_ context.Context, e *models.StreamExport) error {
+			assert.Equal(t, models.ExportStatusReady, e.Status)
+			assert.Equal(t, int64(999), e.Size)
+			assert.Empty(t, e.Error)
+			return nil
+		})
+
+		require.NoError(t, svc.CompleteStreamExport(ctx, row.StreamID, 999, ""))
+	})
+
+	t.Run("error marks the row failed and clears the size", func(t *testing.T) {
+		svc, exportRepo, _ := exportSvcNoRepo(t)
+		row := &models.StreamExport{
+			BaseModel: models.BaseModel{ID: uuid.New()},
+			StreamID:  uuid.New(),
+			Status:    models.ExportStatusPending,
+			Size:      500,
+		}
+		exportRepo.EXPECT().ReadByStream(ctx, row.StreamID).Return(row, nil)
+		exportRepo.EXPECT().Update(ctx, row).DoAndReturn(func(_ context.Context, e *models.StreamExport) error {
+			assert.Equal(t, models.ExportStatusFailed, e.Status)
+			assert.Equal(t, int64(0), e.Size)
+			assert.Equal(t, "ffmpeg exited 1", e.Error)
+			return nil
+		})
+
+		require.NoError(t, svc.CompleteStreamExport(ctx, row.StreamID, 500, "ffmpeg exited 1"))
+	})
+
+	t.Run("unknown stream export is reported", func(t *testing.T) {
+		svc, exportRepo, _ := exportSvcNoRepo(t)
+		streamID := uuid.New()
+		exportRepo.EXPECT().ReadByStream(ctx, streamID).Return(nil, gorm.ErrRecordNotFound)
+
+		require.ErrorIs(t, svc.CompleteStreamExport(ctx, streamID, 1, ""), service.ErrExportNotFound)
+	})
+
+	t.Run("ready notifies the owner over the websocket", func(t *testing.T) {
+		svc, exportRepo, hub := exportSvcWithHub(t)
+		owner := uuid.New()
+		row := &models.StreamExport{
+			BaseModel: models.BaseModel{ID: uuid.New()},
+			StreamID:  uuid.New(),
+			UserID:    owner.String(),
+			Status:    models.ExportStatusPending,
+		}
+		exportRepo.EXPECT().ReadByStream(ctx, row.StreamID).Return(row, nil)
+		exportRepo.EXPECT().Update(ctx, row).Return(nil)
+		hub.EXPECT().SendMessgeToOwner(owner, gomock.Any()).DoAndReturn(func(_ uuid.UUID, data any) {
+			env, ok := data.(gin.H)
+			require.True(t, ok, "the hub payload must be a gin.H envelope")
+			assert.Equal(t, "STREAM_EXPORT_READY", env["type"])
+		})
+
+		require.NoError(t, svc.CompleteStreamExport(ctx, row.StreamID, 777, ""))
+	})
+
+	t.Run("failed export sends no notification", func(t *testing.T) {
+		svc, exportRepo, _ := exportSvcWithHub(t)
+		row := &models.StreamExport{
+			BaseModel: models.BaseModel{ID: uuid.New()},
+			StreamID:  uuid.New(),
+			UserID:    uuid.New().String(),
+			Status:    models.ExportStatusPending,
+		}
+		exportRepo.EXPECT().ReadByStream(ctx, row.StreamID).Return(row, nil)
+		exportRepo.EXPECT().Update(ctx, row).Return(nil)
+		// No hub expectation: any notification fails the test.
+
+		require.NoError(t, svc.CompleteStreamExport(ctx, row.StreamID, 0, "boom"))
+	})
+
+	t.Run("unparsable owner id does not panic the rpc handler", func(t *testing.T) {
+		svc, exportRepo, _ := exportSvcWithHub(t)
+		row := &models.StreamExport{
+			BaseModel: models.BaseModel{ID: uuid.New()},
+			StreamID:  uuid.New(),
+			UserID:    "not-a-uuid",
+			Status:    models.ExportStatusPending,
+		}
+		exportRepo.EXPECT().ReadByStream(ctx, row.StreamID).Return(row, nil)
+		exportRepo.EXPECT().Update(ctx, row).Return(nil)
+
+		require.NoError(t, svc.CompleteStreamExport(ctx, row.StreamID, 10, ""))
 	})
 }
 

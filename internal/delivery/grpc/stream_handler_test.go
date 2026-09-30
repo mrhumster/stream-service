@@ -1,11 +1,18 @@
 package grpc
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/gen/go/stream"
+	"github.com/mrhumster/stream-service/internal/service"
+	servicemock "github.com/mrhumster/stream-service/internal/service/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestProtoMetadataReqToService(t *testing.T) {
@@ -72,4 +79,83 @@ func TestProtoMetadataReqToService_InvalidUUID(t *testing.T) {
 func TestParseOptionalString(t *testing.T) {
 	require.Nil(t, parseOptionalString(""))
 	require.Equal(t, "x", *parseOptionalString("x"))
+}
+func TestCompleteStreamExport(t *testing.T) {
+	streamID := "0f6bd119-9e4c-4f3b-9f4a-2a4f2b1e7c1e"
+
+	t.Run("success forwards size to the service", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := servicemock.NewMockStreamService(ctrl)
+		mockSvc.EXPECT().CompleteStreamExport(gomock.Any(), uuid.MustParse(streamID), int64(4096), "").Return(nil)
+		srv := NewStreamGRPCServer(mockSvc)
+
+		resp, err := srv.CompleteStreamExport(context.Background(), &stream.CompleteStreamExportRequest{
+			StreamUuid: streamID,
+			Success:    true,
+			Size:       4096,
+		})
+
+		require.NoError(t, err)
+		require.True(t, resp.Updated)
+	})
+
+	t.Run("failure is a business outcome, not an rpc error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := servicemock.NewMockStreamService(ctrl)
+		mockSvc.EXPECT().CompleteStreamExport(gomock.Any(), uuid.MustParse(streamID), int64(0), "ffmpeg exited 1").Return(nil)
+		srv := NewStreamGRPCServer(mockSvc)
+
+		resp, err := srv.CompleteStreamExport(context.Background(), &stream.CompleteStreamExportRequest{
+			StreamUuid: streamID,
+			Success:    false,
+			Error:      "ffmpeg exited 1",
+		})
+
+		require.NoError(t, err)
+		require.True(t, resp.Updated)
+	})
+
+	t.Run("unknown stream maps to NotFound", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockSvc := servicemock.NewMockStreamService(ctrl)
+		mockSvc.EXPECT().CompleteStreamExport(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(service.ErrExportNotFound)
+		srv := NewStreamGRPCServer(mockSvc)
+
+		_, err := srv.CompleteStreamExport(context.Background(), &stream.CompleteStreamExportRequest{
+			StreamUuid: streamID, Success: true, Size: 1,
+		})
+
+		require.Error(t, err)
+		require.Equal(t, codes.NotFound, status.Code(err))
+	})
+
+	t.Run("a success without a size is rejected", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		srv := NewStreamGRPCServer(servicemock.NewMockStreamService(ctrl))
+
+		_, err := srv.CompleteStreamExport(context.Background(), &stream.CompleteStreamExportRequest{
+			StreamUuid: streamID, Success: true, Size: 0,
+		})
+
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
+
+	t.Run("bad uuid is rejected before the service is called", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		srv := NewStreamGRPCServer(servicemock.NewMockStreamService(ctrl))
+
+		_, err := srv.CompleteStreamExport(context.Background(), &stream.CompleteStreamExportRequest{
+			StreamUuid: "not-a-uuid", Success: true, Size: 1,
+		})
+
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
 }

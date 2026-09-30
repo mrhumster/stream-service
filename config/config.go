@@ -22,6 +22,10 @@ type Redis struct {
 	// EventsQueueDB is the Redis DB serving the events-service asynq queue
 	// (event:activity). Defaults to 3.
 	EventsQueueDB int
+	// ExportQueueDB is the Redis DB serving the export worker asynq queue
+	// (video:export). Defaults to 4, keeping it clear of DB 2 (transcoding)
+	// and DB 3 (events).
+	ExportQueueDB int
 }
 
 type ServerMode string
@@ -122,6 +126,7 @@ func LoadConfig() (*Config, error) {
 			Addr:           getEnv("REDIS_ADDR", "localhost"),
 			Password:       getEnv("redis-password", ""),
 			EventsQueueDB:  getQueueDB("EVENTS_QUEUE_DB", 3),
+			ExportQueueDB:  getQueueDB("EXPORT_QUEUE_DB", 4),
 		},
 	}, nil
 }

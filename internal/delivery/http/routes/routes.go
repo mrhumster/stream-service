@@ -78,12 +78,20 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 		DB:       cfg.Redis.EventsQueueDB,
 	}
 
+	exportRedisOpt := asynq.RedisClientOpt{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.ExportQueueDB,
+	}
+
 	hub := wss.NewWssHub()
 	database := repository.NewGormStreamRepository(db)
 	asyncDistributor := queue.NewAsyncDistributor(redisOpt)
 	streamService := service.NewStreamServiceImpl(database, permissionClient, storage, asyncDistributor, hub, &cfg.Server)
 	streamService.WithActivityRecorder(queue.NewAsyncActivityRecorder(eventsRedisOpt))
 	streamService.WithFacesCascadeRecorder(queue.NewAsyncFacesCascadeRecorder(redisOpt))
+	streamService.WithExportRepository(repository.NewGormStreamExportRepository(db))
+	streamService.WithExportQueue(queue.NewAsyncExportDistributor(exportRedisOpt))
 	streamHandler := handlers.NewStreamHandlerWithOrigins(streamService, hub, cfg.Server.AllowedOrigins)
 
 	r.GET("/stream/health", func(c *gin.Context) {
@@ -116,6 +124,8 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 		authGroup.POST("/:id/reprocess", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ReprocessStream)
 		authGroup.POST("/faces/batch", streamHandler.ProcessFacesBatch)
 		authGroup.POST("/:id/faces", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ProcessFacesStream)
+		authGroup.GET("/:id/export", streamHandler.GetExport)
+		authGroup.POST("/:id/export", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.RequestExport)
 		authGroup.POST("/:id/upload", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.UploadVideo)
 		authGroup.POST("/:id/upload/init", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.InitUpload)
 		authGroup.PUT("/:id/upload/part", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.PartUpload)

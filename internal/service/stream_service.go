@@ -5,8 +5,6 @@ package service
 import (
 	"context"
 	"io"
-	"net/url"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
@@ -28,7 +26,11 @@ type StreamService interface {
 	UpdateStreamStatus(ctx context.Context, streamID uuid.UUID, status models.StreamStatus) error
 
 	UploadVideo(ctx context.Context, req UploadVideoRequest) error
-	GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*GenerateDownloadURLInfo, error)
+
+	RequestStreamExport(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID, email string) (*StreamExportInfo, error)
+	GetStreamExport(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*StreamExportInfo, error)
+	OpenStreamDownload(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*DownloadStreamInfo, error)
+	CompleteStreamExport(ctx context.Context, streamID uuid.UUID, size int64, exportErr string) error
 
 	UploadPart(ctx context.Context, req UploadPartRequest) (*models.MultipartPart, error)
 	StartStreamUpload(ctx context.Context, req StartUploadRequest) (*UploadInfo, error)
@@ -91,9 +93,18 @@ type PartInfo struct {
 	ETag       string
 }
 
-type GenerateDownloadURLInfo struct {
-	DownloadURL *url.URL
-	ExpiresAt   time.Time
+type StreamExportInfo struct {
+	StreamID uuid.UUID
+	Status   models.StreamExportStatus
+	Size     int64
+	Error    string
+}
+
+// DownloadStreamInfo is an open reader over the cached mp4. The HTTP layer
+// streams Content to the response, so nothing buffers the whole file in memory.
+type DownloadStreamInfo struct {
+	Content     io.ReadCloser
+	ContentType string
 	FileName    string
 	Size        int64
 }

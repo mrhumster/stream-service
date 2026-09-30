@@ -2,9 +2,13 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
@@ -466,44 +470,116 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 	})
 }
 
-func (h *StreamHandler) DownloadStream(c *gin.Context) {
-	streamID := c.Param("id")
-	streamUUID, err := uuid.Parse(streamID)
+// RequestExport asks the export worker to build the mp4 for this stream. It
+// answers 202 even when an export is already in flight, so the client can poll
+// or wait for the websocket event either way.
+func (h *StreamHandler) RequestExport(c *gin.Context) {
+	streamUUID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
 	userUUID := c.MustGet("user").(uuid.UUID)
+	// The email rides in the signed access token, so no identity lookup is
+	// needed to notify the owner. An unverified or absent claim means no
+	// notification; the export itself still runs.
+	email := ""
+	if rawClaims, ok := c.Get("claims"); ok {
+		if claims, ok := rawClaims.(*dto.AccessClaims); ok {
+			email = claims.Email
+		}
+	}
+
+	serviceResp, err := h.service.RequestStreamExport(c.Request.Context(), streamUUID, userUUID, email)
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
 	}
 
-	serviceResp, err := h.service.GenerateDownloadURL(c, streamUUID, userUUID)
+	c.JSON(http.StatusAccepted, response.NewExportResponse(serviceResp))
+}
+
+// GetExport reports the current export state.
+func (h *StreamHandler) GetExport(c *gin.Context) {
+	streamUUID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+	userUUID := c.MustGet("user").(uuid.UUID)
+
+	serviceResp, err := h.service.GetStreamExport(c.Request.Context(), streamUUID, userUUID)
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
 	}
 
-	resp, err := response.NewDownloadResponse(serviceResp)
+	c.JSON(http.StatusOK, response.NewExportResponse(serviceResp))
+}
+
+// DownloadStream streams the cached mp4 straight from the private bucket. The
+// response is a pipe, not a buffer, so a multi-gigabyte file costs the same
+// memory as a small one.
+func (h *StreamHandler) DownloadStream(c *gin.Context) {
+	streamUUID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+	userUUID := c.MustGet("user").(uuid.UUID)
+
+	serviceResp, err := h.service.OpenStreamDownload(c.Request.Context(), streamUUID, userUUID)
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
 	}
+	defer serviceResp.Content.Close()
 
-	directDownload := c.Query("direct") == "true"
-	if directDownload {
-		c.Redirect(http.StatusTemporaryRedirect, resp.URL)
-		return
+	c.Header("Content-Type", serviceResp.ContentType)
+	c.Header("Content-Length", strconv.FormatInt(serviceResp.Size, 10))
+	disposition := fmt.Sprintf(`attachment; filename="%s"`, asciiFallbackName(serviceResp.FileName))
+	if serviceResp.FileName != asciiFallbackName(serviceResp.FileName) {
+		disposition += fmt.Sprintf("; filename*=UTF-8''%s", url.PathEscape(serviceResp.FileName))
 	}
+	c.Header("Content-Disposition", disposition)
 
-	c.JSON(http.StatusOK, resp)
+	c.Status(http.StatusOK)
+	if _, err := io.Copy(c.Writer, serviceResp.Content); err != nil {
+		// The status line and part of the body are already on the wire, so
+		// there is nothing left to tell the client; the truncated body is the
+		// signal and the client verifies the size.
+		slog.Error("failed to stream export to client", "error", err)
+	}
+}
+
+// asciiFallbackName keeps the plain filename parameter inside the quoted-string
+// subset of RFC 6266 for clients that ignore filename*.
+func asciiFallbackName(name string) string {
+	ascii := strings.Map(func(r rune) rune {
+		if r < 0x20 || r >= 0x7f {
+			return '_'
+		}
+		return r
+	}, name)
+	ascii = strings.ReplaceAll(ascii, `"`, "_")
+	return ascii
 }
 
 func (h *StreamHandler) handleDownloadError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, service.ErrStreamNotFound):
+	case errors.Is(err, service.ErrStreamNotFound), errors.Is(err, service.ErrExportNotFound):
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+	case errors.Is(err, service.ErrStreamForbidden):
+		c.JSON(http.StatusForbidden, response.ErrorResponse("forbidden"))
 	case errors.Is(err, service.ErrStreamNotReady):
 		c.JSON(http.StatusBadRequest, response.ErrorResponse("stream not available for download"))
+	case errors.Is(err, service.ErrExportPending):
+		c.JSON(http.StatusConflict, response.ErrorResponse("export is still being prepared"))
+	case strings.HasPrefix(err.Error(), "export failed"):
+		c.JSON(http.StatusConflict, response.ErrorResponse("export failed, try again"))
 	default:
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("failed to generate download link"))
+		slog.Error("download failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("failed to prepare download"))
 	}
 }
 
