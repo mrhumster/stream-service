@@ -1421,7 +1421,7 @@ func TestStreamHandler_Export(t *testing.T) {
 		router, mockService := setupTest()
 		streamID := uuid.New()
 		mockService.EXPECT().RequestStreamExport(gomock.Any(), streamID, gomock.Any(), "owner@example.com").
-			Return(&service.StreamExportInfo{StreamID: streamID, Status: models.ExportStatusReady, Size: 2048}, nil)
+			Return(&service.StreamExportInfo{StreamID: streamID, Status: models.ExportStatusReady, Size: 2048, FileName: "Summer in Kaliningrad.mp4"}, nil)
 
 		req := httptest.NewRequest("POST", fmt.Sprintf("/streams/%s/export", streamID), nil)
 		w := httptest.NewRecorder()
@@ -1432,6 +1432,10 @@ func TestStreamHandler_Export(t *testing.T) {
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 		assert.Equal(t, models.ExportStatusReady, resp.Status)
 		assert.Equal(t, int64(2048), resp.Size)
+		// The client cannot ask for the name later: its save dialog is opened
+		// from the click, before the file is fetched. It has to arrive here.
+		assert.Equal(t, "Summer in Kaliningrad.mp4", resp.FileName)
+		assert.Contains(t, w.Body.String(), `"file_name":"Summer in Kaliningrad.mp4"`)
 	})
 
 	t.Run("request on a stream that is not ready", func(t *testing.T) {
