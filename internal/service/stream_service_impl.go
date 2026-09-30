@@ -9,8 +9,6 @@ import (
 	"io"
 	"log"
 	"log/slog"
-	"os"
-	"os/exec"
 	"path"
 	"regexp"
 	"sort"
@@ -122,7 +120,6 @@ var (
 	ErrSourceFileMissing     = errors.New("source file is missing")
 	ErrCannotPublish         = errors.New("stream must be ready before publishing")
 	ErrCannotUnpublish       = errors.New("only published streams can be unpublished")
-	ErrStreamForbidden       = errors.New("stream download is forbidden")
 )
 
 func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRequest) (*models.Stream, error) {
@@ -512,174 +509,51 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 	return nil
 }
 
-func (s *StreamServiceImpl) DownloadStream(ctx context.Context, streamID uuid.UUID, userUUID *uuid.UUID) (*DownloadStreamInfo, error) {
-	stream, err := s.repo.Read(ctx, streamID)
+func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*GenerateDownloadURLInfo, error) {
+	stream, err := s.GetStream(ctx, streamID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrStreamNotFound
-		}
-		return nil, fmt.Errorf("failed to read stream: %w", err)
+		return nil, err
 	}
 
 	if stream.Status != models.StatusReady && stream.Status != models.StatusPublished {
 		return nil, ErrStreamNotReady
 	}
 
-	public := stream.Status == models.StatusPublished && stream.Visibility == models.VisibilityPublic
-	if !public {
-		if userUUID == nil || *userUUID != stream.OwnerID {
-			return nil, ErrStreamForbidden
-		}
-	}
-
-	dir, err := os.MkdirTemp("", "stream-download-")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp dir: %w", err)
-	}
-	cleanup := func() { _ = os.RemoveAll(dir) }
-
-	playlistPath, err := s.downloadHLSArtifacts(ctx, streamID, dir)
-	if err != nil {
-		cleanup()
-		return nil, err
-	}
-
-	outputPath, err := s.muxHLS(ctx, playlistPath, dir)
-	if err != nil {
-		cleanup()
-		return nil, err
-	}
-
-	f, err := os.Open(outputPath)
-	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("failed to open muxed video: %w", err)
-	}
-	st, err := f.Stat()
-	if err != nil {
-		_ = f.Close()
-		cleanup()
-		return nil, fmt.Errorf("failed to stat muxed video: %w", err)
-	}
-
-	return &DownloadStreamInfo{
-		Content:     &cleanupCloser{f, cleanup},
-		ContentType: "video/mp4",
-		FileName:    s.downloadStreamFileName(stream),
-		Size:        st.Size(),
-	}, nil
-}
-
-func (s *StreamServiceImpl) downloadHLSArtifacts(ctx context.Context, streamID uuid.UUID, dir string) (string, error) {
-	baseKey := path.Join("processed", streamID.String())
-	playlistReader, size, err := s.storage.Download(ctx, path.Join(baseKey, "index.m3u8"))
-	if err != nil {
-		return "", fmt.Errorf("failed to download hls playlist: %w", err)
-	}
-	defer playlistReader.Close()
-	if size <= 0 {
-		return "", fmt.Errorf("empty hls playlist")
-	}
-
-	playlist, err := io.ReadAll(playlistReader)
-	if err != nil {
-		return "", fmt.Errorf("failed to read hls playlist: %w", err)
-	}
-
-	var local []string
-	segments := 0
-	for _, line := range strings.Split(string(playlist), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		if strings.HasPrefix(trimmed, "#") {
-			local = append(local, line)
-			continue
-		}
-		name := path.Base(trimmed)
-		if !segmentNamePattern.MatchString(name) {
-			return "", fmt.Errorf("invalid segment name in playlist: %s", name)
-		}
-		segReader, segSize, err := s.storage.Download(ctx, path.Join(baseKey, name))
-		if err != nil {
-			return "", fmt.Errorf("failed to download hls segment %s: %w", name, err)
-		}
-		written, err := s.copyToFile(segReader, path.Join(dir, name), segSize)
-		_ = segReader.Close()
-		if err != nil {
-			return "", fmt.Errorf("failed to write hls segment %s: %w", name, err)
-		}
-		if written != segSize {
-			return "", fmt.Errorf("segment %s wrote %d bytes, expected %d", name, written, segSize)
-		}
-		local = append(local, name)
-		segments++
-	}
-
-	if segments == 0 {
-		return "", fmt.Errorf("no hls segments in playlist")
-	}
-
-	localPath := path.Join(dir, "index.m3u8")
-	if err := os.WriteFile(localPath, []byte(strings.Join(local, "\n")), 0o600); err != nil {
-		return "", fmt.Errorf("failed to write local playlist: %w", err)
-	}
-	return localPath, nil
-}
-
-func (s *StreamServiceImpl) muxHLS(ctx context.Context, playlistPath, dir string) (string, error) {
-	ffmpeg, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		return "", fmt.Errorf("ffmpeg not found: %w", err)
-	}
-	output := path.Join(dir, "stream.mp4")
-	cmd := exec.CommandContext(ctx, ffmpeg, "-y", "-i", playlistPath, "-c", "copy", "-movflags", "+faststart", output)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("ffmpeg mux failed: %w: %s", err, string(out))
-	}
-	return output, nil
-}
-
-func (s *StreamServiceImpl) downloadStreamFileName(stream *models.Stream) string {
 	var storageInfo models.StreamStorage
 	if err := json.Unmarshal(stream.Storage, &storageInfo); err != nil {
-		return "stream.mp4"
+		return nil, fmt.Errorf("failed to parse storage info: %w", err)
 	}
-	name := strings.TrimSuffix(storageInfo.Filename, path.Ext(storageInfo.Filename))
-	if name == "" {
-		return "stream.mp4"
-	}
-	return name + ".mp4"
-}
 
-func (s *StreamServiceImpl) copyToFile(src io.Reader, dst string, expected int64) (int64, error) {
-	f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if storageInfo.Key == "" {
+		return nil, fmt.Errorf("storage key is empty")
+	}
+
+	var streamMeta models.StreamMetadata
+	if err := json.Unmarshal(stream.Metadata, &streamMeta); err != nil {
+		return nil, fmt.Errorf("failed to parse meta info: %w", err)
+	}
+
+	if stream.Visibility != models.VisibilityPublic {
+		if stream.OwnerID != userUUID {
+			return nil, fmt.Errorf("not owner and not public")
+		}
+	}
+
+	expires := 1 * time.Hour
+
+	url, err := s.storage.GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, expires)
 	if err != nil {
-		return 0, fmt.Errorf("failed to create file: %w", err)
+		return nil, fmt.Errorf("failed to generate Download URL: %w", err)
 	}
-	written, err := io.Copy(f, src)
-	_ = f.Close()
-	if err != nil {
-		return 0, err
-	}
-	if expected >= 0 && written != expected {
-		return written, fmt.Errorf("size mismatch: got %d, want %d", written, expected)
-	}
-	return written, nil
-}
 
-type cleanupCloser struct {
-	io.ReadCloser
-	onClose func()
-}
-
-func (c *cleanupCloser) Close() error {
-	err := c.ReadCloser.Close()
-	if c.onClose != nil {
-		c.onClose()
+	resp := &GenerateDownloadURLInfo{
+		DownloadURL: url,
+		ExpiresAt:   time.Now().Add(expires),
+		FileName:    storageInfo.Filename,
+		Size:        streamMeta.Size,
 	}
-	return err
+
+	return resp, nil
 }
 
 // Multipart upload methods

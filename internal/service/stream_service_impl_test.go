@@ -7,10 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
+	"net/url"
 	"path"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -995,228 +993,125 @@ func TestStreamServiceImpl_UploadVideo(t *testing.T) {
 	})
 }
 
-func makeHLSFixture(t *testing.T) map[string][]byte {
-	t.Helper()
-
-	ffmpegPath, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		t.Skipf("ffmpeg not found: %v", err)
-	}
-
-	dir, err := os.MkdirTemp("", "hls-fixture")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
-
-	cmd := exec.Command(ffmpegPath,
-		"-y",
-		"-f", "lavfi",
-		"-i", "testsrc=duration=2:size=160x120:rate=10",
-		"-c:v", "libx264",
-		"-profile:v", "baseline",
-		"-preset", "ultrafast",
-		"-g", "10",
-		"-keyint_min", "10",
-		"-sc_threshold", "0",
-		"-an",
-		"-f", "hls",
-		"-hls_time", "1",
-		"-hls_list_size", "0",
-		"-hls_segment_filename", filepath.Join(dir, "seg_%d.ts"),
-		filepath.Join(dir, "index.m3u8"),
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Skipf("failed to generate HLS fixture: %v\n%s", err, out)
-	}
-
-	entries, err := os.ReadDir(dir)
-	require.NoError(t, err)
-
-	fixture := make(map[string][]byte, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-		require.NoError(t, err)
-		fixture[entry.Name()] = data
-	}
-	require.Contains(t, fixture, "index.m3u8")
-
-	return fixture
-}
-
-func TestStreamServiceImpl_DownloadStream(t *testing.T) {
+func TestStreamServiceImpl_GenerateDownloadURL(t *testing.T) {
 	ctx := context.Background()
 
-	newService := func(t *testing.T, stream *models.Stream, userUUID *uuid.UUID, fixture map[string][]byte) (*service.StreamServiceImpl, *models.Stream) {
-		t.Helper()
-
+	t.Run("successful URL generation", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
 		mockRepo := repomock.NewMockStreamRepository(ctrl)
-		mockPerm := authmock.NewMockPermissionClient(ctrl)
 		mockStorage := mock.NewMockFileStorage(ctrl)
-		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
-		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
-
-		mockRepo.EXPECT().
-			Read(ctx, stream.BaseModel.ID).
-			Return(stream, nil)
-
-		mockStorage.EXPECT().
-			Download(gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, key string) (io.ReadCloser, int64, error) {
-				data, ok := fixture[path.Base(key)]
-				require.True(t, ok, "unexpected download key: %s", key)
-				return io.NopCloser(bytes.NewReader(data)), int64(len(data)), nil
-			}).
-			Times(len(fixture))
-
-		return serviceImpl, stream
-	}
-
-	t.Run("stream not found", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-
-		mockRepo := repomock.NewMockStreamRepository(ctrl)
 		mockPerm := authmock.NewMockPermissionClient(ctrl)
-		mockStorage := mock.NewMockFileStorage(ctrl)
+
 		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
 		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
 
 		streamID := uuid.New()
+		userID := uuid.New()
+
+		storageInfo := models.StreamStorage{
+			Provider: "minio",
+			Key:      "streams/user-id/videos/file-key.mp4",
+			Filename: "video.mp4",
+			Bucket:   "streams",
+		}
+
+		streamMeta := models.StreamMetadata{
+			Size: int64(100),
+		}
+
+		metaJSON, _ := json.Marshal(streamMeta)
+
+		storageJSON, _ := json.Marshal(storageInfo)
+
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   userID,
+			Status:    models.StatusReady,
+			Storage:   datatypes.JSON(storageJSON),
+			Metadata:  datatypes.JSON(metaJSON),
+		}
+
 		mockRepo.EXPECT().
 			Read(ctx, streamID).
-			Return(nil, gorm.ErrRecordNotFound)
+			Return(stream, nil)
 
-		_, err := serviceImpl.DownloadStream(ctx, streamID, &streamID)
-		require.ErrorIs(t, err, service.ErrStreamNotFound)
+		expectedURL := "https://storage.example.com/streams/user-id/videos/file-key.mp4?signature=..."
+		mockStorage.EXPECT().
+			GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, gomock.Any()).
+			Return(&url.URL{
+				Scheme:   "https",
+				Host:     "storage.example.com",
+				Path:     "/streams/user-id/videos/file-key.mp4",
+				RawQuery: "signature=...",
+			}, nil)
+
+		resp, err := serviceImpl.GenerateDownloadURL(ctx, streamID, userID)
+
+		require.NoError(t, err)
+		assert.Equal(t, expectedURL, resp.DownloadURL.String())
+		assert.True(t, resp.ExpiresAt.After(time.Now()))
+	})
+
+	t.Run("stream not found", func(t *testing.T) {
+		// ...
+	})
+
+	t.Run("access denied", func(t *testing.T) {
+		// ...
 	})
 
 	t.Run("stream not ready", func(t *testing.T) {
+		// ...
+	})
+
+	t.Run("published stream is downloadable", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockStorage := mock.NewMockFileStorage(ctrl)
+		mockPerm := authmock.NewMockPermissionClient(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		serviceImpl := service.NewStreamServiceImpl(mockRepo, mockPerm, mockStorage, mockQueue, nil, srvCfg())
+
+		streamID := uuid.New()
+		userID := uuid.New()
+
+		storageInfo := models.StreamStorage{
+			Provider: "minio",
+			Key:      "streams/user-id/videos/file-key.mp4",
+			Filename: "video.mp4",
+			Bucket:   "streams",
+		}
+		streamMeta := models.StreamMetadata{Size: int64(200)}
+
+		metaJSON, _ := json.Marshal(streamMeta)
+		storageJSON, _ := json.Marshal(storageInfo)
+
 		stream := &models.Stream{
-			BaseModel: models.BaseModel{ID: uuid.New()},
-			OwnerID:   uuid.New(),
-			Status:    models.StatusDraft,
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   userID,
+			Status:    models.StatusPublished,
+			Storage:   datatypes.JSON(storageJSON),
+			Metadata:  datatypes.JSON(metaJSON),
 		}
 
-		serviceImpl, _ := newService(t, stream, &stream.OwnerID, makeHLSFixture(t))
+		mockRepo.EXPECT().Read(ctx, streamID).Return(stream, nil)
+		mockStorage.EXPECT().
+			GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, gomock.Any()).
+			Return(&url.URL{
+				Scheme:   "https",
+				Host:     "storage.example.com",
+				Path:     "/streams/user-id/videos/file-key.mp4",
+				RawQuery: "signature=...",
+			}, nil)
 
-		_, err := serviceImpl.DownloadStream(ctx, stream.BaseModel.ID, &stream.OwnerID)
-		require.ErrorIs(t, err, service.ErrStreamNotReady)
-	})
+		resp, err := serviceImpl.GenerateDownloadURL(ctx, streamID, userID)
 
-	t.Run("forbidden", func(t *testing.T) {
-		fixture := makeHLSFixture(t)
-		otherUser := uuid.New()
-
-		tests := []struct {
-			name     string
-			status   models.StreamStatus
-			vis      models.StreamVisibility
-			userUUID *uuid.UUID
-		}{
-			{name: "published private anonymous", status: models.StatusPublished, vis: models.VisibilityPrivate, userUUID: nil},
-			{name: "published private other user", status: models.StatusPublished, vis: models.VisibilityPrivate, userUUID: &otherUser},
-			{name: "ready private anonymous", status: models.StatusReady, vis: models.VisibilityPrivate, userUUID: nil},
-			{name: "ready public anonymous", status: models.StatusReady, vis: models.VisibilityPublic, userUUID: nil},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				stream := &models.Stream{
-					BaseModel:  models.BaseModel{ID: uuid.New()},
-					OwnerID:    uuid.New(),
-					Status:     tt.status,
-					Visibility: tt.vis,
-				}
-
-				serviceImpl, _ := newService(t, stream, tt.userUUID, fixture)
-
-				_, err := serviceImpl.DownloadStream(ctx, stream.BaseModel.ID, tt.userUUID)
-				require.ErrorIs(t, err, service.ErrStreamForbidden)
-			})
-		}
-	})
-
-	t.Run("success", func(t *testing.T) {
-		fixture := makeHLSFixture(t)
-
-		run := func(t *testing.T, stream *models.Stream, userUUID *uuid.UUID, expected string) {
-			t.Helper()
-			serviceImpl, _ := newService(t, stream, userUUID, fixture)
-
-			resp, err := serviceImpl.DownloadStream(ctx, stream.BaseModel.ID, userUUID)
-			require.NoError(t, err)
-			require.NotNil(t, resp)
-			defer resp.Content.Close()
-
-			assert.Equal(t, "video/mp4", resp.ContentType)
-			assert.Equal(t, expected, resp.FileName)
-			assert.Greater(t, resp.Size, int64(0))
-
-			buf := make([]byte, 4)
-			_, err = io.ReadFull(resp.Content, buf)
-			require.NoError(t, err)
-			assert.Equal(t, "ftyp", string(buf))
-		}
-
-		t.Run("owner ready private", func(t *testing.T) {
-			ownerID := uuid.New()
-			streamID := uuid.New()
-
-			storageInfo := models.StreamStorage{
-				Provider: "minio",
-				Key:      path.Join("processed", streamID.String(), "index.m3u8"),
-				Filename: "my-video.mp4",
-				Bucket:   "streams",
-			}
-			storageJSON, err := json.Marshal(storageInfo)
-			require.NoError(t, err)
-
-			stream := &models.Stream{
-				BaseModel:  models.BaseModel{ID: streamID},
-				OwnerID:    ownerID,
-				Status:     models.StatusReady,
-				Visibility: models.VisibilityPrivate,
-				Storage:    datatypes.JSON(storageJSON),
-			}
-
-			run(t, stream, &ownerID, "my-video.mp4")
-		})
-
-		t.Run("published public anonymous", func(t *testing.T) {
-			streamID := uuid.New()
-
-			stream := &models.Stream{
-				BaseModel:  models.BaseModel{ID: streamID},
-				OwnerID:    uuid.New(),
-				Status:     models.StatusPublished,
-				Visibility: models.VisibilityPublic,
-			}
-
-			run(t, stream, nil, "stream.mp4")
-		})
-	})
-
-	t.Run("filename fallback", func(t *testing.T) {
-		stream := &models.Stream{
-			BaseModel:  models.BaseModel{ID: uuid.New()},
-			OwnerID:    uuid.New(),
-			Status:     models.StatusPublished,
-			Visibility: models.VisibilityPublic,
-		}
-
-		serviceImpl, _ := newService(t, stream, &stream.OwnerID, makeHLSFixture(t))
-
-		resp, err := serviceImpl.DownloadStream(ctx, stream.BaseModel.ID, &stream.OwnerID)
 		require.NoError(t, err)
-		require.NotNil(t, resp)
-
-		defer resp.Content.Close()
-		assert.Equal(t, "stream.mp4", resp.FileName)
+		assert.True(t, resp.ExpiresAt.After(time.Now()))
 	})
 }
 

@@ -5,6 +5,8 @@ package service
 import (
 	"context"
 	"io"
+	"net/url"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
@@ -26,7 +28,7 @@ type StreamService interface {
 	UpdateStreamStatus(ctx context.Context, streamID uuid.UUID, status models.StreamStatus) error
 
 	UploadVideo(ctx context.Context, req UploadVideoRequest) error
-	DownloadStream(ctx context.Context, streamID uuid.UUID, userUUID *uuid.UUID) (*DownloadStreamInfo, error)
+	GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*GenerateDownloadURLInfo, error)
 
 	UploadPart(ctx context.Context, req UploadPartRequest) (*models.MultipartPart, error)
 	StartStreamUpload(ctx context.Context, req StartUploadRequest) (*UploadInfo, error)
@@ -89,9 +91,9 @@ type PartInfo struct {
 	ETag       string
 }
 
-type DownloadStreamInfo struct {
-	Content     io.ReadCloser
-	ContentType string
+type GenerateDownloadURLInfo struct {
+	DownloadURL *url.URL
+	ExpiresAt   time.Time
 	FileName    string
 	Size        int64
 }
