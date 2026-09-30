@@ -1,37 +1,217 @@
-# STREAM Service
+# stream-service
 
-## TODO
+Video upload, HLS serving, stream catalog and real-time updates for GoCast.
 
-### 1. Проектирование API (Контракт)
+## Functionality
 
-Нужно разделить одну ручку `UploadVideo` на три:
+- Stream CRUD + lifecycle: `draft → uploading → processing → ready → published`, `error`
+  (failed transcode), with **reprocess** from the error state;
+- Visibility model: `public` / `private` / `unlisted`;
+- Upload: simple single-request for small files, **multipart** (`init` → `part` → `complete`)
+  for larger ones;
+- Publish/unpublish, per-owner access via identity permissions (gRPC);
+- HLS serving from MinIO with Bearer auth, anti-cache `?t=` and path-traversal protection;
+- Thumbnail + transcoding tasks dispatched to asynq workers (thumbnail/transcoder);
+- Video metadata (recorded_at / location / camera / rotation) extracted by the transcoder and
+  stored in the JSONB `streams.metadata` column;
+- Face-detection dispatch (per-stream `POST /:id/faces` or batch `POST /faces/batch`) to the
+  asynq `faces` queue consumed by faces-service;
+- Server-side catalog search (`q`) and Own-view filters/sorting;
+- On-demand single-file export: `POST /stream/:id/export` asks exporter-worker (asynq `export`
+  queue, Redis DB 4) to mux the existing HLS into `processed/<id>/video.mp4`, and the service
+  streams that object back for `GET /stream/:id/download` — no ffmpeg here, no presigned URL;
+- WebSocket hub (`STREAM_UPDATED` / `STREAM_READY` / `STREAM_EXPORT_READY`) to the stream owner;
+- Prometheus `/metrics` (RED + business counters).
 
-- `POST /stream/:id/upload/init` — получает метаданные (имя, размер), возвращает uploadID.
-- `PUT /stream/:id/upload/part` — принимает uploadID, partNumber и бинарный чанк.
-- `POST /stream/:id/upload/complete` — завершает процесс, склеивает файл и меняет статус в БД.
+## Ports
 
-### 2. План разработки (TDD стэк)
+| Protocol | Addr |
+|---|---|
+| HTTP API (incl. `/metrics`) | `:8080` (`SERVER_ADDR`) |
+| gRPC (mTLS) | `:50051` |
 
-~~#### Шаг 1: Доработка Storage (Инфраструктурный слой)~~
+## API endpoints
 
-- Тест: Написать интеграционный тест для MinioStorage, который инициализирует загрузку, шлет два куска текста "Hello " и "World", финализирует и проверяет, что в бакете лежит файл "Hello World"
+Routes are defined in `internal/delivery/http/routes/routes.go`.
 
-#### Шаг 2: Бизнес-логика (Service слой)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/stream` | – | Public catalog (`limit` ≤ 100, `offset` ≤ 10000, `q` search over title/description/tags, ≤ 100 runes) |
+| `GET` | `/stream/:id` | optional | Stream detail (access by owner/visibility) |
+| `GET` | `/stream/:id/status` | – | Public status probe (`status`/`visibility`, `owner_id`/`title`) — used by comments/stats gates |
+| `GET` | `/stream/:id/download` | bearer | Stream the cached mp4 (`Content-Disposition` attachment, owner only, `409` while pending) |
+| `GET` | `/stream/:id/export` | bearer | Export state (`pending`/`ready`/`failed`, `size`) — owner only |
+| `POST` | `/stream/:id/export` | bearer + `stream/write` | Queue the single-file export (202, idempotent) |
+| `GET` | `/stream/:id/hls/*file` | optional | HLS playlist/segments from MinIO |
+| `GET` | `/stream/ws/updates` | WS subprotocol | WebSocket updates for the owner |
+| `POST` | `/stream/` | bearer | Create stream |
+| `GET` | `/stream/own` | bearer | My streams (paged; `status`, `faces_detected`, `sort` = `created_at`\|`title`\|`status`, `order` = `asc`\|`desc`) |
+| `PATCH` | `/stream/:id` | bearer + `stream/write` | Update stream |
+| `DELETE` | `/stream/:id` | bearer + `stream/delete` | Delete stream |
+| `POST` | `/stream/:id/publish` | bearer + `stream/write` | Publish |
+| `POST` | `/stream/:id/unpublish` | bearer + `stream/write` | Unpublish |
+| `POST` | `/stream/:id/upload` | bearer + `stream/write` | Simple upload (files < 5 MB) |
+| `POST` | `/stream/:id/upload/init` | bearer + `stream/write` | Init multipart (metadata → uploadID) |
+| `PUT` | `/stream/:id/upload/part` | bearer + `stream/write` | Upload a part (≥ 5 MB, except last) |
+| `POST` | `/stream/:id/upload/complete` | bearer + `stream/write` | Complete multipart → process |
+| `POST` | `/stream/:id/reprocess` | bearer + `stream/write` | Retry failed processing tasks (error → processing) |
+| `POST` | `/stream/:id/faces` | bearer + `stream/write` | Enqueue face detection for one stream (HLS fallback if the source is gone) |
+| `POST` | `/stream/faces/batch` | bearer | Enqueue face detection for up to 100 streams at once (per-stream auth in the service, partial-success body) |
+| `GET` | `/stream/health` | – | Liveness/DB check |
+| `GET` | `/metrics` | – | Prometheus metrics |
 
-- Тест: Unit-тест для StreamService.UploadPart. Проверить, что нельзя загрузить чанк, если стрим не в статусе Draft или если userID не совпадает с владельцем.
-- Код: Реализовать проверку прав и проброс вызовов в storage.
+Most routes under the auth group run `authorize(permissionClient, "stream", ...)` so the
+permissions come from the identity permission service via gRPC.
 
-#### Шаг 3: Обработка в Gin (Delivery слой)
+## Uploads
 
-- Тест: HTTP-тест (httptest), проверяющий, что при отсутствии uploadID в запросе возвращается 400 Bad Request.
-- Код: Новые хендлеры и маршруты.
+- **Simple**: `POST /stream/:id/upload` (multipart/form-data) for files ≤ 5 MB.
+- **Multipart** (`internal/service/multipart`): `init` returns `uploadID`, parts are uploaded
+  with `part` (a part must be ≥ 5 MB except the last — S3/MinIO protocol limit), then `complete`
+  concats the parts, stores the final object in MinIO and dispatches thumbnail/transcoding tasks.
+- The frontend sends chunks of 5 MB, 3 in parallel, then completes.
 
-#### Шаг 4: Фронтенд (RTK Query)
+## Processing (task array)
 
-- Код: Создать async thunk или кастомный baseQuery, который в цикле for будет нарезать File на Blob и слать их последовательно, обновляя локальный progress.
+`stream.processing` is a JSON **array** of `StreamProcessingTask` entries
+(`task_type` `transcode` | `thumbnail` | `faces`, `progress`, `steps`, `error`, `task_id`).
+On upload completion stream-service enqueues **both** transcode and thumbnail tasks and
+persists the initial array in one save. Workers report progress per task via gRPC
+`UpdateStreamProcessingRequest.task`; a failed transcode task sets the stream status to
+`error`, a failed thumbnail task only records its error (the stream stays playable).
 
-### 3. Критические детали для реализации
+`POST /stream/:id/reprocess` re-enqueues the failed/absent tasks (unique asynq IDs),
+clears their errors and resets the stream to `processing`. Mapping: `404` not found,
+`400` "stream is not in an error state", `409` source video missing in MinIO, else `500`.
 
-- Размер чанка: S3/MinIO требует, чтобы каждый чанк (кроме последнего) был не менее 5 МБ. Это жесткое ограничение протокола.
-- ETags: При загрузке каждой части S3 возвращает ETag. Тебе нужно будет хранить их на фронте или в БД, чтобы отправить массив всех ETags в финальном вызове Complete.
-- Cleanup Worker: Раз в сутки нужно запускать s3.ListMultipartUploads и удалять те, что висят дольше 24 часов, чтобы не платить за «зависший» мусор в облаке.
+## Video metadata
+
+`streams.metadata` is a JSONB column (`models.StreamMetadata`) with:
+
+```json
+{
+  "duration": 2,
+  "size": 21694,
+  "format": "hls",
+  "resolution": "1280x720",
+  "recorded_at": "2024-06-01T10:15:30Z",
+  "location": "55.75580,37.61760",
+  "camera": "PixelCam XC-42",
+  "rotation": 90
+}
+```
+
+`duration`/`size`/`format`/`resolution` come from the processing pipelines; `recorded_at`,
+`location`, `camera` and the authoritative `size` are reported by the transcoder via gRPC
+`UpdateStreamMetadata` (parsed from ffprobe of the original file — see transcoder-service
+README). New optional fields are `omitempty`, and the gRPC mapping parses `recorded_at`
+tolerantly: an unparseable timestamp is ignored (`nil`) rather than failing the whole update
+(`parseOptionalTime` in `internal/delivery/grpc/stream_handler.go`).
+
+`rotation` ∈ {0, 90, 180, 270} tells the frontend how to orient portrait video. It is set by the
+owner via `PATCH /stream/:id` (`UpdateStreamRequest.rotation`) and merged into the existing
+metadata JSONB — sibling keys are preserved. The transcoder's gRPC `UpdateStreamMetadata`
+**preserves** a saved rotation on re-transcode (it only overwrites the metadata fields it
+explicitly reports).
+
+## Face detection
+
+Face detection is dispatched by stream-service but executed by the separate
+**faces-service** (CV pipeline; remote repo `mrhumster/faces-service`):
+
+- `POST /stream/:id/faces` — enqueue detection for one stream. If the original file has been
+  removed (`KEEP_ORIGINAL_FILE=false` happens at `ready`), it falls back to
+  `processed/<streamUUID>/index.m3u8`.
+- `POST /stream/faces/batch` — enqueue detection for up to `MaxFacesBatchSize` (100) streams in
+  one request (`FacesBatchRequest{ids}`). Ownership is checked **per stream inside the service**
+  (owner + admin); the response is HTTP 200 with a partial-success body
+  `{processed, failed:[{stream_id, reason}]}`.
+- Progress is reported through the stream's `processing` array (`task_type` `faces`); the
+  `faces_detected` boolean is exposed on `GET /stream/:id` and `GET /stream/own` (and filterable
+  there).
+- Tasks go to the asynq `faces` queue (Redis DB 2) and are consumed by faces-worker (KEDA).
+
+## HLS / access control
+
+`GET /stream/:id/hls/*file` resolves the stream, checks visibility/owner
+(`OptionalAuth`), then streams files from MinIO key `processed/<streamUUID>/<fileName>`.
+- Bearer/anti-cache handled by the frontend (`?t=`), 403 → "Access denied";
+- File names are validated (`TrimPrefix `/` `, rejects empty, `..` and `\`) to prevent path
+  traversal — `GetFileByKey` in `stream_service_impl.go`.
+
+## WebSocket
+
+`/stream/ws/updates` requires auth via the **`Sec-WebSocket-Protocol`** subprotocol
+(`WSProtocolAuth` middleware) — the server echoes the subprotocol during the handshake
+(gorilla/websocket only echoes what the handler passes via `responseHeader`). `CheckOrigin`
+is restricted to the configured allowed origins. The hub addresses updates by userID:
+`STREAM_UPDATED` on stream changes, `STREAM_READY` when processing finishes.
+
+## gRPC
+
+- **Server** on `:50051` with mTLS — allowed OUs: `thumbnail-service`, `transcoder-service`.
+  Workers call `UpdateStreamProcessing` (progress/error reporting, task-aware),
+  `UpdateStreamMetadata` (recorded_at/location/camera/size via `UpdateStreamMetadataRequest`,
+  fields `duration=4 size=5 recorded_at=6 location=7 camera=8`) and file helpers.
+- **Client** to identity's permission service (`AUTH_SERVICE_ADDRESS`, mTLS, serverName
+  `identity-service`) for `Enforce`/`CheckPermission`.
+
+## Configuration (env)
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `SERVER_ADDR` | HTTP listen addr | `:8080` |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` | Postgres | `postgresql`/`5432`/`database1` |
+| `DB_USER` / `DB_PASS` | Postgres credentials | _secret_ |
+| `REDIS_ADDR` / `REDIS_PASS` | asynq queue + WS (asynq uses DB 2) | `localhost` / `password` |
+| `EVENTS_QUEUE_DB` | Redis DB for the events queue (default 3) | `3` |
+| `EXPORT_QUEUE_DB` | Redis DB for the export queue (default 4) | `4` |
+| `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | MinIO | `minio:9000` / `admin` / `minio123` |
+| `MINIO_BUCKET_NAME` / `MINIO_REGION` / `MINIO_USE_SSL` | bucket | `go-app-bucket` / `us-east-1` / `false` |
+| `JWT_ACCESS_PUBLIC_KEY_URL` | identity public key (token verification) | – |
+| `AUTH_SERVICE_ADDRESS` | identity permission gRPC addr | – |
+| `CORS_ALLOW_ORIGINS` | Allowed origins for CORS + WS | `http://localhost:5173,https://example.com,https://api.example.com` |
+| `GRPC_TLS_CERT` / `GRPC_TLS_KEY` / `GRPC_TLS_CA` | mTLS server/client certs | _secret_ |
+| `GRPC_TLS_ALLOWED_OUS` | Allowed peer OUs on gRPC server | – |
+| `GRPC_TLS_ENABLED` | Enable mTLS on gRPC | `false` |
+| `KEEP_ORIGINAL_FILE` | Keep source file after transcoding | `true` |
+| `MODE` | `debug` / `release` | `debug` |
+| `METRICS_ADDR` | (REST serves `/metrics` on the same port) | – |
+
+In K8s values come from ConfigMap `stream-service-config` (envFrom) + Secret `go-app-secret`.
+
+## Database
+
+Schema is **owned by migrations** (`services/db-migrate`):
+
+```bash
+make -C services/db-migrate all   # rebuild runner image
+make apply-db-migrate             # runs pending stream migrations (Job db-migrate-stream)
+```
+
+Version table: `schema_migrations_stream`. Note: `streams.owner_id` is `text` (a known legacy
+inconsistency with `users.id uuid`). See `services/db-migrate/README.md`.
+
+The stream image is built from the repo root structure; the identity module is consumed as an
+external Go module (see `go.mod`).
+
+## Build / run
+
+```bash
+make build        # Docker image xomrkob/stream:<git-tag>
+make push
+make deploy
+```
+
+## Deploy structure
+
+```
+deploy/k8s/
+├── base/               # deployment (envFrom configMap + secrets) + service
+├── minio/              # MinIO stateful deployment + PVC + secret
+├── scaling/hpa.yaml    # CPU/mem autoscaling
+└── (Metrics Service for the worker, in thumbnail/transcoder)
+```
+
+KEDA scales the workers: thumbnail/transcoder pods drop to 0 when there is no work — that is
+normal.

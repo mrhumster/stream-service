@@ -2,8 +2,10 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/gen/go/stream"
@@ -70,11 +72,35 @@ func protoMetadataReqToService(req *stream.UpdateStreamMetadataRequest) (*servic
 		Format:     req.Format,
 		Resolution: req.Resolution,
 		Size:       req.Size,
+		RecordedAt: parseOptionalTime(req.RecordedAt),
+		Location:   parseOptionalString(req.Location),
+		Camera:     parseOptionalString(req.Camera),
 	}
 	return &service.UpdateStreamMetadataRequest{
 		StreamUUID: streamUUID,
 		Metadata:   meta,
 	}, nil
+}
+
+// parseOptionalTime parses an RFC3339 timestamp into a *time.Time, returning
+// nil for empty input. Values that fail to parse are ignored so a malformed
+// payload never fails the metadata update entirely.
+func parseOptionalTime(v string) *time.Time {
+	if v == "" {
+		return nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+		t = t.UTC()
+		return &t
+	}
+	return nil
+}
+
+func parseOptionalString(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }
 
 func (s *StreamGRPCServer) UpdateStreamMetadata(ctx context.Context, req *stream.UpdateStreamMetadataRequest) (*stream.UpdateStreamMetadataResponse, error) {
@@ -93,7 +119,8 @@ func protoProcessingReqToService(req *stream.UpdateStreamProcessingRequest) (*se
 	if err != nil {
 		return nil, fmt.Errorf("error parse stream uuid: %w", err)
 	}
-	processing := models.StreamProcessing{
+	processing := models.StreamProcessingTask{
+		TaskType: req.Task,
 		Progress: int(req.Progress),
 		Steps:    req.Steps,
 		Error:    &req.Error,
@@ -112,9 +139,25 @@ func (s *StreamGRPCServer) UpdateStreamProcessing(ctx context.Context, req *stre
 	if err := s.streamService.UpdateStreamProcessing(ctx, serviceReq); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	if req.Error != "" {
-		streamID, _ := uuid.Parse(req.StreamUuid)
-		s.streamService.UpdateStreamStatus(ctx, streamID, models.StatusError)
-	}
 	return &stream.UpdateStreamProcessingResponse{Updated: true}, nil
+}
+
+// CompleteStreamExport is the worker's only way to finish a job. A failed mux is
+// reported as a business outcome (success=false), not a transport error, so the
+// state row is always updated.
+func (s *StreamGRPCServer) CompleteStreamExport(ctx context.Context, req *stream.CompleteStreamExportRequest) (*stream.CompleteStreamExportResponse, error) {
+	streamID, err := uuid.Parse(req.StreamUuid)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if req.Success && req.Size <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "size must be positive for a successful export")
+	}
+	if err := s.streamService.CompleteStreamExport(ctx, streamID, req.Size, req.Error); err != nil {
+		if errors.Is(err, service.ErrExportNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &stream.CompleteStreamExportResponse{Updated: true}, nil
 }

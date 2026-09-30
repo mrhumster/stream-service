@@ -1,17 +1,23 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/mrhumster/identity-service/pkg/dto"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/request"
 	"github.com/mrhumster/stream-service/internal/delivery/http/dto/response"
+	streammetrics "github.com/mrhumster/stream-service/internal/metrics"
 	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
@@ -19,25 +25,47 @@ import (
 )
 
 type StreamHandler struct {
-	service service.StreamService
-	hub     wss.Hub
+	service      service.StreamService
+	hub          wss.Hub
+	allowedOrigs map[string]bool
 }
 
 func NewStreamHandler(service service.StreamService, hub wss.Hub) *StreamHandler {
+	return NewStreamHandlerWithOrigins(service, hub, nil)
+}
+
+func NewStreamHandlerWithOrigins(service service.StreamService, hub wss.Hub, origins []string) *StreamHandler {
+	if len(origins) == 0 {
+		origins = []string{"http://localhost:5173", "https://example.com", "https://api.example.com"}
+	}
+	allowed := make(map[string]bool, len(origins))
+	for _, o := range origins {
+		allowed[o] = true
+	}
 	return &StreamHandler{
-		service: service,
-		hub:     hub,
+		service:      service,
+		hub:          hub,
+		allowedOrigs: allowed,
 	}
 }
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+func (h *StreamHandler) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	return h.allowedOrigs[origin]
 }
 
 func (h *StreamHandler) HandleWS(c *gin.Context) {
 	userUUID := c.MustGet("user").(uuid.UUID)
 	slog.Debug("Auth HANDLE WS", "user", userUUID)
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	upgrader := websocket.Upgrader{
+		CheckOrigin: h.checkOrigin,
+	}
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, http.Header{
+		"Sec-Websocket-Protocol": {c.GetHeader("Sec-Websocket-Protocol")},
+	})
 	if err != nil {
 		slog.Error("Upgrade connection", "error", err)
 		return
@@ -61,10 +89,76 @@ func (h *StreamHandler) HandleWS(c *gin.Context) {
 func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
 	userUUID := c.MustGet("user").(uuid.UUID)
 
-	var filter repository.StreamFilter
-	streams, total, err := h.service.ListUserStreams(c.Request.Context(), userUUID)
+	limit := c.Query("limit")
+	offset := c.Query("offset")
+
+	filter := repository.StreamFilter{
+		Offset: 0,
+		Limit:  100,
+	}
+	if limit != "" {
+		limitInt, err := strconv.Atoi(limit)
+		if err != nil || limitInt < 0 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid limit query"))
+			return
+		}
+		if limitInt > 100 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("limit must be 100 or less"))
+			return
+		}
+		filter.Limit = limitInt
+	}
+	if offset != "" {
+		offsetInt, err := strconv.Atoi(offset)
+		if err != nil || offsetInt < 0 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid offset query"))
+			return
+		}
+		if offsetInt > 10000 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("offset must be 10000 or less"))
+			return
+		}
+		filter.Offset = offsetInt
+	}
+
+	if status := c.Query("status"); status != "" {
+		if !validStreamStatus(status) {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid status query"))
+			return
+		}
+		s := models.StreamStatus(status)
+		filter.Status = &s
+	}
+
+	if faces := c.Query("faces_detected"); faces != "" {
+		facesBool, err := strconv.ParseBool(faces)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid faces_detected query"))
+			return
+		}
+		filter.FacesDetected = &facesBool
+	}
+
+	if sortBy := c.Query("sort"); sortBy != "" {
+		if !validStreamSort(sortBy) {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid sort query"))
+			return
+		}
+		filter.SortBy = sortBy
+	}
+
+	if sortOrder := c.Query("order"); sortOrder != "" {
+		if sortOrder != "asc" && sortOrder != "desc" {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid order query"))
+			return
+		}
+		filter.SortOrder = sortOrder
+	}
+
+	streams, total, err := h.service.ListUserStreams(c.Request.Context(), userUUID, filter)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		slog.Error("list user streams failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 	var resp response.ListReponse[response.StreamResponse]
@@ -76,6 +170,25 @@ func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
 	resp.Offset = filter.Offset
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func validStreamStatus(status string) bool {
+	switch models.StreamStatus(status) {
+	case models.StatusDraft, models.StatusProcessing, models.StatusReady,
+		models.StatusPublished, models.StatusError, models.StatusUploading:
+		return true
+	default:
+		return false
+	}
+}
+
+func validStreamSort(sortBy string) bool {
+	switch sortBy {
+	case "created_at", "title", "status":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
@@ -91,8 +204,12 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 	}
 	if limit != "" {
 		limitInt, err := strconv.Atoi(limit)
-		if err != nil {
+		if err != nil || limitInt < 0 {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid limit query"))
+			return
+		}
+		if limitInt > 100 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("limit must be 100 or less"))
 			return
 		}
 		filter.Limit = limitInt
@@ -100,11 +217,23 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 
 	if offset != "" {
 		offsetInt, err := strconv.Atoi(offset)
-		if err != nil {
+		if err != nil || offsetInt < 0 {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid offset query"))
 			return
 		}
+		if offsetInt > 10000 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("offset must be 10000 or less"))
+			return
+		}
 		filter.Offset = offsetInt
+	}
+
+	if q := c.Query("q"); q != "" {
+		if utf8.RuneCountInString(q) > 100 {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("q must be 100 characters or less"))
+			return
+		}
+		filter.Search = q
 	}
 
 	streams, total, err := h.service.ListStreams(c.Request.Context(), filter)
@@ -132,25 +261,33 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 func (h *StreamHandler) CreateStream(c *gin.Context) {
 	userUUID := c.MustGet("user").(uuid.UUID)
 
+	rawClaims, _ := c.Get("claims")
+	if claims, ok := rawClaims.(*dto.AccessClaims); ok && claims.Role != "admin" && !claims.EmailVerified {
+		c.JSON(http.StatusForbidden, response.ErrorResponse("email not verified"))
+		return
+	}
+
 	var req request.CreateStreamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
 		return
 	}
 
 	serviceReq, err := req.ToServiceRequest(userUUID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("create stream request conversion failed", "error", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream request"))
 		return
 	}
 
 	stream, err := h.service.CreateStream(c.Request.Context(), *serviceReq)
 	if err != nil {
-		// TODO: Реализовать разделение ошибок (validation, not found, internal)
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("create stream failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 
+	streammetrics.Lifecycle.WithLabelValues("created").Inc()
 	resp := response.FromDomainModel(stream)
 	c.JSON(http.StatusCreated, resp)
 }
@@ -166,15 +303,24 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 
 	stream, err := h.service.GetStream(c.Request.Context(), streamIDuuid)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		if errors.Is(err, service.ErrStreamNotFound) {
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		} else {
+			slog.Error("get stream failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
 		return
 	}
 
-	if stream.Visibility != models.VisibilityPublic {
-		user, ok := c.MustGet("user").(uuid.UUID)
-
-		if !ok || user == uuid.Nil || user != stream.OwnerID {
-			c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid user ID in context"))
+	if stream.Visibility == models.VisibilityPrivate {
+		user, ok := c.Get("user")
+		if !ok {
+			c.JSON(http.StatusForbidden, response.ErrorResponse("access denied"))
+			return
+		}
+		userID, ok := user.(uuid.UUID)
+		if !ok || userID == uuid.Nil || userID != stream.OwnerID {
+			c.JSON(http.StatusForbidden, response.ErrorResponse("access denied"))
 			return
 		}
 
@@ -182,6 +328,36 @@ func (h *StreamHandler) GetStream(c *gin.Context) {
 
 	resp := response.FromDomainModel(stream)
 	c.JSON(http.StatusOK, resp)
+}
+
+// GetStreamStatus returns only the status and visibility of a stream for
+// internal service-to-service checks (e.g. comments-service). Intentionally
+// auth-free and without permission logic: the payload is low-sensitivity and
+// exposed to the in-cluster reader only.
+func (h *StreamHandler) GetStreamStatus(c *gin.Context) {
+	streamIDuuid, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream ID in params"))
+		return
+	}
+
+	stream, err := h.service.GetStreamStatus(c.Request.Context(), streamIDuuid)
+	if err != nil {
+		if errors.Is(err, service.ErrStreamNotFound) {
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		} else {
+			slog.Error("get stream status failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":     stream.Status,
+		"visibility": stream.Visibility,
+		"owner_id":   stream.OwnerID,
+		"title":      stream.Title,
+	})
 }
 
 func (h *StreamHandler) UpdateStream(c *gin.Context) {
@@ -195,19 +371,28 @@ func (h *StreamHandler) UpdateStream(c *gin.Context) {
 	var req request.UpdateStreamRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
 		return
 	}
 
 	updateRequest, err := req.ToServiceRequest()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		slog.Error("update stream request conversion failed", "error", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream request"))
 		return
 	}
 
 	updatedStream, err := h.service.UpdateStream(c.Request.Context(), streamUUID, *updateRequest)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		switch {
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		case errors.Is(err, service.ErrCannotUpdatePublished):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		default:
+			slog.Error("update stream failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
 		return
 	}
 
@@ -220,11 +405,24 @@ func (h *StreamHandler) DeleteStream(c *gin.Context) {
 	param := c.Param("id")
 	streamID, err := uuid.Parse(param)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("invalid stream ID in params"))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream ID in params"))
 		return
 	}
 
-	h.service.DeleteStream(c.Request.Context(), streamID)
+	if err := h.service.DeleteStream(c.Request.Context(), streamID); err != nil {
+		switch {
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse(err.Error()))
+		case errors.Is(err, service.ErrCannotDeletePublished):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		default:
+			slog.Error("delete stream", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
+		return
+	}
+
+	streammetrics.Lifecycle.WithLabelValues("deleted").Inc()
 	c.JSON(http.StatusOK, nil)
 }
 
@@ -254,61 +452,134 @@ func (h *StreamHandler) UploadVideo(c *gin.Context) {
 		if _, ok := err.(*request.ValidationError); ok {
 			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
 		} else {
-			c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+			slog.Error("upload request conversion failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		}
 		return
 	}
 	err = h.service.UploadVideo(c.Request.Context(), *serviceReq)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("upload video failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
+	streammetrics.Uploads.WithLabelValues("simple").Inc()
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "video uploaded successfully",
 	})
 }
 
-func (h *StreamHandler) DownloadStream(c *gin.Context) {
-	streamID := c.Param("id")
-	streamUUID, err := uuid.Parse(streamID)
+// RequestExport asks the export worker to build the mp4 for this stream. It
+// answers 202 even when an export is already in flight, so the client can poll
+// or wait for the websocket event either way.
+func (h *StreamHandler) RequestExport(c *gin.Context) {
+	streamUUID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
 	userUUID := c.MustGet("user").(uuid.UUID)
+	// The email rides in the signed access token, so no identity lookup is
+	// needed to notify the owner. An unverified or absent claim means no
+	// notification; the export itself still runs.
+	email := ""
+	if rawClaims, ok := c.Get("claims"); ok {
+		if claims, ok := rawClaims.(*dto.AccessClaims); ok {
+			email = claims.Email
+		}
+	}
+
+	serviceResp, err := h.service.RequestStreamExport(c.Request.Context(), streamUUID, userUUID, email)
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
 	}
 
-	serviceResp, err := h.service.GenerateDownloadURL(c, streamUUID, userUUID)
+	c.JSON(http.StatusAccepted, response.NewExportResponse(serviceResp))
+}
+
+// GetExport reports the current export state.
+func (h *StreamHandler) GetExport(c *gin.Context) {
+	streamUUID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+	userUUID := c.MustGet("user").(uuid.UUID)
+
+	serviceResp, err := h.service.GetStreamExport(c.Request.Context(), streamUUID, userUUID)
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
 	}
 
-	resp, err := response.NewDownloadResponse(serviceResp)
+	c.JSON(http.StatusOK, response.NewExportResponse(serviceResp))
+}
+
+// DownloadStream streams the cached mp4 straight from the private bucket. The
+// response is a pipe, not a buffer, so a multi-gigabyte file costs the same
+// memory as a small one.
+func (h *StreamHandler) DownloadStream(c *gin.Context) {
+	streamUUID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+	userUUID := c.MustGet("user").(uuid.UUID)
+
+	serviceResp, err := h.service.OpenStreamDownload(c.Request.Context(), streamUUID, userUUID)
 	if err != nil {
 		h.handleDownloadError(c, err)
 		return
 	}
+	defer serviceResp.Content.Close()
 
-	directDownload := c.Query("direct") == "true"
-	if directDownload {
-		c.Redirect(http.StatusTemporaryRedirect, resp.URL)
-		return
+	c.Header("Content-Type", serviceResp.ContentType)
+	c.Header("Content-Length", strconv.FormatInt(serviceResp.Size, 10))
+	disposition := fmt.Sprintf(`attachment; filename="%s"`, asciiFallbackName(serviceResp.FileName))
+	if serviceResp.FileName != asciiFallbackName(serviceResp.FileName) {
+		disposition += fmt.Sprintf("; filename*=UTF-8''%s", url.PathEscape(serviceResp.FileName))
 	}
+	c.Header("Content-Disposition", disposition)
 
-	c.JSON(http.StatusOK, resp)
+	c.Status(http.StatusOK)
+	if _, err := io.Copy(c.Writer, serviceResp.Content); err != nil {
+		// The status line and part of the body are already on the wire, so
+		// there is nothing left to tell the client; the truncated body is the
+		// signal and the client verifies the size.
+		slog.Error("failed to stream export to client", "error", err)
+	}
+}
+
+// asciiFallbackName keeps the plain filename parameter inside the quoted-string
+// subset of RFC 6266 for clients that ignore filename*.
+func asciiFallbackName(name string) string {
+	ascii := strings.Map(func(r rune) rune {
+		if r < 0x20 || r >= 0x7f {
+			return '_'
+		}
+		return r
+	}, name)
+	ascii = strings.ReplaceAll(ascii, `"`, "_")
+	return ascii
 }
 
 func (h *StreamHandler) handleDownloadError(c *gin.Context, err error) {
-	errorMsg := err.Error()
-
 	switch {
-	case strings.Contains(errorMsg, "not found"):
+	case errors.Is(err, service.ErrStreamNotFound), errors.Is(err, service.ErrExportNotFound):
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
-	case strings.Contains(errorMsg, "not ready"):
+	case errors.Is(err, service.ErrStreamForbidden):
+		c.JSON(http.StatusForbidden, response.ErrorResponse("forbidden"))
+	case errors.Is(err, service.ErrStreamNotReady):
 		c.JSON(http.StatusBadRequest, response.ErrorResponse("stream not available for download"))
+	case errors.Is(err, service.ErrExportPending):
+		c.JSON(http.StatusConflict, response.ErrorResponse("export is still being prepared"))
+	case strings.HasPrefix(err.Error(), "export failed"):
+		c.JSON(http.StatusConflict, response.ErrorResponse("export failed, try again"))
 	default:
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("failed to generate download link"))
+		slog.Error("download failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("failed to prepare download"))
 	}
 }
 
@@ -316,14 +587,13 @@ func (h *StreamHandler) InitUpload(c *gin.Context) {
 	val := c.Param("id")
 	streamUUID, err := uuid.Parse(val)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
 		return
 	}
 
 	var req request.StartUploadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
-		h.handleDownloadError(c, err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
 		return
 	}
 
@@ -336,7 +606,8 @@ func (h *StreamHandler) InitUpload(c *gin.Context) {
 		*serviceReq,
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("start stream upload failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 
@@ -344,6 +615,7 @@ func (h *StreamHandler) InitUpload(c *gin.Context) {
 		StreamID: uploadInfo.StreamID.String(),
 		UploadID: uploadInfo.UploadID,
 	}
+	streammetrics.Uploads.WithLabelValues("init").Inc()
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -352,30 +624,33 @@ func (h *StreamHandler) PartUpload(c *gin.Context) {
 	val := c.Param("id")
 	streamUUID, err := uuid.Parse(val)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
 		return
 	}
 	var req request.UploadPartRequest
 	if err = c.ShouldBind(&req); err != nil {
-		fmt.Printf("Binding error: %v\n", err)
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		slog.Error("bind part upload request failed", "error", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
 		return
 	}
 	reqService, err := req.ToService(streamUUID, userUUID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("part upload request conversion failed", "error", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid part upload request"))
 		return
 	}
 
 	part, err := h.service.UploadPart(c.Request.Context(), *reqService)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		slog.Error("upload part failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 	resp := response.PartUploadResponse{
 		PartNumber: part.PartNumber,
 		ETag:       part.ETag,
 	}
+	streammetrics.Uploads.WithLabelValues("part").Inc()
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -384,26 +659,29 @@ func (h *StreamHandler) CompleteUpload(c *gin.Context) {
 	val := c.Param("id")
 	streamUUID, err := uuid.Parse(val)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
 		return
 	}
 
 	var req request.CompleteUploadRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
 		return
 	}
 
 	reqService, err := req.ToService(streamUUID, userUUID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		slog.Error("complete upload request conversion failed", "error", err)
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid complete upload request"))
 		return
 	}
 	if err := h.service.CompleteStreamUpload(c.Request.Context(), *reqService); err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		slog.Error("complete stream upload failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
 
+	streammetrics.Uploads.WithLabelValues("complete").Inc()
 	c.Status(http.StatusNoContent)
 }
 
@@ -411,18 +689,28 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 	val := c.Param("id")
 	streamUUID, err := uuid.Parse(val)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
 		return
 	}
 
 	stream, err := h.service.GetStream(c.Request.Context(), streamUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		return
 	}
 
-	if stream.Status != models.StatusPublished {
+	// Published streams play for everyone; private streams are owner-only
+	// even after publishing; non-published streams are owner-only as well.
+	if stream.Status != models.StatusPublished || stream.Visibility == models.VisibilityPrivate {
 		user, exist := c.Get("user")
-		if !exist || user.(uuid.UUID) != stream.OwnerID {
+		if !exist {
+			streammetrics.HLSRequests.WithLabelValues("403").Inc()
+			c.JSON(http.StatusForbidden, response.ErrorResponse("this stream is private or not ready "))
+			return
+		}
+		userID, ok := user.(uuid.UUID)
+		if !ok || userID != stream.OwnerID {
+			streammetrics.HLSRequests.WithLabelValues("403").Inc()
 			c.JSON(http.StatusForbidden, response.ErrorResponse("this stream is private or not ready "))
 			return
 		}
@@ -439,14 +727,29 @@ func (h *StreamHandler) GetHLS(c *gin.Context) {
 	}
 	res, err := h.service.GetFileByKey(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse(err.Error()))
+		switch {
+		case errors.Is(err, service.ErrInvalidFileName):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid file name"))
+		case errors.Is(err, service.ErrCannotWatch):
+			c.JSON(http.StatusForbidden, response.ErrorResponse("stream is not available for watching"))
+		default:
+			slog.Error("get file by key failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
 		return
 	}
 
 	if res != nil {
 		defer res.Content.Close()
 	}
+	streammetrics.HLSRequests.WithLabelValues("200").Inc()
 	c.DataFromReader(http.StatusOK, res.Size, res.ContentType, res.Content, nil)
+}
+
+func (h *StreamHandler) isAdmin(c *gin.Context) bool {
+	rawClaims, _ := c.Get("claims")
+	claims, ok := rawClaims.(*dto.AccessClaims)
+	return ok && claims.Role == "admin"
 }
 
 func (h *StreamHandler) PublishStream(c *gin.Context) {
@@ -462,14 +765,23 @@ func (h *StreamHandler) PublishStream(c *gin.Context) {
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
 		return
 	}
-	if stream.OwnerID != userUUID {
+	if stream.OwnerID != userUUID && !h.isAdmin(c) {
 		c.JSON(http.StatusForbidden, response.ErrorResponse("only owner can published that stream"))
 		return
 	}
 	if err := h.service.PublishStream(c.Request.Context(), streamUUID); err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
+		switch {
+		case errors.Is(err, service.ErrCannotPublish):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("stream must be ready before publishing"))
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		default:
+			slog.Error("publish stream failed", "error", err, "stream", streamUUID)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
+		}
 		return
 	}
+	streammetrics.Lifecycle.WithLabelValues("published").Inc()
 	c.Status(http.StatusCreated)
 }
 
@@ -486,13 +798,107 @@ func (h *StreamHandler) UnpublishStream(c *gin.Context) {
 		c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
 		return
 	}
-	if stream.OwnerID != userUUID {
+	if stream.OwnerID != userUUID && !h.isAdmin(c) {
 		c.JSON(http.StatusForbidden, response.ErrorResponse("only owner can unpublished that stream"))
 		return
 	}
 	if err := h.service.UnpublishStream(c.Request.Context(), streamUUID); err != nil {
-		c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
+		switch {
+		case errors.Is(err, service.ErrCannotUnpublish):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("only published streams can be unpublished"))
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		default:
+			slog.Error("unpublish stream failed", "error", err, "stream", streamUUID)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("service error"))
+		}
 		return
 	}
+	streammetrics.Lifecycle.WithLabelValues("unpublished").Inc()
 	c.Status(http.StatusCreated)
+}
+
+func (h *StreamHandler) ReprocessStream(c *gin.Context) {
+	streamID := c.Param("id")
+	streamUUID, err := uuid.Parse(streamID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+
+	if err := h.service.ReprocessStream(c.Request.Context(), streamUUID); err != nil {
+		switch {
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		case errors.Is(err, service.ErrStreamNotInErrorState):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		case errors.Is(err, service.ErrSourceFileMissing):
+			c.JSON(http.StatusConflict, response.ErrorResponse("source file has been removed; re-upload is required"))
+		default:
+			slog.Error("reprocess stream failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
+		return
+	}
+	streammetrics.Lifecycle.WithLabelValues("reprocessed").Inc()
+	c.JSON(http.StatusOK, nil)
+}
+
+func (h *StreamHandler) ProcessFacesStream(c *gin.Context) {
+	streamID := c.Param("id")
+	streamUUID, err := uuid.Parse(streamID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+
+	if err := h.service.ProcessFacesStream(c.Request.Context(), streamUUID); err != nil {
+		switch {
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		case errors.Is(err, service.ErrSourceFileMissing):
+			c.JSON(http.StatusConflict, response.ErrorResponse("source file has been removed; re-upload is required"))
+		default:
+			slog.Error("process faces failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
+		return
+	}
+	streammetrics.Lifecycle.WithLabelValues("faces").Inc()
+	c.JSON(http.StatusOK, nil)
+}
+
+// ProcessFacesBatch enqueues face detection for several streams at once. Only
+// streams owned by the requesting user (or any stream when the user is an
+// admin) are processed; the response reports per-id results for partial
+// success.
+func (h *StreamHandler) ProcessFacesBatch(c *gin.Context) {
+	userUUID := c.MustGet("user").(uuid.UUID)
+
+	var req request.FacesBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
+		return
+	}
+	if err := req.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	res, err := h.service.ProcessFacesBatch(c.Request.Context(), userUUID, h.isAdmin(c), req.IDs)
+	if err != nil {
+		slog.Error("process faces batch failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		return
+	}
+
+	processed := make([]string, 0, len(res.Processed))
+	for _, id := range res.Processed {
+		processed = append(processed, id.String())
+	}
+	failed := make([]response.FacesBatchFailureDTO, 0, len(res.Failed))
+	for _, f := range res.Failed {
+		failed = append(failed, response.FacesBatchFailureDTO{StreamID: f.StreamID.String(), Reason: f.Reason})
+	}
+	c.JSON(http.StatusOK, response.NewFacesBatchResponse(processed, failed))
 }

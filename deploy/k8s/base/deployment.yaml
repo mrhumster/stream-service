@@ -14,6 +14,10 @@ spec:
     metadata:
       labels:
         app: stream-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: stream
@@ -32,6 +36,23 @@ spec:
                 name: minio-credentials
             - secretRef:
                 name: casbin-redis
+            - secretRef:
+                name: faces-internal-token
+          env:
+            - name: GRPC_TLS_ENABLED
+              value: "true"
+            - name: GRPC_TLS_CERT
+              value: "/tls/grpc/tls.crt"
+            - name: GRPC_TLS_KEY
+              value: "/tls/grpc/tls.key"
+            - name: GRPC_TLS_CA
+              value: "/tls/grpc/ca.crt"
+            - name: GRPC_TLS_ALLOWED_OUS
+              value: "thumbnail-service,transcoder-service,faces-service"
+          volumeMounts:
+            - name: grpc-tls
+              mountPath: /tls/grpc
+              readOnly: true
 
           resources:
             requests:
@@ -52,3 +73,7 @@ spec:
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 10
+      volumes:
+        - name: grpc-tls
+          secret:
+            secretName: grpc-stream-tls

@@ -11,12 +11,14 @@ import (
 	"github.com/mrhumster/identity-service/pkg/auth"
 	"github.com/mrhumster/identity-service/pkg/middleware"
 	"github.com/mrhumster/stream-service/config"
+	streammiddleware "github.com/mrhumster/stream-service/internal/delivery/http/middleware"
 	"github.com/mrhumster/stream-service/internal/delivery/http/handlers"
 	"github.com/mrhumster/stream-service/internal/queue"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/service"
 	"github.com/mrhumster/stream-service/internal/storage"
 	"github.com/mrhumster/stream-service/internal/wss"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gorm.io/gorm"
 )
 
@@ -28,6 +30,7 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 
 	r := gin.New()
 	r.Use(middleware.StructuredLog())
+	r.Use(middleware.MetricsMiddleware())
 	r.Use(gin.Recovery())
 
 	switch mode {
@@ -47,7 +50,7 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 
 	// CORS
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "https://example.com", "https://api.example.com"},
+		AllowOrigins:     cfg.Server.AllowedOrigins,
 		AllowMethods:     []string{"GET", "PATCH", "POST", "OPTIONS", "PUT", "DELETE"},
 		AllowHeaders:     []string{"Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
@@ -69,11 +72,27 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 		DB:       2,
 	}
 
+	eventsRedisOpt := asynq.RedisClientOpt{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.EventsQueueDB,
+	}
+
+	exportRedisOpt := asynq.RedisClientOpt{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.ExportQueueDB,
+	}
+
 	hub := wss.NewWssHub()
 	database := repository.NewGormStreamRepository(db)
 	asyncDistributor := queue.NewAsyncDistributor(redisOpt)
 	streamService := service.NewStreamServiceImpl(database, permissionClient, storage, asyncDistributor, hub, &cfg.Server)
-	streamHandler := handlers.NewStreamHandler(streamService, hub)
+	streamService.WithActivityRecorder(queue.NewAsyncActivityRecorder(eventsRedisOpt))
+	streamService.WithFacesCascadeRecorder(queue.NewAsyncFacesCascadeRecorder(redisOpt))
+	streamService.WithExportRepository(repository.NewGormStreamExportRepository(db))
+	streamService.WithExportQueue(queue.NewAsyncExportDistributor(exportRedisOpt))
+	streamHandler := handlers.NewStreamHandlerWithOrigins(streamService, hub, cfg.Server.AllowedOrigins)
 
 	r.GET("/stream/health", func(c *gin.Context) {
 		if _, err := db.DB(); err != nil {
@@ -83,12 +102,14 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "up"})
 	})
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	r.GET("/stream", streamHandler.ListStreamPublic)
 	r.GET("/stream/:id", middleware.OptionalAuthMiddleware(tokenService), streamHandler.GetStream)
+	r.GET("/stream/:id/status", streamHandler.GetStreamStatus)
 	r.GET("/stream/:id/download", middleware.AuthMiddleware(tokenService), streamHandler.DownloadStream)
 	r.GET("/stream/:id/hls/*file", middleware.OptionalAuthMiddleware(tokenService), streamHandler.GetHLS)
-	r.GET("/stream/ws/updates", middleware.AuthMiddleware(tokenService), streamHandler.HandleWS)
+	r.GET("/stream/ws/updates", streammiddleware.WSProtocolAuth(tokenService), streamHandler.HandleWS)
 
 	authGroup := r.Group("/stream")
 	authGroup.Use(middleware.AuthMiddleware(tokenService))
@@ -100,6 +121,11 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 		authGroup.DELETE("/:id", middleware.Authorize(permissionClient, "stream", "delete"), streamHandler.DeleteStream)
 		authGroup.POST("/:id/publish", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.PublishStream)
 		authGroup.POST("/:id/unpublish", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.UnpublishStream)
+		authGroup.POST("/:id/reprocess", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ReprocessStream)
+		authGroup.POST("/faces/batch", streamHandler.ProcessFacesBatch)
+		authGroup.POST("/:id/faces", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ProcessFacesStream)
+		authGroup.GET("/:id/export", streamHandler.GetExport)
+		authGroup.POST("/:id/export", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.RequestExport)
 		authGroup.POST("/:id/upload", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.UploadVideo)
 		authGroup.POST("/:id/upload/init", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.InitUpload)
 		authGroup.PUT("/:id/upload/part", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.PartUpload)

@@ -78,31 +78,58 @@ func (s *Stream) SetMetadata(metadata *StreamMetadata) error {
 	return nil
 }
 
-func (s *Stream) GetAnalitics() (*StreamAnalytics, error) {
-	var analytics StreamAnalytics
-	if err := json.Unmarshal(s.Analytics, &analytics); err != nil {
-		return nil, err
-	}
-	return &analytics, nil
+func (s *Stream) UpdateProcessing(process int, steps []string, errMsg *string, taskID *string) error {
+	return s.SetTaskProgress(TaskTypeTranscode, process, steps, errMsg, taskID)
 }
 
-func (s *Stream) SetAnalitics(analitics *StreamAnalytics) error {
-	data, err := json.Marshal(analitics)
+func (s *Stream) ProcessingTasks() ([]StreamProcessingTask, error) {
+	if len(s.Processing) == 0 || string(s.Processing) == "null" {
+		return []StreamProcessingTask{}, nil
+	}
+	var tasks []StreamProcessingTask
+	if err := json.Unmarshal(s.Processing, &tasks); err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
+func (s *Stream) SetTaskProgress(taskType string, progress int, steps []string, errMsg, taskID *string) error {
+	tasks, err := s.ProcessingTasks()
 	if err != nil {
 		return err
 	}
-	s.Analytics = datatypes.JSON(data)
+
+	updated := false
+	for i := range tasks {
+		if tasks[i].TaskType == taskType {
+			tasks[i].Progress = progress
+			tasks[i].Steps = steps
+			tasks[i].Error = errMsg
+			tasks[i].TaskID = taskID
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		tasks = append(tasks, StreamProcessingTask{
+			TaskType: taskType,
+			Progress: progress,
+			Steps:    steps,
+			Error:    errMsg,
+			TaskID:   taskID,
+		})
+	}
+
+	data, err := json.Marshal(tasks)
+	if err != nil {
+		return err
+	}
+	s.Processing = datatypes.JSON(data)
 	return nil
 }
 
-func (s *Stream) UpdateProcessing(process int, steps []string, errMsg *string, taskID *string) error {
-	processing := StreamProcessing{
-		Progress: process,
-		Steps:    steps,
-		Error:    errMsg,
-		TaskID:   taskID,
-	}
-	data, err := json.Marshal(processing)
+func (s *Stream) SetInitialTasks(tasks []StreamProcessingTask) error {
+	data, err := json.Marshal(tasks)
 	if err != nil {
 		return err
 	}

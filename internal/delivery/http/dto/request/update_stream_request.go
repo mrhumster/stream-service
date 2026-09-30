@@ -12,6 +12,7 @@ type UpdateStreamRequest struct {
 	Description *string                  `json:"description"`
 	Visibility  *models.StreamVisibility `json:"visibility"`
 	Tags        *[]string                `json:"tags"`
+	Rotation    *int                     `json:"rotation"`
 }
 
 func (r *UpdateStreamRequest) Validate() error {
@@ -31,6 +32,14 @@ func (r *UpdateStreamRequest) Validate() error {
 			return fmt.Errorf("invalid visibility: %s", *r.Visibility)
 		}
 	}
+
+	if r.Rotation != nil {
+		switch *r.Rotation {
+		case 0, 90, 180, 270:
+		default:
+			return fmt.Errorf("invalid rotation: %d (must be one of 0, 90, 180, 270)", *r.Rotation)
+		}
+	}
 	return nil
 }
 
@@ -43,5 +52,6 @@ func (r *UpdateStreamRequest) ToServiceRequest() (*service.UpdateStreamRequest, 
 		Description: r.Description,
 		Visibility:  r.Visibility,
 		Tags:        r.Tags,
+		Rotation:    r.Rotation,
 	}, nil
 }

@@ -41,6 +41,21 @@ func (m *MockTaskDistributor) EXPECT() *MockTaskDistributorMockRecorder {
 	return m.recorder
 }
 
+// DistributeFacesProcessor mocks base method.
+func (m *MockTaskDistributor) DistributeFacesProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DistributeFacesProcessor", ctx, streamUUID, inputPath)
+	ret0, _ := ret[0].(*string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DistributeFacesProcessor indicates an expected call of DistributeFacesProcessor.
+func (mr *MockTaskDistributorMockRecorder) DistributeFacesProcessor(ctx, streamUUID, inputPath any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DistributeFacesProcessor", reflect.TypeOf((*MockTaskDistributor)(nil).DistributeFacesProcessor), ctx, streamUUID, inputPath)
+}
+
 // DistributeThumbsnailProcessor mocks base method.
 func (m *MockTaskDistributor) DistributeThumbsnailProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
 	m.ctrl.T.Helper()
@@ -69,6 +84,51 @@ func (m *MockTaskDistributor) DistributeVideoTranscoding(ctx context.Context, st
 func (mr *MockTaskDistributorMockRecorder) DistributeVideoTranscoding(ctx, streamUUID, inputPath any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DistributeVideoTranscoding", reflect.TypeOf((*MockTaskDistributor)(nil).DistributeVideoTranscoding), ctx, streamUUID, inputPath)
+}
+
+// ReprocessFacesProcessor mocks base method.
+func (m *MockTaskDistributor) ReprocessFacesProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReprocessFacesProcessor", ctx, streamUUID, inputPath)
+	ret0, _ := ret[0].(*string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReprocessFacesProcessor indicates an expected call of ReprocessFacesProcessor.
+func (mr *MockTaskDistributorMockRecorder) ReprocessFacesProcessor(ctx, streamUUID, inputPath any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReprocessFacesProcessor", reflect.TypeOf((*MockTaskDistributor)(nil).ReprocessFacesProcessor), ctx, streamUUID, inputPath)
+}
+
+// ReprocessThumbsnailProcessor mocks base method.
+func (m *MockTaskDistributor) ReprocessThumbsnailProcessor(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReprocessThumbsnailProcessor", ctx, streamUUID, inputPath)
+	ret0, _ := ret[0].(*string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReprocessThumbsnailProcessor indicates an expected call of ReprocessThumbsnailProcessor.
+func (mr *MockTaskDistributorMockRecorder) ReprocessThumbsnailProcessor(ctx, streamUUID, inputPath any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReprocessThumbsnailProcessor", reflect.TypeOf((*MockTaskDistributor)(nil).ReprocessThumbsnailProcessor), ctx, streamUUID, inputPath)
+}
+
+// ReprocessVideoTranscoding mocks base method.
+func (m *MockTaskDistributor) ReprocessVideoTranscoding(ctx context.Context, streamUUID uuid.UUID, inputPath string) (*string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReprocessVideoTranscoding", ctx, streamUUID, inputPath)
+	ret0, _ := ret[0].(*string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReprocessVideoTranscoding indicates an expected call of ReprocessVideoTranscoding.
+func (mr *MockTaskDistributorMockRecorder) ReprocessVideoTranscoding(ctx, streamUUID, inputPath any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReprocessVideoTranscoding", reflect.TypeOf((*MockTaskDistributor)(nil).ReprocessVideoTranscoding), ctx, streamUUID, inputPath)
 }
 
 // TerminateTask mocks base method.

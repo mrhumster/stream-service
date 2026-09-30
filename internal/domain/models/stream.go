@@ -23,6 +23,10 @@ const (
 	VisibilityPublic   StreamVisibility = "public"
 	VisibilityPrivate  StreamVisibility = "private"
 	VisibilityUnlisted StreamVisibility = "unlisted"
+
+	TaskTypeTranscode  = "transcode"
+	TaskTypeThumbnail  = "thumbnail"
+	TaskTypeFaces      = "faces"
 )
 
 type Stream struct {
@@ -39,9 +43,9 @@ type Stream struct {
 	Metadata   datatypes.JSON `gorm:"type:jsonb"`
 	Storage    datatypes.JSON `gorm:"type:jsonb"`
 	Processing datatypes.JSON `gorm:"type:jsonb"`
-	Analytics  datatypes.JSON `gorm:"type:jsonb"`
 
-	PublishedAt *time.Time
+	PublishedAt   *time.Time
+	FacesDetected bool `gorm:"not null;default:false"`
 }
 
 type StreamMetadata struct {
@@ -49,6 +53,11 @@ type StreamMetadata struct {
 	Size       int64  `json:"size"`
 	Format     string `json:"format"`
 	Resolution string `json:"resolution"`
+
+	RecordedAt *time.Time `json:"recorded_at,omitempty"`
+	Location   *string    `json:"location,omitempty"`
+	Camera     *string    `json:"camera,omitempty"`
+	Rotation   int        `json:"rotation,omitempty"`
 }
 
 type StreamStorage struct {
@@ -59,16 +68,12 @@ type StreamStorage struct {
 	UploadID string `json:"upload_id,omitempty"`
 }
 
-type StreamProcessing struct {
+type StreamProcessingTask struct {
+	TaskType string   `json:"task_type"`
 	Progress int      `json:"progress"`
 	Steps    []string `json:"steps"`
 	Error    *string  `json:"error"`
 	TaskID   *string  `json:"task_id"`
-}
-
-type StreamAnalytics struct {
-	Views int64 `json:"views"`
-	Likes int64 `json:"likes"`
 }
 
 type MultipartPart struct {

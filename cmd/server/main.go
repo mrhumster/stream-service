@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mrhumster/identity-service/pkg/auth"
+	"github.com/mrhumster/identity-service/pkg/grpctls"
 	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/gen/go/stream"
 	"github.com/mrhumster/stream-service/internal/database"
@@ -19,6 +20,11 @@ import (
 	"github.com/mrhumster/stream-service/internal/delivery/http/routes"
 	"github.com/mrhumster/stream-service/internal/storage"
 	"google.golang.org/grpc"
+)
+
+var (
+	version   = "dev"
+	buildDate = "unknown"
 )
 
 func main() {
@@ -30,7 +36,7 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
 
 	slog.SetDefault(logger)
-	slog.Info("Start Stream service", "version", "v0.1.0")
+	slog.Info("Start Stream service", "version", version, "build_date", buildDate)
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -51,7 +57,7 @@ func main() {
 		log.Fatalf("❌ Error open database: %v", err)
 	}
 
-	permissionClient, err := auth.NewPermissionClient(cfg.Server.AuthServiceAddr)
+	permissionClient, err := newPermissionClient(cfg)
 	if err != nil {
 		log.Fatalf("❌ Permission gRPC client: %v", err)
 	}
@@ -85,7 +91,19 @@ func main() {
 
 	grpcHandle := grpcHandle.NewStreamGRPCServer(svc)
 
-	grpcServer := grpc.NewServer()
+	grpcOpts := []grpc.ServerOption{}
+	if cfg.Server.GRPCTLSEnabled {
+		serverCreds, cerr := grpctls.ServerTLSCreds(cfg.Server.GRPCTLSCertFile, cfg.Server.GRPCTLSKeyFile, cfg.Server.GRPCTLSCAFile)
+		if cerr != nil {
+			log.Fatalf("🔴 Failed to load gRPC server TLS: %v", cerr)
+		}
+		grpcOpts = append(grpcOpts, grpc.Creds(serverCreds))
+		if len(cfg.Server.GRPCTLSAllowedOUs) > 0 {
+			grpcOpts = append(grpcOpts, grpc.UnaryInterceptor(grpctls.AllowOUsInterceptor(cfg.Server.GRPCTLSAllowedOUs...)))
+		}
+	}
+
+	grpcServer := grpc.NewServer(grpcOpts...)
 	stream.RegisterStreamServiceServer(grpcServer, grpcHandle)
 
 	go func() {
@@ -122,4 +140,17 @@ func main() {
 
 	httpServer.Shutdown(ctx)
 	grpcServer.GracefulStop()
+}
+
+// newPermissionClient builds the PermissionService gRPC client, using mTLS
+// credentials against identity-service when TLS is enabled, insecure otherwise.
+func newPermissionClient(cfg *config.Config) (auth.PermissionClient, error) {
+	if !cfg.Server.GRPCTLSEnabled {
+		return auth.NewPermissionClient(cfg.Server.AuthServiceAddr)
+	}
+	creds, err := grpctls.ClientTLSCreds(cfg.Server.GRPCTLSCertFile, cfg.Server.GRPCTLSKeyFile, cfg.Server.GRPCTLSCAFile, "identity-service")
+	if err != nil {
+		return nil, err
+	}
+	return auth.NewPermissionClientWithTLS(cfg.Server.AuthServiceAddr, creds)
 }

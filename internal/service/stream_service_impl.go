@@ -1,14 +1,18 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"path"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +21,7 @@ import (
 	"github.com/mrhumster/identity-service/pkg/auth"
 	"github.com/mrhumster/stream-service/config"
 	"github.com/mrhumster/stream-service/internal/domain/models"
+	streammetrics "github.com/mrhumster/stream-service/internal/metrics"
 	"github.com/mrhumster/stream-service/internal/queue"
 	"github.com/mrhumster/stream-service/internal/repository"
 	"github.com/mrhumster/stream-service/internal/storage"
@@ -25,6 +30,8 @@ import (
 	"gorm.io/gorm"
 )
 
+var segmentNamePattern = regexp.MustCompile(`^seg_(\d+)\.ts$`)
+
 type StreamServiceImpl struct {
 	repo             repository.StreamRepository
 	permissionClient auth.PermissionClient
@@ -32,6 +39,10 @@ type StreamServiceImpl struct {
 	queue            queue.TaskDistributor
 	hub              wss.Hub
 	cfg              *config.Server
+	eventsRecorder   queue.ActivityEventRecorder
+	cascadeRecorder  queue.FacesCascadeRecorder
+	exportRepo       repository.StreamExportRepository
+	exportQueue      queue.ExportTaskDistributor
 }
 
 func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.PermissionClient, stor storage.FileStorage, queue queue.TaskDistributor, hub wss.Hub, cfg *config.Server) *StreamServiceImpl {
@@ -44,6 +55,100 @@ func NewStreamServiceImpl(repo repository.StreamRepository, perm auth.Permission
 		cfg:              cfg,
 	}
 }
+
+// WithActivityRecorder attaches the activity-event recorder (best-effort,
+// nil-safe). Events for the stream owner are emitted through the events queue.
+func (s *StreamServiceImpl) WithActivityRecorder(r queue.ActivityEventRecorder) *StreamServiceImpl {
+	s.eventsRecorder = r
+	return s
+}
+
+// WithFacesCascadeRecorder attaches the faces cascade recorder (best-effort,
+// nil-safe): when a stream is deleted, faces-worker is asked to drop all stored
+// face data for it.
+func (s *StreamServiceImpl) WithFacesCascadeRecorder(r queue.FacesCascadeRecorder) *StreamServiceImpl {
+	s.cascadeRecorder = r
+	return s
+}
+
+// WithExportQueue attaches the distributor used to ask the export worker for a
+// single-file rendition. It is separate from TaskDistributor because the export
+// queue lives in its own Redis DB, so the export service can be scaled and
+// restarted without touching transcoding.
+func (s *StreamServiceImpl) WithExportQueue(q queue.ExportTaskDistributor) *StreamServiceImpl {
+	s.exportQueue = q
+	return s
+}
+
+// WithExportRepository attaches the store for export state.
+func (s *StreamServiceImpl) WithExportRepository(r repository.StreamExportRepository) *StreamServiceImpl {
+	s.exportRepo = r
+	return s
+}
+
+// recordFaceCascade best-effort enqueues a faces cascade task after a stream
+// has been deleted from the database.
+func (s *StreamServiceImpl) recordFaceCascade(ctx context.Context, streamID uuid.UUID) {
+	if s.cascadeRecorder == nil {
+		return
+	}
+	if err := s.cascadeRecorder.RecordStreamDeleted(ctx, streamID); err != nil {
+		slog.Warn("record faces cascade failed", "stream", streamID, "error", err)
+	}
+}
+
+// eventPayload builds the activity-event payload for a stream event. The
+// stream title (and visibility) are always included so the feed can render
+// the title; optional fields (filename, progress, error, ...) are merged.
+// Stream fields take precedence over any extra values with the same key.
+func eventPayload(stream *models.Stream, extra any) map[string]any {
+	p := map[string]any{}
+	switch m := extra.(type) {
+	case nil:
+	case map[string]any:
+		for k, v := range m {
+			p[k] = v
+		}
+	default:
+		slog.Warn("unexpected activity event payload type", "type", fmt.Sprintf("%T", extra))
+	}
+	p["title"] = stream.Title
+	p["visibility"] = stream.Visibility
+	return p
+}
+
+func (s *StreamServiceImpl) recordEvent(ctx context.Context, stream *models.Stream, eventType string, payload any) {
+	if s.eventsRecorder == nil {
+		return
+	}
+	if err := s.eventsRecorder.RecordActivityEvent(ctx, stream.OwnerID, eventType, &stream.ID, eventPayload(stream, payload)); err != nil {
+		slog.Warn("record activity event failed", "stream", stream.ID, "event", eventType, "error", err)
+	}
+}
+
+var (
+	ErrStreamNotFound        = errors.New("stream not found")
+	ErrCannotUpdatePublished = errors.New("cannot update published stream")
+	ErrCannotDeletePublished = errors.New("cannot delete published stream")
+	ErrStreamNotReady        = errors.New("stream not ready for download")
+	ErrInvalidFileName       = errors.New("invalid file name")
+	ErrCannotWatch           = errors.New("stream is not available for watching")
+	ErrStreamNotInErrorState = errors.New("stream is not in an error state")
+	ErrSourceFileMissing     = errors.New("source file is missing")
+	ErrCannotPublish         = errors.New("stream must be ready before publishing")
+	ErrCannotUnpublish       = errors.New("only published streams can be unpublished")
+	ErrStreamForbidden       = errors.New("only the stream owner can do this")
+	ErrExportNotFound        = errors.New("no export has been prepared for this stream")
+	ErrExportPending         = errors.New("export is still being prepared")
+)
+
+const (
+	// defaultDownloadName is used when a title sanitizes down to nothing.
+	defaultDownloadName = "stream.mp4"
+	// maxDownloadNameLen keeps the attachment name inside what common
+	// filesystems accept once a multi-byte title is counted in bytes.
+	maxDownloadNameLen = 120
+)
 
 func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRequest) (*models.Stream, error) {
 	if req.Title == "" {
@@ -81,6 +186,7 @@ func (s *StreamServiceImpl) CreateStream(ctx context.Context, req CreateStreamRe
 			log.Printf("Permission added successfully. permissionClient.AddPolicy(sub = %s,obj = %s, act = %s)", sub, obj, act)
 		}
 	}
+	s.recordEvent(ctx, stream, "stream.created", map[string]any{"title": stream.Title, "visibility": stream.Visibility})
 	return stream, nil
 }
 
@@ -88,20 +194,31 @@ func (s *StreamServiceImpl) GetStream(ctx context.Context, id uuid.UUID) (*model
 	stream, err := s.repo.Read(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("stream not found: %w", err)
+			return nil, ErrStreamNotFound
 		}
 		return nil, fmt.Errorf("failed to get stream: %w", err)
 	}
 	return stream, nil
 }
 
+func (s *StreamServiceImpl) GetStreamStatus(ctx context.Context, id uuid.UUID) (*models.Stream, error) {
+	stream, err := s.repo.Read(ctx, id)
+	if err != nil {
+		return nil, ErrStreamNotFound
+	}
+	return stream, nil
+}
+
 func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error) {
 	stream, err := s.repo.Read(ctx, id)
-	if stream.Status == models.StatusPublished {
-		return nil, fmt.Errorf("cannot update published stream")
-	}
 	if err != nil {
-		return nil, fmt.Errorf("stream not found: %w", err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrStreamNotFound
+		}
+		return nil, fmt.Errorf("failed to get stream: %w", err)
+	}
+	if stream.Status == models.StatusPublished {
+		return nil, ErrCannotUpdatePublished
 	}
 	if req.Title != nil {
 		if *req.Title == "" {
@@ -125,6 +242,11 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 		}
 		stream.Tags = datatypes.JSON(tagsJSON)
 	}
+	if req.Rotation != nil {
+		if err := setStreamRotation(stream, *req.Rotation); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return nil, fmt.Errorf("failed to update stream: %w", err)
 	}
@@ -133,17 +255,37 @@ func (s *StreamServiceImpl) UpdateStream(ctx context.Context, id uuid.UUID, req 
 	return stream, nil
 }
 
+// setStreamRotation writes "rotation" into the stream's metadata JSONB while
+// preserving every other key already present (duration, size, resolution,
+// recorded_at, location, camera, ...). A nil/empty metadata blob is treated
+// as an empty object.
+func setStreamRotation(stream *models.Stream, rotation int) error {
+	meta := map[string]any{}
+	if len(stream.Metadata) > 0 && string(stream.Metadata) != "null" {
+		if err := json.Unmarshal(stream.Metadata, &meta); err != nil {
+			return fmt.Errorf("failed to read stream metadata: %w", err)
+		}
+	}
+	meta["rotation"] = rotation
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("failed to encode stream metadata: %w", err)
+	}
+	stream.Metadata = datatypes.JSON(data)
+	return nil
+}
+
 func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) error {
 	slog.Info("start deleting", "stream id", id)
 	stream, err := s.repo.Read(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("stream not found")
+			return ErrStreamNotFound
 		}
 		return fmt.Errorf("delete stream error: %w", err)
 	}
 	if stream.Status == models.StatusPublished {
-		return fmt.Errorf("cannot delete published stream")
+		return ErrCannotDeletePublished
 	}
 
 	if stream.Storage != nil {
@@ -168,20 +310,22 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 				slog.Error("failed to delete object", "error", err)
 			}
 		}
+
+		thumbKey := fmt.Sprintf("thumbnails/%s.jpg", id)
+		if err := s.storage.Delete(ctx, thumbKey); err != nil {
+			slog.Error("failed to delete thumbnail", "key", thumbKey, "error", err)
+		}
 	}
 
-	if stream.Processing != nil {
-		var processing models.StreamProcessing
-		err = json.Unmarshal(stream.Processing, &processing)
-		if err != nil {
-			return fmt.Errorf("umarshaling processing error: %w", err)
-		}
-		if processing.TaskID != nil && stream.Status == models.StatusProcessing {
-			if err = s.queue.TerminateTask(ctx, *processing.TaskID); err != nil {
-				slog.Error("terminate task",
-					"stream uuid", stream.ID,
-					"task id", processing.TaskID,
-					"error", err.Error())
+	if tasks, err := stream.ProcessingTasks(); err == nil && stream.Status == models.StatusProcessing {
+		for _, t := range tasks {
+			if t.TaskID != nil {
+				if err := s.queue.TerminateTask(ctx, *t.TaskID); err != nil {
+					slog.Error("terminate task",
+						"stream uuid", stream.ID,
+						"task id", *t.TaskID,
+						"error", err.Error())
+				}
 			}
 		}
 	}
@@ -189,6 +333,8 @@ func (s *StreamServiceImpl) DeleteStream(ctx context.Context, id uuid.UUID) erro
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete stream: %w", err)
 	}
+	s.recordEvent(ctx, stream, "stream.deleted", nil)
+	s.recordFaceCascade(ctx, id)
 
 	// PERMS
 	obj := stream.OwnerID.String()
@@ -216,11 +362,8 @@ func (s *StreamServiceImpl) ListStreams(ctx context.Context, filter repository.S
 	return streams, total, nil
 }
 
-func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, int64, error) {
-	filter := repository.StreamFilter{
-		OwnerID: &userID,
-		Limit:   100,
-	}
+func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUID, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
+	filter.OwnerID = &userID
 	return s.ListStreams(ctx, filter)
 }
 
@@ -230,13 +373,14 @@ func (s *StreamServiceImpl) PublishStream(ctx context.Context, streamID uuid.UUI
 		return fmt.Errorf("error read stream from repo: %w", err)
 	}
 	if stream.Status != models.StatusReady {
-		return fmt.Errorf("can't publish stream if they not ready")
+		return ErrCannotPublish
 	}
 	stream.Status = models.StatusPublished
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
 	s.notifyComplete(stream)
+	s.recordEvent(ctx, stream, "stream.published", nil)
 	return nil
 }
 
@@ -245,11 +389,15 @@ func (s *StreamServiceImpl) UnpublishStream(ctx context.Context, streamID uuid.U
 	if err != nil {
 		return fmt.Errorf("error read stream from repo: %w", err)
 	}
+	if stream.Status != models.StatusPublished {
+		return ErrCannotUnpublish
+	}
 	stream.Status = models.StatusReady
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
 	s.notifyUpdate(stream)
+	s.recordEvent(ctx, stream, "stream.unpublished", nil)
 	return nil
 }
 
@@ -262,6 +410,9 @@ func (s *StreamServiceImpl) UpdateStreamStatus(ctx context.Context, streamID uui
 	if err = s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
+	if stream.Status == models.StatusReady {
+		s.recordEvent(ctx, stream, "stream.ready", nil)
+	}
 	if stream.Status == models.StatusReady && !s.cfg.KeepOriginalFile {
 		streamStorage, _ := stream.GetStorageInfo()
 		if err := s.storage.Delete(ctx, streamStorage.Key); err != nil {
@@ -270,10 +421,6 @@ func (s *StreamServiceImpl) UpdateStreamStatus(ctx context.Context, streamID uui
 	}
 	s.notifyUpdate(stream)
 	return nil
-}
-
-func (s *StreamServiceImpl) CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error) {
-	return false, fmt.Errorf("not implemented")
 }
 
 func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequest) error {
@@ -345,22 +492,11 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 	if err != nil {
 		slog.Error("failed to enqueue transcoding task for", "stream", stream.ID, "error", err)
 	}
-
-	slog.Info("send transcoder task", "TaskID", *taskID)
-
-	if err := s.UpdateStreamProcessing(ctx, &UpdateStreamProcessingRequest{
-		StreamUUID: req.StreamID,
-		Processing: models.StreamProcessing{
-			Progress: 0,
-			Steps:    []string{"convertation"},
-			Error:    nil,
-			TaskID:   taskID,
-		},
-	}); err != nil {
-		return fmt.Errorf("failed to update processing: %w", err)
+	if taskID != nil {
+		slog.Info("send transcoder task", "TaskID", *taskID)
 	}
 
-	taksID, err := s.queue.DistributeThumbsnailProcessor(
+	thumbID, err := s.queue.DistributeThumbsnailProcessor(
 		ctx,
 		stream.ID,
 		storageInfo.Key,
@@ -368,60 +504,295 @@ func (s *StreamServiceImpl) UploadVideo(ctx context.Context, req UploadVideoRequ
 	if err != nil {
 		slog.Error("failed to enqueue thumbsnail task for", "stream", stream.ID, "error", err)
 	}
+	if thumbID != nil {
+		slog.Debug("Task for generate thumbsnail in queue", "taskID", *thumbID)
+	}
 
-	slog.Debug("Task for generate thumbsnail in queue", "taskID", taksID)
+	facesID, err := s.queue.DistributeFacesProcessor(
+		ctx,
+		stream.ID,
+		storageInfo.Key,
+	)
+	if err != nil {
+		slog.Error("failed to enqueue faces task for", "stream", stream.ID, "error", err)
+	}
+	if facesID != nil {
+		slog.Debug("Task for detect faces in queue", "taskID", *facesID)
+	}
+
+	tasks := []models.StreamProcessingTask{
+		{TaskType: models.TaskTypeTranscode, Progress: 0, Steps: []string{"convertation"}, Error: nil, TaskID: taskID},
+		{TaskType: models.TaskTypeThumbnail, Progress: 0, Steps: []string{"Generating thumbnail preview"}, Error: nil, TaskID: thumbID},
+		{TaskType: models.TaskTypeFaces, Progress: 0, Steps: []string{"Detecting faces"}, Error: nil, TaskID: facesID},
+	}
+	if err := stream.SetInitialTasks(tasks); err != nil {
+		return fmt.Errorf("failed to set initial processing: %w", err)
+	}
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("failed to update processing: %w", err)
+	}
+	s.notifyUpdate(stream)
+	s.recordEvent(ctx, stream, "stream.upload.completed", nil)
 
 	return nil
 }
 
-func (s *StreamServiceImpl) GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*GenerateDownloadURLInfo, error) {
-	stream, err := s.GetStream(ctx, streamID)
+// RequestStreamExport queues a single-file export of the stream and returns the
+// resulting state. Re-requesting an export that is already ready is a no-op;
+// one that is pending is not re-queued, because the worker is already on it.
+func (s *StreamServiceImpl) RequestStreamExport(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID, email string) (*StreamExportInfo, error) {
+	stream, err := s.repo.Read(ctx, streamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("stream not found")
+			return nil, ErrStreamNotFound
 		}
-		return nil, fmt.Errorf("error getting stream: %w", err)
+		return nil, fmt.Errorf("failed to read stream: %w", err)
 	}
 
-	if stream.Status != models.StatusReady {
-		return nil, fmt.Errorf("stream not ready for download (status: %s)", stream.Status)
+	if stream.OwnerID != userUUID {
+		return nil, ErrStreamForbidden
+	}
+	if stream.Status != models.StatusReady && stream.Status != models.StatusPublished {
+		return nil, ErrStreamNotReady
 	}
 
-	var storageInfo models.StreamStorage
-	if err := json.Unmarshal(stream.Storage, &storageInfo); err != nil {
-		return nil, fmt.Errorf("failed to parse storage info: %w", err)
-	}
-
-	if storageInfo.Key == "" {
-		return nil, fmt.Errorf("storage key is empty")
-	}
-
-	var streamMeta models.StreamMetadata
-	if err := json.Unmarshal(stream.Metadata, &streamMeta); err != nil {
-		return nil, fmt.Errorf("failed to parse meta info: %w", err)
-	}
-
-	if stream.Visibility != models.VisibilityPublic {
-		if stream.OwnerID != userUUID {
-			return nil, fmt.Errorf("not owner and not public")
+	existing, err := s.exportRepo.ReadByStream(ctx, streamID)
+	switch {
+	case err == nil:
+		if existing.Status == models.ExportStatusReady {
+			return exportInfo(existing, stream.Title), nil
 		}
+		if existing.Status == models.ExportStatusPending {
+			return exportInfo(existing, stream.Title), nil
+		}
+		// Failed: retry it below. The reset is conditional on the row still
+		// being failed, so of two retries that arrive together only one gets
+		// to queue a mux and the other is answered with the pending row.
+		reset, rerr := s.exportRepo.ResetFailed(ctx, existing.ID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		if !reset {
+			current, cerr := s.exportRepo.ReadByStream(ctx, streamID)
+			if cerr != nil {
+				return nil, cerr
+			}
+			return exportInfo(current, stream.Title), nil
+		}
+		existing.Status = models.ExportStatusPending
+		existing.Error = ""
+		existing.Size = 0
+	case repository.IsExportNotFound(err):
+		export := &models.StreamExport{
+			StreamID: streamID,
+			UserID:   userUUID.String(),
+			Status:   models.ExportStatusPending,
+		}
+		if err := s.exportRepo.Create(ctx, export); err != nil {
+			return nil, err
+		}
+		existing = export
+	default:
+		return nil, fmt.Errorf("failed to read stream export: %w", err)
 	}
 
-	expires := 1 * time.Hour
+	if _, err := s.exportQueue.DistributeVideoExport(ctx, streamID, userUUID, email); err != nil {
+		// Surface the queue failure and drop the row back to a clean state so a
+		// retry does not look like a duplicate no-op.
+		existing.Status = models.ExportStatusFailed
+		existing.Error = "failed to queue export"
+		if uerr := s.exportRepo.Update(ctx, existing); uerr != nil {
+			slog.Error("failed to mark export as failed", "stream", streamID, "error", uerr)
+		}
+		return nil, fmt.Errorf("failed to queue export: %w", err)
+	}
 
-	url, err := s.storage.GeneratePresignedURL(ctx, storageInfo.Key, storageInfo.Filename, expires)
+	return exportInfo(existing, stream.Title), nil
+}
+
+// GetStreamExport reports the current export state for the owner. A stream that
+// was never exported reports pending=false rather than an error, so the UI can
+// tell "nothing yet" from "still working".
+func (s *StreamServiceImpl) GetStreamExport(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*StreamExportInfo, error) {
+	stream, err := s.repo.Read(ctx, streamID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate Download URL: %w", err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrStreamNotFound
+		}
+		return nil, fmt.Errorf("failed to read stream: %w", err)
+	}
+	if stream.OwnerID != userUUID {
+		return nil, ErrStreamForbidden
 	}
 
-	resp := &GenerateDownloadURLInfo{
-		DownloadURL: url,
-		ExpiresAt:   time.Now().Add(expires),
-		FileName:    storageInfo.Filename,
-		Size:        streamMeta.Size,
+	export, err := s.exportRepo.ReadByStream(ctx, streamID)
+	if repository.IsExportNotFound(err) {
+		// Not an error: the UI asks before anyone has pressed the button, and
+		// has to be able to say so. The name is filled in anyway so the client
+		// can offer the same one for an export started later.
+		return &StreamExportInfo{
+			StreamID:  streamID,
+			Status:    models.ExportStatusPending,
+			Requested: false,
+			FileName:  downloadFileName(stream.Title),
+		}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read stream export: %w", err)
+	}
+	return exportInfo(export, stream.Title), nil
+}
+
+// OpenStreamDownload opens the cached mp4 for the owner. It is a straight proxy
+// of the object the export worker wrote: no transcoding happens here, so the
+// cost is one storage read regardless of the video length.
+func (s *StreamServiceImpl) OpenStreamDownload(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*DownloadStreamInfo, error) {
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrStreamNotFound
+		}
+		return nil, fmt.Errorf("failed to read stream: %w", err)
+	}
+	if stream.OwnerID != userUUID {
+		return nil, ErrStreamForbidden
 	}
 
-	return resp, nil
+	export, err := s.exportRepo.ReadByStream(ctx, streamID)
+	if repository.IsExportNotFound(err) {
+		return nil, ErrExportNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read stream export: %w", err)
+	}
+	switch export.Status {
+	case models.ExportStatusPending:
+		return nil, ErrExportPending
+	case models.ExportStatusFailed:
+		return nil, fmt.Errorf("export failed: %s", export.Error)
+	}
+
+	key := export.ObjectKey()
+	content, size, err := s.storage.Download(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open export: %w", err)
+	}
+	if size <= 0 {
+		_ = content.Close()
+		return nil, fmt.Errorf("export object is empty")
+	}
+
+	return &DownloadStreamInfo{
+		Content:     content,
+		ContentType: "video/mp4",
+		FileName:    downloadFileName(stream.Title),
+		Size:        size,
+	}, nil
+}
+
+// CompleteStreamExport records the worker's outcome and tells the owner's open
+// websocket connections how it went, ready or failed.
+func (s *StreamServiceImpl) CompleteStreamExport(ctx context.Context, streamID uuid.UUID, size int64, exportErr string) error {
+	export, err := s.exportRepo.ReadByStream(ctx, streamID)
+	if err != nil {
+		if repository.IsExportNotFound(err) {
+			return ErrExportNotFound
+		}
+		return fmt.Errorf("failed to read stream export: %w", err)
+	}
+
+	// The worker reports the outcome itself and asynq's error handler reports
+	// the same task again if it ends in error, so a second report for one
+	// export is expected rather than exceptional. Only a pending row has an
+	// outcome still to record: a retry resets the row to pending first, so its
+	// own report is never swallowed by this guard. Taking the first report also
+	// keeps the stored error the real one instead of a wrapper around it.
+	if export.Status != models.ExportStatusPending {
+		slog.Warn("ignoring duplicate export report", "stream", streamID, "status", export.Status, "error", exportErr)
+		return nil
+	}
+
+	if exportErr != "" {
+		export.Status = models.ExportStatusFailed
+		export.Error = exportErr
+		export.Size = 0
+	} else {
+		export.Status = models.ExportStatusReady
+		export.Error = ""
+		export.Size = size
+	}
+	if err := s.exportRepo.Update(ctx, export); err != nil {
+		return err
+	}
+
+	if s.hub != nil {
+		// user_id is a text column, so a bad value must not take the process
+		// down from an RPC handler.
+		ownerID, err := uuid.Parse(export.UserID)
+		if err != nil {
+			slog.Error("export owner is not a uuid, cannot notify", "stream", streamID, "user_id", export.UserID)
+			return nil
+		}
+		// Both outcomes are announced. A silent failure would leave the owner
+		// watching a spinner until they reloaded the page.
+		if export.Status == models.ExportStatusReady {
+			s.hub.SendMessgeToOwner(ownerID, gin.H{
+				"type": "STREAM_EXPORT_READY",
+				"payload": gin.H{
+					"stream_id": streamID,
+					"size":      export.Size,
+				},
+			})
+		} else {
+			s.hub.SendMessgeToOwner(ownerID, gin.H{
+				"type": "STREAM_EXPORT_FAILED",
+				"payload": gin.H{
+					"stream_id": streamID,
+					"error":     export.Error,
+				},
+			})
+		}
+	}
+	return nil
+}
+
+func exportInfo(export *models.StreamExport, title string) *StreamExportInfo {
+	return &StreamExportInfo{
+		StreamID:  export.StreamID,
+		Status:    export.Status,
+		Size:      export.Size,
+		Error:     export.Error,
+		Requested: true,
+		FileName:  downloadFileName(title),
+	}
+}
+
+// downloadFileName turns a stream title into a safe attachment name. Titles are
+// user input, so anything that could break out of the header, confuse a path or
+// upset a filesystem is replaced; the extension is always mp4 because that is
+// what the export worker writes.
+func downloadFileName(title string) string {
+	name := strings.TrimSpace(title)
+	if ext := path.Ext(name); ext != "" {
+		name = strings.TrimSuffix(name, ext)
+	}
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r < 0x20 || r == 0x7f:
+			return -1
+		case strings.ContainsRune(`\/:*?"<>|`, r):
+			return -1
+		}
+		return r
+	}, name)
+	name = strings.TrimSpace(strings.Trim(name, "."))
+	if name == "" {
+		return defaultDownloadName
+	}
+	if len(name) > maxDownloadNameLen {
+		name = strings.TrimSpace(name[:maxDownloadNameLen])
+	}
+	return name + ".mp4"
 }
 
 // Multipart upload methods
@@ -474,6 +845,7 @@ func (s *StreamServiceImpl) StartStreamUpload(ctx context.Context, req StartUplo
 		_ = s.storage.AbortMultipart(ctx, storageKey, uID)
 		return nil, fmt.Errorf("failed to update stream: %w", err)
 	}
+	s.recordEvent(ctx, stream, "stream.upload.started", map[string]any{"filename": req.Filename})
 	return &UploadInfo{
 		UploadID: storageInfo.UploadID,
 		StreamID: stream.ID,
@@ -574,22 +946,11 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 	if err != nil {
 		slog.Error("failed to enqueue transcoding task for", "stream", stream.ID, "error", err)
 	}
-
-	if err := s.UpdateStreamProcessing(ctx, &UpdateStreamProcessingRequest{
-		StreamUUID: req.StreamID,
-		Processing: models.StreamProcessing{
-			Progress: 0,
-			Steps:    []string{"convertation"},
-			Error:    nil,
-			TaskID:   taskID,
-		},
-	}); err != nil {
-		return fmt.Errorf("failed to update processing: %w", err)
+	if taskID != nil {
+		slog.Info("send transcoder task", "TaskID", *taskID)
 	}
-	s.notifyUpdate(stream)
 
-	// Thumbsnail processing
-	taksID, err := s.queue.DistributeThumbsnailProcessor(
+	thumbID, err := s.queue.DistributeThumbsnailProcessor(
 		ctx,
 		stream.ID,
 		storageInfo.Key,
@@ -597,8 +958,35 @@ func (s *StreamServiceImpl) CompleteStreamUpload(ctx context.Context, req Comple
 	if err != nil {
 		slog.Error("failed to enqueue thumbsnail task for", "stream", stream.ID, "error", err)
 	}
+	if thumbID != nil {
+		slog.Debug("Task for generate thumbsnail in queue", "taskID", *thumbID)
+	}
 
-	slog.Debug("Task for generate thumbsnail in queue", "taskID", taksID)
+	facesID, err := s.queue.DistributeFacesProcessor(
+		ctx,
+		stream.ID,
+		storageInfo.Key,
+	)
+	if err != nil {
+		slog.Error("failed to enqueue faces task for", "stream", stream.ID, "error", err)
+	}
+	if facesID != nil {
+		slog.Debug("Task for detect faces in queue", "taskID", *facesID)
+	}
+
+	tasks := []models.StreamProcessingTask{
+		{TaskType: models.TaskTypeTranscode, Progress: 0, Steps: []string{"convertation"}, Error: nil, TaskID: taskID},
+		{TaskType: models.TaskTypeThumbnail, Progress: 0, Steps: []string{"Generating thumbnail preview"}, Error: nil, TaskID: thumbID},
+		{TaskType: models.TaskTypeFaces, Progress: 0, Steps: []string{"Detecting faces"}, Error: nil, TaskID: facesID},
+	}
+	if err := stream.SetInitialTasks(tasks); err != nil {
+		return fmt.Errorf("failed to set initial processing: %w", err)
+	}
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("failed to update processing: %w", err)
+	}
+	s.notifyUpdate(stream)
+	s.recordEvent(ctx, stream, "stream.upload.completed", nil)
 
 	return nil
 }
@@ -608,7 +996,17 @@ func (s *StreamServiceImpl) UpdateStreamMetadata(ctx context.Context, req *Updat
 	if err != nil {
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
-	if err := stream.SetMetadata(&req.Metadata); err != nil {
+	meta := req.Metadata
+	// The transcoder never sends a rotation value, so a zero rotation in the
+	// incoming metadata means "not provided" — carry over any rotation that was
+	// saved by the owner through the edit form instead of silently resetting it
+	// to 0 on every (re-)transcode.
+	if meta.Rotation == 0 {
+		if existing, err := stream.GetMetadata(); err == nil && existing != nil {
+			meta.Rotation = existing.Rotation
+		}
+	}
+	if err := stream.SetMetadata(&meta); err != nil {
 		return fmt.Errorf("error setting metadata to model: %w", err)
 	}
 	if err := s.repo.Update(ctx, stream); err != nil {
@@ -623,20 +1021,256 @@ func (s *StreamServiceImpl) UpdateStreamProcessing(ctx context.Context, req *Upd
 	if err != nil {
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
-	if req.Processing.TaskID == nil {
-		var currentProcessing models.StreamProcessing
-		json.Unmarshal(stream.Processing, &currentProcessing)
-		req.Processing.TaskID = currentProcessing.TaskID
+
+	tasks, err := stream.ProcessingTasks()
+	if err != nil {
+		return fmt.Errorf("error read processing tasks: %w", err)
 	}
 
-	if err := stream.UpdateProcessing(req.Processing.Progress, req.Processing.Steps, req.Processing.Error, req.Processing.TaskID); err != nil {
+	if req.Processing.TaskID == nil {
+		for _, t := range tasks {
+			if t.TaskType == req.Processing.TaskType && t.TaskID != nil {
+				req.Processing.TaskID = t.TaskID
+				break
+			}
+		}
+	}
+
+	errMsg := ""
+	if req.Processing.Error != nil {
+		errMsg = *req.Processing.Error
+	}
+	var processingErr *string
+	if errMsg != "" {
+		processingErr = req.Processing.Error
+	}
+
+	if err := stream.SetTaskProgress(req.Processing.TaskType, req.Processing.Progress, req.Processing.Steps, processingErr, req.Processing.TaskID); err != nil {
 		return fmt.Errorf("error update processing: %w", err)
+	}
+
+	if errMsg != "" && req.Processing.TaskType == models.TaskTypeTranscode && stream.Status == models.StatusProcessing {
+		stream.Status = models.StatusError
+	}
+
+	if req.Processing.TaskType == models.TaskTypeFaces &&
+		req.Processing.Progress >= 100 &&
+		errMsg == "" {
+		stream.FacesDetected = true
+	}
+
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+
+	switch req.Processing.TaskType {
+	case models.TaskTypeTranscode:
+		switch {
+		case errMsg != "":
+			s.recordEvent(ctx, stream, "stream.transcode.failed", map[string]any{"error": errMsg})
+		case req.Processing.Progress >= 100:
+			s.recordEvent(ctx, stream, "stream.transcode.finish", map[string]any{"progress": req.Processing.Progress})
+		case req.Processing.Progress == 0:
+			s.recordEvent(ctx, stream, "stream.transcode.started", nil)
+		}
+	default:
+		// thumbnail progress is only written into the task; no feed event.
+	}
+
+	s.notifyUpdate(stream)
+	return nil
+}
+
+func (s *StreamServiceImpl) ReprocessStream(ctx context.Context, streamID uuid.UUID) error {
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrStreamNotFound
+		}
+		return fmt.Errorf("error read stream from repository: %w", err)
+	}
+
+	tasks, err := stream.ProcessingTasks()
+	if err != nil {
+		return fmt.Errorf("error read processing tasks: %w", err)
+	}
+
+	failed := false
+	for _, t := range tasks {
+		if t.Error != nil && *t.Error != "" {
+			failed = true
+			break
+		}
+	}
+	if !failed {
+		return ErrStreamNotInErrorState
+	}
+
+	storageInfo, err := stream.GetStorageInfo()
+	if err != nil {
+		return fmt.Errorf("error read storage info: %w", err)
+	}
+	exists, err := s.storage.Exists(ctx, storageInfo.Key)
+	if err != nil {
+		return fmt.Errorf("error check source file: %w", err)
+	}
+	if !exists {
+		return ErrSourceFileMissing
+	}
+
+	for i := range tasks {
+		if tasks[i].Error == nil || *tasks[i].Error == "" {
+			continue
+		}
+
+		var taskID *string
+		switch tasks[i].TaskType {
+		case models.TaskTypeTranscode:
+			taskID, err = s.queue.ReprocessVideoTranscoding(ctx, stream.ID, storageInfo.Key)
+		case models.TaskTypeThumbnail:
+			taskID, err = s.queue.ReprocessThumbsnailProcessor(ctx, stream.ID, storageInfo.Key)
+		case models.TaskTypeFaces:
+			taskID, err = s.queue.ReprocessFacesProcessor(ctx, stream.ID, storageInfo.Key)
+		default:
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("failed to enqueue %s reprocess: %w", tasks[i].TaskType, err)
+		}
+
+		tasks[i].TaskID = taskID
+		tasks[i].Error = nil
+		tasks[i].Progress = 0
+		tasks[i].Steps = nil
+		if taskID != nil {
+			slog.Info("reprocess enqueued", "stream", stream.ID, "task_type", tasks[i].TaskType, "task_id", *taskID)
+		}
+	}
+
+	if stream.Status == models.StatusError {
+		stream.Status = models.StatusProcessing
+	}
+	if err := stream.SetInitialTasks(tasks); err != nil {
+		return fmt.Errorf("error reset processing: %w", err)
 	}
 	if err := s.repo.Update(ctx, stream); err != nil {
 		return fmt.Errorf("error update stream in repo: %w", err)
 	}
 	s.notifyUpdate(stream)
+	s.recordEvent(ctx, stream, "stream.reprocessed", nil)
 	return nil
+}
+
+func (s *StreamServiceImpl) ProcessFacesStream(ctx context.Context, streamID uuid.UUID) error {
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrStreamNotFound
+		}
+		return fmt.Errorf("error read stream from repository: %w", err)
+	}
+
+	if err := s.enqueueFaces(ctx, stream); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *StreamServiceImpl) enqueueFaces(ctx context.Context, stream *models.Stream) error {
+	storageInfo, err := stream.GetStorageInfo()
+	if err != nil {
+		return fmt.Errorf("error read storage info: %w", err)
+	}
+	exists, err := s.storage.Exists(ctx, storageInfo.Key)
+	if err != nil {
+		return fmt.Errorf("error check source file: %w", err)
+	}
+	inputPath := storageInfo.Key
+	if !exists {
+		hlsKey := fmt.Sprintf("processed/%s/index.m3u8", stream.ID)
+		hlsExists, err := s.storage.Exists(ctx, hlsKey)
+		if err != nil {
+			return fmt.Errorf("error check hls playlist: %w", err)
+		}
+		if !hlsExists {
+			return ErrSourceFileMissing
+		}
+		slog.Info("source missing, falling back to hls", "stream", stream.ID, "hls", hlsKey)
+		inputPath = hlsKey
+	}
+
+	facesID, err := s.queue.ReprocessFacesProcessor(ctx, stream.ID, inputPath)
+	if err != nil {
+		return fmt.Errorf("failed to enqueue faces task: %w", err)
+	}
+
+	if err := stream.SetTaskProgress(models.TaskTypeFaces, 0, []string{"Detecting faces"}, nil, facesID); err != nil {
+		return fmt.Errorf("error reset processing: %w", err)
+	}
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	s.notifyUpdate(stream)
+	if facesID != nil {
+		slog.Info("faces task enqueued", "stream", stream.ID, "task_id", *facesID)
+	}
+	return nil
+}
+
+type FacesBatchResult struct {
+	Processed []uuid.UUID              `json:"processed"`
+	Failed    []FacesBatchFailure      `json:"failed"`
+}
+
+type FacesBatchFailure struct {
+	StreamID uuid.UUID `json:"stream_id"`
+	Reason   string    `json:"reason"`
+}
+
+const (
+	FacesBatchReasonForbidden = "forbidden"
+	FacesBatchReasonNotFound  = "not found"
+	FacesBatchReasonSource    = "source missing"
+	FacesBatchReasonError     = "error"
+)
+
+func (s *StreamServiceImpl) ProcessFacesBatch(ctx context.Context, userID uuid.UUID, isAdmin bool, ids []uuid.UUID) (*FacesBatchResult, error) {
+	streams, err := s.repo.ReadMany(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("error read streams from repository: %w", err)
+	}
+
+	byID := make(map[uuid.UUID]*models.Stream, len(streams))
+	for _, st := range streams {
+		byID[st.ID] = st
+	}
+
+	result := &FacesBatchResult{}
+	for _, id := range ids {
+		stream, ok := byID[id]
+		if !ok {
+			result.Failed = append(result.Failed, FacesBatchFailure{StreamID: id, Reason: FacesBatchReasonNotFound})
+			continue
+		}
+		if stream.OwnerID != userID && !isAdmin {
+			result.Failed = append(result.Failed, FacesBatchFailure{StreamID: id, Reason: FacesBatchReasonForbidden})
+			continue
+		}
+		if err := s.enqueueFaces(ctx, stream); err != nil {
+			reason := FacesBatchReasonError
+			if errors.Is(err, ErrSourceFileMissing) {
+				reason = FacesBatchReasonSource
+			}
+			result.Failed = append(result.Failed, FacesBatchFailure{StreamID: id, Reason: reason})
+			continue
+		}
+		result.Processed = append(result.Processed, id)
+	}
+
+	if n := len(result.Processed); n > 0 {
+		streammetrics.Lifecycle.WithLabelValues("faces").Add(float64(n))
+	}
+	return result, nil
 }
 
 func getContentType(fileName string) string {
@@ -678,11 +1312,34 @@ func (s *StreamServiceImpl) GetFileByKey(ctx context.Context, req *GetFileByKeyR
 		return nil, fmt.Errorf("error get stream from repository: %w", err)
 	}
 	if stream.Status != models.StatusReady && stream.Status != models.StatusPublished {
-		return nil, fmt.Errorf("you can't watch a stream with the status %s", stream.Status)
+		return nil, ErrCannotWatch
 	}
-	path := path.Join("processed", req.StreamUUID.String(), req.FileName)
-	content, size, err := s.storage.Download(ctx, path)
+	fileName := strings.TrimPrefix(req.FileName, "/")
+	if fileName == "" || strings.Contains(fileName, "..") || strings.Contains(fileName, "\\") {
+		return nil, ErrInvalidFileName
+	}
+	key := path.Join("processed", req.StreamUUID.String(), fileName)
+	content, size, err := s.storage.Download(ctx, key)
 	if err != nil {
+		// Fallback: a missing TS segment (a "dead" HLS segment) is replaced
+		// with the concatenation of its direct neighbours, so playback does
+		// not hard-fail on 404-level gaps in the playlist.
+		if errors.Is(err, storage.ErrNotFound) && strings.HasSuffix(fileName, ".ts") {
+			merged, mergedSize, ferr := s.concatNeighbourSegments(ctx, req.StreamUUID, fileName)
+			if ferr != nil {
+				return nil, fmt.Errorf("error download file from storage: %w", ferr)
+			}
+			if merged != nil {
+				streammetrics.HLSRequests.WithLabelValues("200-fallback").Inc()
+				slog.Warn("hls segment missing, served concatenated neighbours",
+					"stream", req.StreamUUID.String(), "file", fileName, "size", mergedSize)
+				return &GetFileByKeyResponse{
+					Content:     merged,
+					ContentType: getContentType(fileName),
+					Size:        mergedSize,
+				}, nil
+			}
+		}
 		return nil, fmt.Errorf("error download file from storage: %w", err)
 	}
 	return &GetFileByKeyResponse{
@@ -690,4 +1347,62 @@ func (s *StreamServiceImpl) GetFileByKey(ctx context.Context, req *GetFileByKeyR
 		ContentType: getContentType(req.FileName),
 		Size:        size,
 	}, nil
+}
+
+// concatNeighbourSegments merges the TS segments directly around a missing one
+// (seg_<n-1> + seg_<n+1>, walking outwards until a run of missing segments ends)
+// into a single byte slice. It returns a nil reader when there is no recoverable
+// neighbour, letting the caller surface the original storage error.
+func (s *StreamServiceImpl) concatNeighbourSegments(ctx context.Context, streamUUID uuid.UUID, fileName string) (io.ReadCloser, int64, error) {
+	idx, ok := segmentIndex(fileName)
+	if !ok {
+		return nil, 0, nil
+	}
+
+	const maxRadius = 3
+	var (
+		merged bytes.Buffer
+		total  int64
+		found  bool
+	)
+	for i := idx - maxRadius; i <= idx+maxRadius; i++ {
+		if i == idx || i < 0 {
+			continue
+		}
+		key := path.Join("processed", streamUUID.String(), fmt.Sprintf("seg_%d.ts", i))
+		rc, size, err := s.storage.Download(ctx, key)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				slog.Debug("hls neighbour segment missing", "stream", streamUUID.String(), "file", key)
+				continue
+			}
+			return nil, 0, err
+		}
+		n, copyErr := io.Copy(&merged, io.LimitReader(rc, size))
+		rc.Close()
+		if copyErr != nil {
+			return nil, 0, copyErr
+		}
+		total += n
+		found = true
+	}
+	if !found {
+		return nil, 0, nil
+	}
+	return io.NopCloser(bytes.NewReader(merged.Bytes())), total, nil
+}
+
+// segmentIndex extracts the numeric part of an HLS segment filename of the form
+// seg_<n>.ts (as produced by ffmpeg's hls_segment_filename), returning false for
+// any other filename.
+func segmentIndex(fileName string) (int, bool) {
+	m := segmentNamePattern.FindStringSubmatch(fileName)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }

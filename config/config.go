@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -18,6 +19,13 @@ type Config struct {
 type Redis struct {
 	Addr     string
 	Password string
+	// EventsQueueDB is the Redis DB serving the events-service asynq queue
+	// (event:activity). Defaults to 3.
+	EventsQueueDB int
+	// ExportQueueDB is the Redis DB serving the export worker asynq queue
+	// (video:export). Defaults to 4, keeping it clear of DB 2 (transcoding)
+	// and DB 3 (events).
+	ExportQueueDB int
 }
 
 type ServerMode string
@@ -29,10 +37,16 @@ const (
 )
 
 type Server struct {
-	ServerAddr       string
-	AuthServiceAddr  string
-	KeepOriginalFile bool
-	Mode             ServerMode
+	ServerAddr        string
+	AuthServiceAddr   string
+	KeepOriginalFile  bool
+	Mode              ServerMode
+	GRPCTLSCertFile   string
+	GRPCTLSKeyFile    string
+	GRPCTLSCAFile     string
+	GRPCTLSAllowedOUs []string
+	GRPCTLSEnabled    bool
+	AllowedOrigins    []string
 }
 
 type Database struct {
@@ -86,10 +100,16 @@ func LoadConfig() (*Config, error) {
 			TimeZone: "UTC",
 		},
 		Server: Server{
-			ServerAddr:       os.Getenv("SERVER_ADDR"),
-			AuthServiceAddr:  os.Getenv("AUTH_SERVICE_ADDRESS"),
-			KeepOriginalFile: keepOriginalFile,
-			Mode:             mode,
+			ServerAddr:        os.Getenv("SERVER_ADDR"),
+			AuthServiceAddr:   os.Getenv("AUTH_SERVICE_ADDRESS"),
+			KeepOriginalFile:  keepOriginalFile,
+			Mode:              mode,
+			GRPCTLSCertFile:   os.Getenv("GRPC_TLS_CERT"),
+			GRPCTLSKeyFile:    os.Getenv("GRPC_TLS_KEY"),
+			GRPCTLSCAFile:     os.Getenv("GRPC_TLS_CA"),
+			GRPCTLSAllowedOUs: commaSplit(getEnv("GRPC_TLS_ALLOWED_OUS", "")),
+			GRPCTLSEnabled:    getBool("GRPC_TLS_ENABLED"),
+			AllowedOrigins:    commaSplit(getEnv("CORS_ALLOW_ORIGINS", "http://localhost:5173,https://example.com,https://api.example.com")),
 		},
 		JWT: JWT{
 			AccessPublicKeyURL: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
@@ -103,8 +123,10 @@ func LoadConfig() (*Config, error) {
 			Region:          getEnv("MINIO_REGION", "ru-east-1"),
 		},
 		Redis: Redis{
-			Addr:     getEnv("REDIS_ADDR", "localhost"),
-			Password: getEnv("redis-password", ""),
+			Addr:           getEnv("REDIS_ADDR", "localhost"),
+			Password:       getEnv("redis-password", ""),
+			EventsQueueDB:  getQueueDB("EVENTS_QUEUE_DB", 3),
+			ExportQueueDB:  getQueueDB("EXPORT_QUEUE_DB", 4),
 		},
 	}, nil
 }
@@ -124,6 +146,7 @@ func TestConfig() (*Config, error) {
 			ServerAddr:       os.Getenv("SERVER_ADDR"),
 			KeepOriginalFile: false,
 			Mode:             Test,
+			AllowedOrigins:   commaSplit(getEnv("CORS_ALLOW_ORIGINS", "http://localhost:5173,https://example.com,https://api.example.com")),
 		},
 		JWT: JWT{
 			AccessPublicKeyURL: os.Getenv("JWT_ACCESS_PUBLIC_KEY_URL"),
@@ -148,4 +171,34 @@ func getEnv(key, defaultValue string) string {
 	}
 
 	return defaultValue
+}
+
+func getBool(key string) bool {
+	v, _ := strconv.ParseBool(os.Getenv(key))
+	return v
+}
+
+// getQueueDB parses an asynq queue DB index; on any parse failure it falls
+// back to the provided default.
+func getQueueDB(key string, fallback int) int {
+	v, err := strconv.Atoi(os.Getenv(key))
+	if err != nil {
+		return fallback
+	}
+	return v
+}
+
+func commaSplit(v string) []string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

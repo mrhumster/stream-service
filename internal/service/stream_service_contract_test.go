@@ -43,9 +43,12 @@ func createTestStreamData(id uuid.UUID, title string, ownerID uuid.UUID) *models
 		Bucket:   "streams",
 		Key:      id.String() + ".mp4",
 	})
-	processing, _ := json.Marshal(models.StreamProcessing{
-		Progress: 100,
-		Steps:    []string{"upload", "process", "complete"},
+	processing, _ := json.Marshal([]models.StreamProcessingTask{
+		{
+			TaskType: models.TaskTypeTranscode,
+			Progress: 100,
+			Steps:    []string{"upload", "process", "complete"},
+		},
 	})
 
 	return &models.Stream{
@@ -69,7 +72,6 @@ func createTestStreamData(id uuid.UUID, title string, ownerID uuid.UUID) *models
 func (c *StreamServiceContractTest) TestAll() {
 	c.TestCRUDOperations()
 	c.TestStreamLifecycle()
-	c.TestAccessControl()
 	c.TestListOperations()
 	c.TestStreamStatusTransitions()
 }
@@ -191,64 +193,6 @@ func (c *StreamServiceContractTest) TestStreamStatusTransitions() {
 	})
 }
 
-// TestAccessControl тестирует контроль доступа
-func (c *StreamServiceContractTest) TestAccessControl() {
-	c.t.Run("Access Control", func(t *testing.T) {
-		ownerID := uuid.New()
-		otherUserID := uuid.New()
-
-		// Create streams with different visibility
-		publicStream, err := c.service.CreateStream(c.ctx, service.CreateStreamRequest{
-			Title:      "Public Stream",
-			Visibility: models.VisibilityPublic,
-			OwnerID:    ownerID,
-		})
-		require.NoError(c.t, err)
-
-		privateStream, err := c.service.CreateStream(c.ctx, service.CreateStreamRequest{
-			Title:      "Private Stream",
-			Visibility: models.VisibilityPrivate,
-			OwnerID:    ownerID,
-		})
-		require.NoError(c.t, err)
-
-		unlistedStream, err := c.service.CreateStream(c.ctx, service.CreateStreamRequest{
-			Title:      "Unlisted Stream",
-			Visibility: models.VisibilityUnlisted,
-			OwnerID:    ownerID,
-		})
-		require.NoError(c.t, err)
-
-		// Test access control for different users and visibility
-		testCases := []struct {
-			name     string
-			userID   uuid.UUID
-			streamID uuid.UUID
-		}{
-			{"Owner access public", ownerID, publicStream.ID},
-			{"Owner access private", ownerID, privateStream.ID},
-			{"Owner access unlisted", ownerID, unlistedStream.ID},
-			{"Other user access public", otherUserID, publicStream.ID},
-			{"Other user access private", otherUserID, privateStream.ID},
-			{"Other user access unlisted", otherUserID, unlistedStream.ID},
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				canAccess, err := c.service.CanUserAccessStream(c.ctx, tc.userID, tc.streamID)
-				assert.NoError(t, err)
-				// Result depends on implementation, but should not error
-				assert.NotNil(t, canAccess)
-			})
-		}
-
-		// Cleanup
-		_ = c.service.DeleteStream(c.ctx, publicStream.ID)
-		_ = c.service.DeleteStream(c.ctx, privateStream.ID)
-		_ = c.service.DeleteStream(c.ctx, unlistedStream.ID)
-	})
-}
-
 // TestListOperations тестирует операции со списками
 func (c *StreamServiceContractTest) TestListOperations() {
 	c.t.Run("List Operations", func(t *testing.T) {
@@ -268,7 +212,7 @@ func (c *StreamServiceContractTest) TestListOperations() {
 		require.NoError(c.t, err)
 
 		// Test ListUserStreams
-		userStreams, _, err := c.service.ListUserStreams(c.ctx, userID)
+		userStreams, _, err := c.service.ListUserStreams(c.ctx, userID, repository.StreamFilter{Limit: 100, Offset: 0})
 		assert.NoError(c.t, err)
 		assert.NotNil(c.t, userStreams)
 

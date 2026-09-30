@@ -13,6 +13,10 @@ func strPtr(s string) *string {
 	return &s
 }
 
+func intPtr(i int) *int {
+	return &i
+}
+
 func TestUpdateStreamRequest_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -50,6 +54,38 @@ func TestUpdateStreamRequest_Validate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "valid rotation",
+			request: UpdateStreamRequest{
+				Title:    strPtr("My Stream"),
+				Rotation: intPtr(90),
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid rotation 45",
+			request: UpdateStreamRequest{
+				Title:    strPtr("My Stream"),
+				Rotation: intPtr(45),
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid rotation negative",
+			request: UpdateStreamRequest{
+				Title:    strPtr("My Stream"),
+				Rotation: intPtr(-90),
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid rotation 360",
+			request: UpdateStreamRequest{
+				Title:    strPtr("My Stream"),
+				Rotation: intPtr(360),
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -67,11 +103,13 @@ func TestUpdateStreamRequest_Validate(t *testing.T) {
 func TestUpdateStreamRequest_ToServiceRequest(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		updReq := UpdateStreamRequest{
-			Title: strPtr("title"),
+			Title:    strPtr("title"),
+			Rotation: intPtr(270),
 		}
 		svcReq, err := updReq.ToServiceRequest()
 		require.NoError(t, err)
-		assert.NotNil(t, svcReq)
+		require.NotNil(t, svcReq)
+		assert.Equal(t, 270, *svcReq.Rotation)
 	})
 
 	t.Run("validate error", func(t *testing.T) {

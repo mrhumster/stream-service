@@ -100,20 +100,6 @@ func (mr *MockStreamRepositoryMockRecorder) GetByOwner(ctx, ownerID any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByOwner", reflect.TypeOf((*MockStreamRepository)(nil).GetByOwner), ctx, ownerID)
 }
 
-// IncrementViews mocks base method.
-func (m *MockStreamRepository) IncrementViews(ctx context.Context, id uuid.UUID) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IncrementViews", ctx, id)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// IncrementViews indicates an expected call of IncrementViews.
-func (mr *MockStreamRepositoryMockRecorder) IncrementViews(ctx, id any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementViews", reflect.TypeOf((*MockStreamRepository)(nil).IncrementViews), ctx, id)
-}
-
 // List mocks base method.
 func (m *MockStreamRepository) List(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
 	m.ctrl.T.Helper()
@@ -145,6 +131,21 @@ func (mr *MockStreamRepositoryMockRecorder) Read(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Read", reflect.TypeOf((*MockStreamRepository)(nil).Read), ctx, id)
 }
 
+// ReadMany mocks base method.
+func (m *MockStreamRepository) ReadMany(ctx context.Context, ids []uuid.UUID) ([]*models.Stream, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadMany", ctx, ids)
+	ret0, _ := ret[0].([]*models.Stream)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadMany indicates an expected call of ReadMany.
+func (mr *MockStreamRepositoryMockRecorder) ReadMany(ctx, ids any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadMany", reflect.TypeOf((*MockStreamRepository)(nil).ReadMany), ctx, ids)
+}
+
 // Update mocks base method.
 func (m *MockStreamRepository) Update(ctx context.Context, stream *models.Stream) error {
 	m.ctrl.T.Helper()
@@ -160,7 +161,7 @@ func (mr *MockStreamRepositoryMockRecorder) Update(ctx, stream any) *gomock.Call
 }
 
 // UpdateProcessing mocks base method.
-func (m *MockStreamRepository) UpdateProcessing(ctx context.Context, id uuid.UUID, processing models.StreamProcessing) error {
+func (m *MockStreamRepository) UpdateProcessing(ctx context.Context, id uuid.UUID, processing models.StreamProcessingTask) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateProcessing", ctx, id, processing)
 	ret0, _ := ret[0].(error)

@@ -13,6 +13,19 @@ type GormStreamRepository struct {
 	db *gorm.DB
 }
 
+var sortColumns = map[string]string{
+	"created_at": "created_at",
+	"title":      "title",
+	"status":     "status",
+}
+
+func sortColumnFor(sortBy string) string {
+	if col, ok := sortColumns[sortBy]; ok {
+		return col
+	}
+	return "created_at"
+}
+
 func NewGormStreamRepository(db *gorm.DB) *GormStreamRepository {
 	return &GormStreamRepository{db: db}
 }
@@ -33,6 +46,17 @@ func (r *GormStreamRepository) Read(ctx context.Context, id uuid.UUID) (*models.
 		return nil, result.Error
 	}
 	return stream, nil
+}
+
+func (r *GormStreamRepository) ReadMany(ctx context.Context, ids []uuid.UUID) ([]*models.Stream, error) {
+	if len(ids) == 0 {
+		return []*models.Stream{}, nil
+	}
+	var streams []*models.Stream
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&streams).Error; err != nil {
+		return nil, err
+	}
+	return streams, nil
 }
 
 func (r *GormStreamRepository) Update(ctx context.Context, stream *models.Stream) error {
@@ -77,9 +101,16 @@ func (r *GormStreamRepository) List(ctx context.Context, filter StreamFilter) ([
 		query = query.Where("visibility = ?", filter.Visibility)
 	}
 
+	if filter.FacesDetected != nil {
+		query = query.Where("faces_detected = ?", *filter.FacesDetected)
+	}
+
 	if filter.Search != "" {
 		searchPattern := "%" + filter.Search + "%"
-		query = query.Where("title ILIKE ? or description ILIKE ?", searchPattern, searchPattern)
+		query = query.Where(
+			"title ILIKE ? OR description ILIKE ? OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) AS tag WHERE tag ILIKE ?)",
+			searchPattern, searchPattern, searchPattern,
+		)
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -96,7 +127,12 @@ func (r *GormStreamRepository) List(ctx context.Context, filter StreamFilter) ([
 
 	query = query.Limit(filter.Limit)
 
-	query = query.Order("created_at DESC")
+	sortColumn := sortColumnFor(filter.SortBy)
+	sortOrder := "DESC"
+	if filter.SortOrder == "asc" {
+		sortOrder = "ASC"
+	}
+	query = query.Order(sortColumn + " " + sortOrder)
 
 	var streams []*models.Stream
 	result := query.Find(&streams)
@@ -140,37 +176,18 @@ func (r *GormStreamRepository) UpdateStatus(ctx context.Context, id uuid.UUID, s
 	return nil
 }
 
-func (r *GormStreamRepository) UpdateProcessing(ctx context.Context, id uuid.UUID, processing models.StreamProcessing) error {
+func (r *GormStreamRepository) UpdateProcessing(ctx context.Context, id uuid.UUID, processing models.StreamProcessingTask) error {
 	var stream *models.Stream
 	result := r.db.WithContext(ctx).First(&stream, id)
 	if result.Error != nil {
 		return fmt.Errorf("stream id not found")
 	}
-	if err := stream.UpdateProcessing(processing.Progress, processing.Steps, processing.Error, processing.TaskID); err != nil {
+	if err := stream.SetTaskProgress(processing.TaskType, processing.Progress, processing.Steps, processing.Error, processing.TaskID); err != nil {
 		return fmt.Errorf("update stream processing error: %w", err)
 	}
 	result = r.db.WithContext(ctx).Save(stream)
 	if result.Error != nil {
 		return fmt.Errorf("update stream precessing error: %w", result.Error)
-	}
-	return nil
-}
-
-func (r *GormStreamRepository) IncrementViews(ctx context.Context, id uuid.UUID) error {
-	var stream *models.Stream
-	if err := r.db.WithContext(ctx).First(&stream, id).Error; err != nil {
-		return fmt.Errorf("stream id not found")
-	}
-	analitics, err := stream.GetAnalitics()
-	if err != nil {
-		return fmt.Errorf("increment views error: %w", err)
-	}
-	analitics.Views += 1
-	if err := stream.SetAnalitics(analitics); err != nil {
-		return fmt.Errorf("increment views errror: %w", err)
-	}
-	if err := r.db.WithContext(ctx).Save(stream).Error; err != nil {
-		return fmt.Errorf("increment views errror: %w", err)
 	}
 	return nil
 }

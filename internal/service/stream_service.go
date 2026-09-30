@@ -5,8 +5,6 @@ package service
 import (
 	"context"
 	"io"
-	"net/url"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/internal/domain/models"
@@ -16,19 +14,23 @@ import (
 type StreamService interface {
 	CreateStream(ctx context.Context, req CreateStreamRequest) (*models.Stream, error)
 	GetStream(ctx context.Context, id uuid.UUID) (*models.Stream, error)
+	GetStreamStatus(ctx context.Context, id uuid.UUID) (*models.Stream, error)
 	UpdateStream(ctx context.Context, id uuid.UUID, req UpdateStreamRequest) (*models.Stream, error)
 	DeleteStream(ctx context.Context, id uuid.UUID) error
 
 	ListStreams(ctx context.Context, filter repository.StreamFilter) ([]*models.Stream, int64, error)
-	ListUserStreams(ctx context.Context, userID uuid.UUID) ([]*models.Stream, int64, error)
+	ListUserStreams(ctx context.Context, userID uuid.UUID, filter repository.StreamFilter) ([]*models.Stream, int64, error)
 
 	PublishStream(ctx context.Context, streamID uuid.UUID) error
 	UnpublishStream(ctx context.Context, streamID uuid.UUID) error
 	UpdateStreamStatus(ctx context.Context, streamID uuid.UUID, status models.StreamStatus) error
 
-	CanUserAccessStream(ctx context.Context, userID uuid.UUID, streamID uuid.UUID) (bool, error)
 	UploadVideo(ctx context.Context, req UploadVideoRequest) error
-	GenerateDownloadURL(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*GenerateDownloadURLInfo, error)
+
+	RequestStreamExport(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID, email string) (*StreamExportInfo, error)
+	GetStreamExport(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*StreamExportInfo, error)
+	OpenStreamDownload(ctx context.Context, streamID uuid.UUID, userUUID uuid.UUID) (*DownloadStreamInfo, error)
+	CompleteStreamExport(ctx context.Context, streamID uuid.UUID, size int64, exportErr string) error
 
 	UploadPart(ctx context.Context, req UploadPartRequest) (*models.MultipartPart, error)
 	StartStreamUpload(ctx context.Context, req StartUploadRequest) (*UploadInfo, error)
@@ -36,6 +38,9 @@ type StreamService interface {
 
 	UpdateStreamMetadata(ctx context.Context, req *UpdateStreamMetadataRequest) error
 	UpdateStreamProcessing(ctx context.Context, req *UpdateStreamProcessingRequest) error
+	ReprocessStream(ctx context.Context, streamID uuid.UUID) error
+	ProcessFacesStream(ctx context.Context, streamID uuid.UUID) error
+	ProcessFacesBatch(ctx context.Context, userID uuid.UUID, isAdmin bool, ids []uuid.UUID) (*FacesBatchResult, error)
 
 	GetFileByKey(ctx context.Context, req *GetFileByKeyRequest) (*GetFileByKeyResponse, error)
 }
@@ -53,7 +58,7 @@ type GetFileByKeyResponse struct {
 
 type UpdateStreamProcessingRequest struct {
 	StreamUUID uuid.UUID
-	Processing models.StreamProcessing
+	Processing models.StreamProcessingTask
 }
 
 type UpdateStreamMetadataRequest struct {
@@ -88,9 +93,28 @@ type PartInfo struct {
 	ETag       string
 }
 
-type GenerateDownloadURLInfo struct {
-	DownloadURL *url.URL
-	ExpiresAt   time.Time
+type StreamExportInfo struct {
+	StreamID uuid.UUID
+	Status   models.StreamExportStatus
+	Size     int64
+	Error    string
+	// Requested distinguishes "this stream was never exported" from "an export
+	// is running". Both report StatusPending, so without this flag the UI can
+	// only ever show a spinner and never offer to start one.
+	Requested bool
+	// FileName is the name the download will be saved under, built from the
+	// stream title. It is part of the state and not only of the download
+	// response because a save dialog has to be opened before the file itself is
+	// fetched: the browser grants one only to a click, so the client cannot ask
+	// the server for the name first and still get one.
+	FileName string
+}
+
+// DownloadStreamInfo is an open reader over the cached mp4. The HTTP layer
+// streams Content to the response, so nothing buffers the whole file in memory.
+type DownloadStreamInfo struct {
+	Content     io.ReadCloser
+	ContentType string
 	FileName    string
 	Size        int64
 }
@@ -108,6 +132,7 @@ type UpdateStreamRequest struct {
 	Description *string
 	Visibility  *models.StreamVisibility
 	Tags        *[]string
+	Rotation    *int
 }
 
 type UploadInfo struct {
