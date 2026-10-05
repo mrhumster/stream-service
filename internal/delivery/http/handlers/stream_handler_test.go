@@ -1759,6 +1759,30 @@ func TestStreamHandler_ListStreamOwner(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, w.Code, http.StatusBadRequest)
 	})
+
+	// An empty result must be an empty JSON array, never null: the web client
+	// maps over items inside an RTK Query reducer, and a null slice made the
+	// fulfilled update throw, leaving the request pending forever.
+	t.Run("empty result returns items as empty array not null", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().ListUserStreams(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, int64(0), nil)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?status=draft", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), `"items":[]`)
+		assert.NotContains(t, w.Body.String(), `"items":null`)
+
+		var resp struct {
+			Items  []response.StreamResponse `json:"items"`
+			Total  int64                     `json:"total"`
+			Offset int                       `json:"offset"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.NotNil(t, resp.Items)
+		assert.Len(t, resp.Items, 0)
+		assert.Equal(t, int64(0), resp.Total)
+	})
 }
 
 func TestStreamHandler_StreamUpload(t *testing.T) {

@@ -161,13 +161,15 @@ func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
 		return
 	}
-	var resp response.ListReponse[response.StreamResponse]
+	resp := response.ListReponse[response.StreamResponse]{
+		Items:  make([]response.StreamResponse, 0, len(streams)),
+		Total:  total,
+		Limit:  filter.Limit,
+		Offset: filter.Offset,
+	}
 	for _, s := range streams {
 		resp.Items = append(resp.Items, response.FromDomainModel(s))
 	}
-	resp.Total = total
-	resp.Limit = filter.Limit
-	resp.Offset = filter.Offset
 
 	c.JSON(http.StatusOK, resp)
 }
