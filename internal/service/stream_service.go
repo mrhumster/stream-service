@@ -39,6 +39,7 @@ type StreamService interface {
 	UpdateStreamMetadata(ctx context.Context, req *UpdateStreamMetadataRequest) error
 	UpdateStreamProcessing(ctx context.Context, req *UpdateStreamProcessingRequest) error
 	ReprocessStream(ctx context.Context, streamID uuid.UUID) error
+	ReprocessStreamBatch(ctx context.Context, userID uuid.UUID, isAdmin bool, ids []uuid.UUID) (*StreamBatchResult, error)
 	ForceStreamError(ctx context.Context, streamID, userID uuid.UUID, isAdmin bool) error
 	ForceStreamErrorBatch(ctx context.Context, userID uuid.UUID, isAdmin bool, ids []uuid.UUID) (*StreamBatchResult, error)
 	ProcessFacesStream(ctx context.Context, streamID uuid.UUID) error

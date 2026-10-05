@@ -121,8 +121,11 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 		authGroup.DELETE("/:id", middleware.Authorize(permissionClient, "stream", "delete"), streamHandler.DeleteStream)
 		authGroup.POST("/:id/publish", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.PublishStream)
 		authGroup.POST("/:id/unpublish", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.UnpublishStream)
-		authGroup.POST("/:id/reprocess", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ReprocessStream)
+		// Registered before the /:id routes: gin resolves the wildcard first and
+		// would read "reprocess" as a stream id.
+		authGroup.POST("/reprocess/batch", streamHandler.ReprocessStreamBatch)
 		authGroup.POST("/force-error/batch", streamHandler.ForceStreamErrorBatch)
+		authGroup.POST("/:id/reprocess", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ReprocessStream)
 		authGroup.POST("/:id/force-error", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ForceStreamError)
 		authGroup.POST("/faces/batch", streamHandler.ProcessFacesBatch)
 		authGroup.POST("/:id/faces", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ProcessFacesStream)

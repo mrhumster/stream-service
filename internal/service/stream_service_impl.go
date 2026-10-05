@@ -1090,7 +1090,12 @@ func (s *StreamServiceImpl) ReprocessStream(ctx context.Context, streamID uuid.U
 		}
 		return fmt.Errorf("error read stream from repository: %w", err)
 	}
+	return s.reprocessStreamTask(ctx, stream)
+}
 
+// reprocessStreamTask re-enqueues every task that carries an error. Both the
+// single and the batch entry point go through it so they cannot drift apart.
+func (s *StreamServiceImpl) reprocessStreamTask(ctx context.Context, stream *models.Stream) error {
 	tasks, err := stream.ProcessingTasks()
 	if err != nil {
 		return fmt.Errorf("error read processing tasks: %w", err)
@@ -1160,6 +1165,54 @@ func (s *StreamServiceImpl) ReprocessStream(ctx context.Context, streamID uuid.U
 	s.notifyUpdate(stream)
 	s.recordEvent(ctx, stream, "stream.reprocessed", nil)
 	return nil
+}
+
+// ReprocessStreamBatch is ReprocessStream for a selection of streams, reporting
+// per-id results. Ownership is checked here rather than left to middleware: the
+// single endpoint is guarded per resource, a batch carrying many ids cannot be.
+func (s *StreamServiceImpl) ReprocessStreamBatch(ctx context.Context, userID uuid.UUID, isAdmin bool, ids []uuid.UUID) (*StreamBatchResult, error) {
+	streams, err := s.repo.ReadMany(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("error read streams from repository: %w", err)
+	}
+
+	byID := make(map[uuid.UUID]*models.Stream, len(streams))
+	for _, st := range streams {
+		byID[st.ID] = st
+	}
+
+	result := &StreamBatchResult{}
+	for _, id := range ids {
+		stream, ok := byID[id]
+		if !ok {
+			result.Failed = append(result.Failed, StreamBatchFailure{StreamID: id, Reason: StreamBatchReasonNotFound})
+			continue
+		}
+		if stream.OwnerID != userID && !isAdmin {
+			result.Failed = append(result.Failed, StreamBatchFailure{StreamID: id, Reason: StreamBatchReasonForbidden})
+			continue
+		}
+		if err := s.reprocessStreamTask(ctx, stream); err != nil {
+			reason := StreamBatchReasonInternal
+			switch {
+			case errors.Is(err, ErrStreamNotInErrorState):
+				reason = StreamBatchReasonNotFailed
+			case errors.Is(err, ErrSourceFileMissing):
+				reason = StreamBatchReasonSourceMissing
+			case errors.Is(err, ErrStreamForbidden):
+				reason = StreamBatchReasonForbidden
+			case errors.Is(err, ErrStreamNotFound):
+				reason = StreamBatchReasonNotFound
+			default:
+				slog.Error("reprocess batch: stream failed",
+					"stream", id, "error", err.Error())
+			}
+			result.Failed = append(result.Failed, StreamBatchFailure{StreamID: id, Reason: reason})
+			continue
+		}
+		result.Processed = append(result.Processed, id)
+	}
+	return result, nil
 }
 
 // ForceStreamError moves a stream that is stuck in processing into the error
@@ -1368,6 +1421,11 @@ const (
 	StreamBatchReasonForbidden     = "forbidden"
 	StreamBatchReasonNotFound      = "not found"
 	StreamBatchReasonNotProcessing = "not processing"
+
+	// Reprocess-only reasons. A stream can refuse to reprocess while owning no
+	// processing task at all, so "not processing" cannot stand in for it.
+	StreamBatchReasonNotFailed     = "not failed"
+	StreamBatchReasonSourceMissing = "source removed"
 
 	// StreamBatchReasonInternal covers failures that are neither a refused
 	// request nor a state mismatch, e.g. the database write. It is reported

@@ -844,6 +844,44 @@ func (h *StreamHandler) ReprocessStream(c *gin.Context) {
 	c.JSON(http.StatusOK, nil)
 }
 
+// ReprocessStreamBatch is ReprocessStream for a selection of streams. Per-id
+// results let the owner retry the ones that refused without guessing which.
+// Only the owner's own streams (or any stream for an admin) are processed, and
+// the response is always 200 so a partially failing batch stays readable.
+func (h *StreamHandler) ReprocessStreamBatch(c *gin.Context) {
+	userUUID := c.MustGet("user").(uuid.UUID)
+
+	var req request.ReprocessBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
+		return
+	}
+	if err := req.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	res, err := h.service.ReprocessStreamBatch(c.Request.Context(), userUUID, h.isAdmin(c), req.IDs)
+	if err != nil {
+		slog.Error("reprocess stream batch failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		return
+	}
+
+	if n := len(res.Processed); n > 0 {
+		streammetrics.Lifecycle.WithLabelValues("reprocessed").Add(float64(n))
+	}
+	processed := make([]string, 0, len(res.Processed))
+	for _, id := range res.Processed {
+		processed = append(processed, id.String())
+	}
+	failed := make([]response.ReprocessBatchFailure, 0, len(res.Failed))
+	for _, f := range res.Failed {
+		failed = append(failed, response.ReprocessBatchFailure{StreamID: f.StreamID.String(), Reason: f.Reason})
+	}
+	c.JSON(http.StatusOK, response.NewReprocessBatchResponse(processed, failed))
+}
+
 // ForceStreamError moves a stuck stream into the error state so the owner can
 // hit Reprocess. Without it a stream whose worker died waits in processing
 // forever: only a worker reporting its own failure writes that state.

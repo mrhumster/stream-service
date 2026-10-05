@@ -294,6 +294,21 @@ func (mr *MockStreamServiceMockRecorder) ReprocessStream(ctx, streamID any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReprocessStream", reflect.TypeOf((*MockStreamService)(nil).ReprocessStream), ctx, streamID)
 }
 
+// ReprocessStreamBatch mocks base method.
+func (m *MockStreamService) ReprocessStreamBatch(ctx context.Context, userID uuid.UUID, isAdmin bool, ids []uuid.UUID) (*service.StreamBatchResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReprocessStreamBatch", ctx, userID, isAdmin, ids)
+	ret0, _ := ret[0].(*service.StreamBatchResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReprocessStreamBatch indicates an expected call of ReprocessStreamBatch.
+func (mr *MockStreamServiceMockRecorder) ReprocessStreamBatch(ctx, userID, isAdmin, ids any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReprocessStreamBatch", reflect.TypeOf((*MockStreamService)(nil).ReprocessStreamBatch), ctx, userID, isAdmin, ids)
+}
+
 // RequestStreamExport mocks base method.
 func (m *MockStreamService) RequestStreamExport(ctx context.Context, streamID, userUUID uuid.UUID, email string) (*service.StreamExportInfo, error) {
 	m.ctrl.T.Helper()

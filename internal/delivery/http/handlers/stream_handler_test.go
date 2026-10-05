@@ -2808,3 +2808,158 @@ func TestStreamHandler_ForceStreamErrorBatch(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
+
+func TestStreamHandler_ReprocessStreamBatch(t *testing.T) {
+	userID := uuid.New()
+	streamID := uuid.New()
+
+	setUser := func(claims *dto.AccessClaims) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			c.Set("user", userID)
+			if claims != nil {
+				c.Set("claims", claims)
+			}
+			c.Next()
+		}
+	}
+
+	t.Run("success returns processed and failed", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ReprocessStreamBatch(gomock.Any(), userID, false, gomock.Any()).
+			Return(&service.StreamBatchResult{
+				Processed: []uuid.UUID{streamID},
+				Failed: []service.StreamBatchFailure{
+					{StreamID: uuid.New(), Reason: service.StreamBatchReasonNotFailed},
+					{StreamID: uuid.New(), Reason: service.StreamBatchReasonSourceMissing},
+				},
+			}, nil)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/reprocess/batch", handlers.ReprocessStreamBatch)
+
+		req := httptest.NewRequest("POST", "/streams/reprocess/batch", strings.NewReader(`{"ids":["`+streamID.String()+`"]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp response.ReprocessBatchResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, []string{streamID.String()}, resp.Processed)
+		require.Len(t, resp.Failed, 2)
+		assert.Equal(t, "not failed", resp.Failed[0].Reason)
+		assert.Equal(t, "source removed", resp.Failed[1].Reason)
+	})
+
+	t.Run("admin flag reaches the service", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ReprocessStreamBatch(gomock.Any(), userID, true, gomock.Any()).
+			Return(&service.StreamBatchResult{Processed: []uuid.UUID{streamID}}, nil)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "admin"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/reprocess/batch", handlers.ReprocessStreamBatch)
+
+		req := httptest.NewRequest("POST", "/streams/reprocess/batch", strings.NewReader(`{"ids":["`+streamID.String()+`"]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("empty ids returns 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/reprocess/batch", handlers.ReprocessStreamBatch)
+
+		req := httptest.NewRequest("POST", "/streams/reprocess/batch", strings.NewReader(`{"ids":[]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("duplicate ids return 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		id := streamID.String()
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/reprocess/batch", handlers.ReprocessStreamBatch)
+
+		req := httptest.NewRequest("POST", "/streams/reprocess/batch", strings.NewReader(`{"ids":["`+id+`","`+id+`"]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("too many ids return 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		ids := make([]string, 0, request.MaxReprocessBatchSize+1)
+		for i := 0; i <= request.MaxReprocessBatchSize; i++ {
+			ids = append(ids, uuid.New().String())
+		}
+		body, err := json.Marshal(map[string][]string{"ids": ids})
+		require.NoError(t, err)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/reprocess/batch", handlers.ReprocessStreamBatch)
+
+		req := httptest.NewRequest("POST", "/streams/reprocess/batch", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("service error returns 500", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ReprocessStreamBatch(gomock.Any(), userID, false, gomock.Any()).
+			Return(nil, errors.New("boom"))
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/reprocess/batch", handlers.ReprocessStreamBatch)
+
+		req := httptest.NewRequest("POST", "/streams/reprocess/batch", strings.NewReader(`{"ids":["`+streamID.String()+`"]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
