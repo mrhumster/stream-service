@@ -39,10 +39,17 @@ func FromDomainModel(stream *models.Stream) StreamResponse {
 		FacesDetected: stream.FacesDetected,
 	}
 
+	// Tags, Metadata, Storage and Processing are JSONB columns that may hold
+	// SQL NULL. Unmarshalling into a bare var leaves the slice nil, and these
+	// fields have no omitempty, so a stream that never entered processing would
+	// be served as "processing": null and take any client reading .length down
+	// with it. Seed the slice and only replace it with what was decoded.
+	resp.Tags = []string{}
 	if len(stream.Tags) > 0 {
 		var tags []string
-		json.Unmarshal(stream.Tags, &tags)
-		resp.Tags = tags
+		if json.Unmarshal(stream.Tags, &tags) == nil && tags != nil {
+			resp.Tags = tags
+		}
 	}
 
 	if len(stream.Metadata) > 0 {
@@ -57,10 +64,12 @@ func FromDomainModel(stream *models.Stream) StreamResponse {
 		resp.Storage = storage
 	}
 
+	resp.Processing = []models.StreamProcessingTask{}
 	if len(stream.Processing) > 0 {
 		var processing []models.StreamProcessingTask
-		json.Unmarshal(stream.Processing, &processing)
-		resp.Processing = processing
+		if json.Unmarshal(stream.Processing, &processing) == nil && processing != nil {
+			resp.Processing = processing
+		}
 	}
 
 	return resp
