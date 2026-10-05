@@ -101,6 +101,35 @@ func (mr *MockStreamServiceMockRecorder) DeleteStream(ctx, id any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteStream", reflect.TypeOf((*MockStreamService)(nil).DeleteStream), ctx, id)
 }
 
+// ForceStreamError mocks base method.
+func (m *MockStreamService) ForceStreamError(ctx context.Context, streamID, userID uuid.UUID, isAdmin bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ForceStreamError", ctx, streamID, userID, isAdmin)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ForceStreamError indicates an expected call of ForceStreamError.
+func (mr *MockStreamServiceMockRecorder) ForceStreamError(ctx, streamID, userID, isAdmin any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ForceStreamError", reflect.TypeOf((*MockStreamService)(nil).ForceStreamError), ctx, streamID, userID, isAdmin)
+}
+
+// ForceStreamErrorBatch mocks base method.
+func (m *MockStreamService) ForceStreamErrorBatch(ctx context.Context, userID uuid.UUID, isAdmin bool, ids []uuid.UUID) (*service.StreamBatchResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ForceStreamErrorBatch", ctx, userID, isAdmin, ids)
+	ret0, _ := ret[0].(*service.StreamBatchResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ForceStreamErrorBatch indicates an expected call of ForceStreamErrorBatch.
+func (mr *MockStreamServiceMockRecorder) ForceStreamErrorBatch(ctx, userID, isAdmin, ids any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ForceStreamErrorBatch", reflect.TypeOf((*MockStreamService)(nil).ForceStreamErrorBatch), ctx, userID, isAdmin, ids)
+}
+
 // GetFileByKey mocks base method.
 func (m *MockStreamService) GetFileByKey(ctx context.Context, req *service.GetFileByKeyRequest) (*service.GetFileByKeyResponse, error) {
 	m.ctrl.T.Helper()

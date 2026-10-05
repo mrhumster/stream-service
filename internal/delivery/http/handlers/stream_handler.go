@@ -844,6 +844,71 @@ func (h *StreamHandler) ReprocessStream(c *gin.Context) {
 	c.JSON(http.StatusOK, nil)
 }
 
+// ForceStreamError moves a stuck stream into the error state so the owner can
+// hit Reprocess. Without it a stream whose worker died waits in processing
+// forever: only a worker reporting its own failure writes that state.
+func (h *StreamHandler) ForceStreamError(c *gin.Context) {
+	userUUID := c.MustGet("user").(uuid.UUID)
+	streamUUID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid stream id"))
+		return
+	}
+
+	if err := h.service.ForceStreamError(c.Request.Context(), streamUUID, userUUID, h.isAdmin(c)); err != nil {
+		switch {
+		case errors.Is(err, service.ErrStreamNotFound):
+			c.JSON(http.StatusNotFound, response.ErrorResponse("stream not found"))
+		case errors.Is(err, service.ErrStreamForbidden):
+			c.JSON(http.StatusForbidden, response.ErrorResponse(err.Error()))
+		case errors.Is(err, service.ErrStreamNotProcessing):
+			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		default:
+			slog.Error("force stream error failed", "error", err, "stream", streamUUID)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
+		return
+	}
+	streammetrics.Lifecycle.WithLabelValues("force_failed").Inc()
+	c.JSON(http.StatusOK, nil)
+}
+
+// ForceStreamErrorBatch is ForceStreamError for a selection of streams. Per-id
+// results let the owner retry the ones that refused without guessing which.
+func (h *StreamHandler) ForceStreamErrorBatch(c *gin.Context) {
+	userUUID := c.MustGet("user").(uuid.UUID)
+
+	var req request.ForceErrorBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse("invalid request body"))
+		return
+	}
+	if err := req.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		return
+	}
+
+	res, err := h.service.ForceStreamErrorBatch(c.Request.Context(), userUUID, h.isAdmin(c), req.IDs)
+	if err != nil {
+		slog.Error("force stream error batch failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		return
+	}
+
+	if n := len(res.Processed); n > 0 {
+		streammetrics.Lifecycle.WithLabelValues("force_failed").Add(float64(n))
+	}
+	processed := make([]string, 0, len(res.Processed))
+	for _, id := range res.Processed {
+		processed = append(processed, id.String())
+	}
+	failed := make([]response.ForceErrorBatchFailure, 0, len(res.Failed))
+	for _, f := range res.Failed {
+		failed = append(failed, response.ForceErrorBatchFailure{StreamID: f.StreamID.String(), Reason: f.Reason})
+	}
+	c.JSON(http.StatusOK, response.NewForceErrorBatchResponse(processed, failed))
+}
+
 func (h *StreamHandler) ProcessFacesStream(c *gin.Context) {
 	streamID := c.Param("id")
 	streamUUID, err := uuid.Parse(streamID)

@@ -5,7 +5,8 @@ Video upload, HLS serving, stream catalog and real-time updates for GoCast.
 ## Functionality
 
 - Stream CRUD + lifecycle: `draft → uploading → processing → ready → published`, `error`
-  (failed transcode), with **reprocess** from the error state;
+  (failed transcode), with **reprocess** from the error state and **force-error** to unstick a
+  stream whose worker died mid-processing;
 - Visibility model: `public` / `private` / `unlisted`;
 - Upload: simple single-request for small files, **multipart** (`init` → `part` → `complete`)
   for larger ones;
@@ -55,6 +56,8 @@ Routes are defined in `internal/delivery/http/routes/routes.go`.
 | `PUT` | `/stream/:id/upload/part` | bearer + `stream/write` | Upload a part (≥ 5 MB, except last) |
 | `POST` | `/stream/:id/upload/complete` | bearer + `stream/write` | Complete multipart → process |
 | `POST` | `/stream/:id/reprocess` | bearer + `stream/write` | Retry failed processing tasks (error → processing) |
+| `POST` | `/stream/:id/force-error` | bearer + `stream/write` | Mark a stuck processing stream as errored so reprocess becomes available (owner + admin) |
+| `POST` | `/stream/force-error/batch` | bearer | Same, for up to 100 streams at once (per-stream auth in the service, partial-success body) |
 | `POST` | `/stream/:id/faces` | bearer + `stream/write` | Enqueue face detection for one stream (HLS fallback if the source is gone) |
 | `POST` | `/stream/faces/batch` | bearer | Enqueue face detection for up to 100 streams at once (per-stream auth in the service, partial-success body) |
 | `GET` | `/stream/health` | – | Liveness/DB check |
@@ -83,6 +86,31 @@ persists the initial array in one save. Workers report progress per task via gRP
 `POST /stream/:id/reprocess` re-enqueues the failed/absent tasks (unique asynq IDs),
 clears their errors and resets the stream to `processing`. Mapping: `404` not found,
 `400` "stream is not in an error state", `409` source video missing in MinIO, else `500`.
+
+### Stuck streams (force-error)
+
+Only a worker reporting its own failure writes the `error` state, so a stream whose worker died
+waits in `processing` forever — with no button that helps. Reprocess is gated on *a task
+carrying an error*, not on the status, which is why the fix has to mark the tasks too.
+
+`POST /stream/:id/force-error` (owner or admin) therefore, for a `processing` stream:
+
+1. cancels every task that still has an `asynq` task id, before the error is written — a
+   worker that is still alive would otherwise report completion afterwards and flip the stream
+   back to `ready`;
+2. writes `processing was stopped manually by the owner` into **all** three task types
+   (`transcode`, `thumbnail`, `faces`) so reprocess re-runs the whole pipeline; if the array is
+   empty it is seeded with those three first;
+3. sets the status to `error` and notifies over WebSocket. Progress values are left alone.
+
+Cancellation failures are logged and ignored — a task id that no longer resolves is the common
+case here, not a problem. Mapping: `404` not found, `403` not the owner, `400` not processing,
+else `500`. Counted as `stream_lifecycle_total{event="force_failed"}`; no activity event.
+
+`POST /stream/force-error/batch` (`ForceErrorBatchRequest{ids}`, `MaxForceErrorBatchSize` = 100,
+duplicates and nil ids rejected) checks ownership per stream inside the service and always
+answers HTTP 200 with `{processed, failed:[{stream_id, reason}]}`; `reason` is one of
+`forbidden`, `not found`, `not processing`, `internal error`.
 
 ## Video metadata
 

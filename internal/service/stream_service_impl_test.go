@@ -3847,3 +3847,352 @@ func TestStreamServiceImpl_ProcessFacesBatch(t *testing.T) {
 		assert.Empty(t, res.Failed)
 	})
 }
+func ptr[T any](v T) *T { return &v }
+
+func TestStreamServiceImpl_ForceStreamError(t *testing.T) {
+	newSvc := func(ctrl *gomock.Controller) (*service.StreamServiceImpl, *repomock.MockStreamRepository, *mock.MockFileStorage, *queuemock.MockTaskDistributor) {
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil, srvCfg())
+		return svc, mockRepo, mockStor, mockQueue
+	}
+
+	// Pipeline order, so a stream built with three task ids carries the same
+	// task types a real upload would.
+	allTaskTypes := []string{models.TaskTypeTranscode, models.TaskTypeThumbnail, models.TaskTypeFaces}
+
+	processingStream := func(id, owner uuid.UUID, taskIDs ...string) *models.Stream {
+		st := &models.Stream{
+			BaseModel: models.BaseModel{ID: id},
+			Title:     "Stream",
+			OwnerID:   owner,
+			Status:    models.StatusProcessing,
+		}
+		tasks := make([]models.StreamProcessingTask, 0, len(taskIDs))
+		for i, tid := range taskIDs {
+			taskID := tid
+			tasks = append(tasks, models.StreamProcessingTask{
+				TaskType: allTaskTypes[i],
+				Progress: 40 + i,
+				TaskID:   &taskID,
+			})
+		}
+		require.NoError(t, st.SetInitialTasks(tasks))
+		return st
+	}
+
+	t.Run("marks every task as errored and moves the stream to error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, _, mockQueue := newSvc(ctrl)
+
+		ctx := context.Background()
+		ownerID := uuid.New()
+		streamID := uuid.New()
+		stream := processingStream(streamID, ownerID, "t1", "t2", "t3")
+
+		mockRepo.EXPECT().Read(ctx, streamID).Return(stream, nil)
+		// Tasks are cancelled before the error is recorded: a worker still
+		// alive would report completion afterwards and flip the stream back to
+		// ready, undoing what the owner asked for.
+		gomock.InOrder(
+			mockQueue.EXPECT().TerminateTask(ctx, "t1").Return(nil),
+			mockQueue.EXPECT().TerminateTask(ctx, "t2").Return(nil),
+			mockQueue.EXPECT().TerminateTask(ctx, "t3").Return(nil),
+		)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).
+			Do(func(_ context.Context, s *models.Stream) error {
+				assert.Equal(t, models.StatusError, s.Status)
+				tasks, err := s.ProcessingTasks()
+				require.NoError(t, err)
+				require.Len(t, tasks, 3)
+				for _, task := range tasks {
+					require.NotNil(t, task.Error, "task %s has no error", task.TaskType)
+					assert.Equal(t, service.ForceErrorMessage, *task.Error)
+				}
+				return nil
+			}).
+			Return(nil)
+
+		require.NoError(t, svc.ForceStreamError(ctx, streamID, ownerID, false))
+	})
+
+	// ReprocessStream is gated on "some task carries an error", not on
+	// status == error. This walks the round trip the owner actually performs,
+	// which is the only reason force-error is worth having: it has to make the
+	// existing Reprocess button work.
+	t.Run("force-error then reprocess re-enqueues the pipeline", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, mockStor, mockQueue := newSvc(ctrl)
+
+		ctx := context.Background()
+		ownerID := uuid.New()
+		streamID := uuid.New()
+		stream := processingStream(streamID, ownerID, "old-transcode")
+		storageInfo := &models.StreamStorage{
+			Provider: "minio",
+			Bucket:   "bucket",
+			Key:      "file-stuck",
+			Filename: "video.mp4",
+		}
+		require.NoError(t, stream.SetStorageInfo(storageInfo))
+
+		mockRepo.EXPECT().Read(ctx, streamID).Return(stream, nil)
+		mockQueue.EXPECT().TerminateTask(ctx, "old-transcode").Return(nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(nil)
+
+		require.NoError(t, svc.ForceStreamError(ctx, streamID, ownerID, false))
+		assert.Equal(t, models.StatusError, stream.Status)
+
+		// The Reprocess click, which returned "stream is not in an error
+		// state" before.
+		mockRepo.EXPECT().Read(ctx, streamID).Return(stream, nil)
+		mockStor.EXPECT().Exists(ctx, storageInfo.Key).Return(true, nil)
+		mockQueue.EXPECT().
+			ReprocessVideoTranscoding(ctx, streamID, storageInfo.Key).
+			Return(ptr("reprocess-transcode"), nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).
+			Do(func(_ context.Context, s *models.Stream) error {
+				assert.Equal(t, models.StatusProcessing, s.Status)
+				tasks, err := s.ProcessingTasks()
+				require.NoError(t, err)
+				require.NotEmpty(t, tasks)
+				for _, task := range tasks {
+					assert.Nil(t, task.Error, "task %s still carries an error", task.TaskType)
+				}
+				return nil
+			}).
+			Return(nil)
+
+		require.NoError(t, svc.ReprocessStream(ctx, streamID))
+	})
+
+	t.Run("termination failure does not abort the transition", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, _, mockQueue := newSvc(ctrl)
+
+		ctx := context.Background()
+		ownerID := uuid.New()
+		streamID := uuid.New()
+		stream := processingStream(streamID, ownerID, "gone")
+
+		mockRepo.EXPECT().Read(ctx, streamID).Return(stream, nil)
+		mockQueue.EXPECT().TerminateTask(ctx, "gone").Return(errors.New("task not found"))
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(nil)
+
+		require.NoError(t, svc.ForceStreamError(ctx, streamID, ownerID, false))
+	})
+
+	t.Run("empty task array seeds the whole pipeline", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, _, _ := newSvc(ctrl)
+
+		ctx := context.Background()
+		ownerID := uuid.New()
+		streamID := uuid.New()
+		stream := &models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			Title:     "Stream",
+			OwnerID:   ownerID,
+			Status:    models.StatusProcessing,
+		}
+		require.NoError(t, stream.SetInitialTasks([]models.StreamProcessingTask{}))
+
+		mockRepo.EXPECT().Read(ctx, streamID).Return(stream, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).
+			Do(func(_ context.Context, s *models.Stream) error {
+				tasks, err := s.ProcessingTasks()
+				require.NoError(t, err)
+				require.Len(t, tasks, 3)
+				got := []string{tasks[0].TaskType, tasks[1].TaskType, tasks[2].TaskType}
+				assert.ElementsMatch(t, allTaskTypes, got)
+				for _, task := range tasks {
+					require.NotNil(t, task.Error)
+				}
+				return nil
+			}).
+			Return(nil)
+
+		require.NoError(t, svc.ForceStreamError(ctx, streamID, ownerID, false))
+	})
+
+	t.Run("not processing is refused", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, _, _ := newSvc(ctrl)
+
+		ctx := context.Background()
+		ownerID := uuid.New()
+		streamID := uuid.New()
+		mockRepo.EXPECT().Read(ctx, streamID).Return(&models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   ownerID,
+			Status:    models.StatusReady,
+		}, nil)
+
+		require.ErrorIs(t, svc.ForceStreamError(ctx, streamID, ownerID, false), service.ErrStreamNotProcessing)
+	})
+
+	t.Run("already errored is refused", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, _, _ := newSvc(ctrl)
+
+		ctx := context.Background()
+		ownerID := uuid.New()
+		streamID := uuid.New()
+		mockRepo.EXPECT().Read(ctx, streamID).Return(&models.Stream{
+			BaseModel: models.BaseModel{ID: streamID},
+			OwnerID:   ownerID,
+			Status:    models.StatusError,
+		}, nil)
+
+		require.ErrorIs(t, svc.ForceStreamError(ctx, streamID, ownerID, false), service.ErrStreamNotProcessing)
+	})
+
+	t.Run("foreign stream is forbidden", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, _, _ := newSvc(ctrl)
+
+		ctx := context.Background()
+		streamID := uuid.New()
+		mockRepo.EXPECT().Read(ctx, streamID).Return(processingStream(streamID, uuid.New(), "t1"), nil)
+
+		require.ErrorIs(t, svc.ForceStreamError(ctx, streamID, uuid.New(), false), service.ErrStreamForbidden)
+	})
+
+	t.Run("admin may force a foreign stream", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, _, mockQueue := newSvc(ctrl)
+
+		ctx := context.Background()
+		streamID := uuid.New()
+		mockRepo.EXPECT().Read(ctx, streamID).Return(processingStream(streamID, uuid.New(), "t1"), nil)
+		mockQueue.EXPECT().TerminateTask(ctx, "t1").Return(nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(nil)
+
+		require.NoError(t, svc.ForceStreamError(ctx, streamID, uuid.New(), true))
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, _, _ := newSvc(ctrl)
+
+		ctx := context.Background()
+		streamID := uuid.New()
+		mockRepo.EXPECT().Read(ctx, streamID).Return(nil, gorm.ErrRecordNotFound)
+
+		require.ErrorIs(t, svc.ForceStreamError(ctx, streamID, uuid.New(), false), service.ErrStreamNotFound)
+	})
+}
+
+func TestStreamServiceImpl_ForceStreamErrorBatch(t *testing.T) {
+	newSvc := func(ctrl *gomock.Controller) (*service.StreamServiceImpl, *repomock.MockStreamRepository, *queuemock.MockTaskDistributor) {
+		mockRepo := repomock.NewMockStreamRepository(ctrl)
+		mockAuth := authmock.NewMockPermissionClient(ctrl)
+		mockStor := mock.NewMockFileStorage(ctrl)
+		mockQueue := queuemock.NewMockTaskDistributor(ctrl)
+		svc := service.NewStreamServiceImpl(mockRepo, mockAuth, mockStor, mockQueue, nil, srvCfg())
+		return svc, mockRepo, mockQueue
+	}
+
+	processingStream := func(id, owner uuid.UUID, taskID string) *models.Stream {
+		st := &models.Stream{
+			BaseModel: models.BaseModel{ID: id},
+			Title:     "Stream",
+			OwnerID:   owner,
+			Status:    models.StatusProcessing,
+		}
+		tid := taskID
+		require.NoError(t, st.SetInitialTasks([]models.StreamProcessingTask{{
+			TaskType: models.TaskTypeTranscode,
+			TaskID:   &tid,
+		}}))
+		return st
+	}
+
+	t.Run("mixed batch: processed + foreign + not processing + not found", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, mockQueue := newSvc(ctrl)
+
+		ctx := context.Background()
+		ownerID := uuid.New()
+		stuckID := uuid.New()
+		foreignID := uuid.New()
+		readyID := uuid.New()
+		missingID := uuid.New()
+
+		mockRepo.EXPECT().ReadMany(ctx, gomock.Any()).Return([]*models.Stream{
+			processingStream(stuckID, ownerID, "t-stuck"),
+			processingStream(foreignID, uuid.New(), "t-foreign"),
+			{BaseModel: models.BaseModel{ID: readyID}, OwnerID: ownerID, Status: models.StatusReady},
+		}, nil)
+		mockQueue.EXPECT().TerminateTask(ctx, "t-stuck").Return(nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(nil)
+
+		res, err := svc.ForceStreamErrorBatch(ctx, ownerID, false,
+			[]uuid.UUID{stuckID, foreignID, readyID, missingID})
+		require.NoError(t, err)
+		assert.Equal(t, []uuid.UUID{stuckID}, res.Processed)
+		require.Len(t, res.Failed, 3)
+
+		reasons := map[uuid.UUID]string{}
+		for _, f := range res.Failed {
+			reasons[f.StreamID] = f.Reason
+		}
+		assert.Equal(t, service.StreamBatchReasonForbidden, reasons[foreignID])
+		assert.Equal(t, service.StreamBatchReasonNotProcessing, reasons[readyID])
+		assert.Equal(t, service.StreamBatchReasonNotFound, reasons[missingID])
+	})
+
+	t.Run("admin processes a foreign stream", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, mockQueue := newSvc(ctrl)
+
+		ctx := context.Background()
+		foreignID := uuid.New()
+		mockRepo.EXPECT().ReadMany(ctx, gomock.Any()).
+			Return([]*models.Stream{processingStream(foreignID, uuid.New(), "t-admin")}, nil)
+		mockQueue.EXPECT().TerminateTask(ctx, "t-admin").Return(nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(nil)
+
+		res, err := svc.ForceStreamErrorBatch(ctx, uuid.New(), true, []uuid.UUID{foreignID})
+		require.NoError(t, err)
+		assert.Equal(t, []uuid.UUID{foreignID}, res.Processed)
+		assert.Empty(t, res.Failed)
+	})
+
+	t.Run("one failing stream does not fail the batch", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		svc, mockRepo, mockQueue := newSvc(ctrl)
+
+		ctx := context.Background()
+		ownerID := uuid.New()
+		firstID := uuid.New()
+		secondID := uuid.New()
+
+		mockRepo.EXPECT().ReadMany(ctx, gomock.Any()).Return([]*models.Stream{
+			processingStream(firstID, ownerID, "t1"),
+			processingStream(secondID, ownerID, "t2"),
+		}, nil)
+		mockQueue.EXPECT().TerminateTask(ctx, "t1").Return(errors.New("boom"))
+		mockQueue.EXPECT().TerminateTask(ctx, "t2").Return(nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(nil).Times(2)
+
+		res, err := svc.ForceStreamErrorBatch(ctx, ownerID, false, []uuid.UUID{firstID, secondID})
+		require.NoError(t, err)
+		assert.Equal(t, []uuid.UUID{firstID, secondID}, res.Processed)
+		assert.Empty(t, res.Failed)
+	})
+}

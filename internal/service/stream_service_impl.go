@@ -134,6 +134,7 @@ var (
 	ErrInvalidFileName       = errors.New("invalid file name")
 	ErrCannotWatch           = errors.New("stream is not available for watching")
 	ErrStreamNotInErrorState = errors.New("stream is not in an error state")
+	ErrStreamNotProcessing   = errors.New("stream is not processing")
 	ErrSourceFileMissing     = errors.New("source file is missing")
 	ErrCannotPublish         = errors.New("stream must be ready before publishing")
 	ErrCannotUnpublish       = errors.New("only published streams can be unpublished")
@@ -1161,6 +1162,128 @@ func (s *StreamServiceImpl) ReprocessStream(ctx context.Context, streamID uuid.U
 	return nil
 }
 
+// ForceStreamError moves a stream that is stuck in processing into the error
+// state so the owner can hit Reprocess. Nothing else can do this: the
+// transition into error is normally written by a worker reporting its own
+// failure, so a stream whose worker died waits in processing forever.
+func (s *StreamServiceImpl) ForceStreamError(ctx context.Context, streamID, userID uuid.UUID, isAdmin bool) error {
+	stream, err := s.repo.Read(ctx, streamID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrStreamNotFound
+		}
+		return fmt.Errorf("error read stream from repository: %w", err)
+	}
+	if stream.OwnerID != userID && !isAdmin {
+		return ErrStreamForbidden
+	}
+	return s.forceProcessingError(ctx, stream)
+}
+
+// ForceStreamErrorBatch is ForceStreamError for several streams at once,
+// reporting per-id results so the owner sees which ones refused.
+func (s *StreamServiceImpl) ForceStreamErrorBatch(ctx context.Context, userID uuid.UUID, isAdmin bool, ids []uuid.UUID) (*StreamBatchResult, error) {
+	streams, err := s.repo.ReadMany(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("error read streams from repository: %w", err)
+	}
+
+	byID := make(map[uuid.UUID]*models.Stream, len(streams))
+	for _, st := range streams {
+		byID[st.ID] = st
+	}
+
+	result := &StreamBatchResult{}
+	for _, id := range ids {
+		stream, ok := byID[id]
+		if !ok {
+			result.Failed = append(result.Failed, StreamBatchFailure{StreamID: id, Reason: StreamBatchReasonNotFound})
+			continue
+		}
+		if stream.OwnerID != userID && !isAdmin {
+			result.Failed = append(result.Failed, StreamBatchFailure{StreamID: id, Reason: StreamBatchReasonForbidden})
+			continue
+		}
+		if err := s.forceProcessingError(ctx, stream); err != nil {
+			reason := StreamBatchReasonInternal
+			switch {
+			case errors.Is(err, ErrStreamNotProcessing):
+				reason = StreamBatchReasonNotProcessing
+			case errors.Is(err, ErrStreamForbidden):
+				reason = StreamBatchReasonForbidden
+			case errors.Is(err, ErrStreamNotFound):
+				reason = StreamBatchReasonNotFound
+			default:
+				slog.Error("force error batch: stream failed",
+					"stream", id, "error", err.Error())
+			}
+			result.Failed = append(result.Failed, StreamBatchFailure{StreamID: id, Reason: reason})
+			continue
+		}
+		result.Processed = append(result.Processed, id)
+	}
+	return result, nil
+}
+
+// forceProcessingError does the actual transition. Both the single and the
+// batch entry point go through it so they cannot drift apart.
+//
+// The tasks are terminated before the error is recorded. A worker that is
+// still alive would otherwise report completion afterwards and flip the
+// stream back to ready, undoing what the owner just asked for. Termination
+// failures are logged and ignored: a task that no longer exists is the
+// common case here, not a problem.
+func (s *StreamServiceImpl) forceProcessingError(ctx context.Context, stream *models.Stream) error {
+	if stream.Status != models.StatusProcessing {
+		return ErrStreamNotProcessing
+	}
+
+	tasks, err := stream.ProcessingTasks()
+	if err != nil {
+		return fmt.Errorf("error read processing tasks: %w", err)
+	}
+
+	for _, t := range tasks {
+		if t.TaskID == nil {
+			continue
+		}
+		if err := s.queue.TerminateTask(ctx, *t.TaskID); err != nil {
+			slog.Warn("force error: terminate task failed",
+				"stream", stream.ID,
+				"task_id", *t.TaskID,
+				"error", err.Error())
+		}
+	}
+
+	// ReprocessStream only re-enqueues tasks that carry an error, so a stream
+	// with an empty processing array would stay stuck even after this call.
+	// Seed the full pipeline in that case: the point of the button is to run
+	// the whole thing again.
+	if len(tasks) == 0 {
+		tasks = []models.StreamProcessingTask{
+			{TaskType: models.TaskTypeTranscode},
+			{TaskType: models.TaskTypeThumbnail},
+			{TaskType: models.TaskTypeFaces},
+		}
+	}
+
+	for i := range tasks {
+		msg := ForceErrorMessage
+		tasks[i].Error = &msg
+	}
+
+	stream.Status = models.StatusError
+	if err := stream.SetInitialTasks(tasks); err != nil {
+		return fmt.Errorf("error set processing: %w", err)
+	}
+	if err := s.repo.Update(ctx, stream); err != nil {
+		return fmt.Errorf("error update stream in repo: %w", err)
+	}
+	slog.Info("stream forced to error", "stream", stream.ID, "tasks", len(tasks))
+	s.notifyUpdate(stream)
+	return nil
+}
+
 func (s *StreamServiceImpl) ProcessFacesStream(ctx context.Context, streamID uuid.UUID) error {
 	stream, err := s.repo.Read(ctx, streamID)
 	if err != nil {
@@ -1218,14 +1341,45 @@ func (s *StreamServiceImpl) enqueueFaces(ctx context.Context, stream *models.Str
 }
 
 type FacesBatchResult struct {
-	Processed []uuid.UUID              `json:"processed"`
-	Failed    []FacesBatchFailure      `json:"failed"`
+	Processed []uuid.UUID         `json:"processed"`
+	Failed    []FacesBatchFailure `json:"failed"`
 }
 
 type FacesBatchFailure struct {
 	StreamID uuid.UUID `json:"stream_id"`
 	Reason   string    `json:"reason"`
 }
+
+// StreamBatchResult reports per-stream outcomes of a batch mutation over
+// streams. It mirrors FacesBatchResult deliberately: both report which ids
+// were touched and why the rest were skipped, so the client renders partial
+// success the same way either way.
+type StreamBatchResult struct {
+	Processed []uuid.UUID          `json:"processed"`
+	Failed    []StreamBatchFailure `json:"failed"`
+}
+
+type StreamBatchFailure struct {
+	StreamID uuid.UUID `json:"stream_id"`
+	Reason   string    `json:"reason"`
+}
+
+const (
+	StreamBatchReasonForbidden     = "forbidden"
+	StreamBatchReasonNotFound      = "not found"
+	StreamBatchReasonNotProcessing = "not processing"
+
+	// StreamBatchReasonInternal covers failures that are neither a refused
+	// request nor a state mismatch, e.g. the database write. It is reported
+	// separately so an operator can tell "your request was declined" apart
+	// from "something on our side broke".
+	StreamBatchReasonInternal = "internal error"
+
+	// ForceErrorMessage is written into every processing task when the owner
+	// gives up on a stuck stream. It is what the owner reads on the stream
+	// page instead of a worker-reported failure, so it says who stopped it.
+	ForceErrorMessage = "processing was stopped manually by the owner"
+)
 
 const (
 	FacesBatchReasonForbidden = "forbidden"

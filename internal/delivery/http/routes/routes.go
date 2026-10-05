@@ -122,6 +122,8 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 		authGroup.POST("/:id/publish", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.PublishStream)
 		authGroup.POST("/:id/unpublish", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.UnpublishStream)
 		authGroup.POST("/:id/reprocess", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ReprocessStream)
+		authGroup.POST("/force-error/batch", streamHandler.ForceStreamErrorBatch)
+		authGroup.POST("/:id/force-error", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ForceStreamError)
 		authGroup.POST("/faces/batch", streamHandler.ProcessFacesBatch)
 		authGroup.POST("/:id/faces", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.ProcessFacesStream)
 		authGroup.GET("/:id/export", streamHandler.GetExport)

@@ -2524,3 +2524,287 @@ func TestStreamHandler_ProcessFacesBatch(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
+
+func TestStreamHandler_ForceStreamError(t *testing.T) {
+	userID := uuid.New()
+	streamID := uuid.New()
+
+	setUser := func(claims *dto.AccessClaims) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			c.Set("user", userID)
+			if claims != nil {
+				c.Set("claims", claims)
+			}
+			c.Next()
+		}
+	}
+
+	t.Run("success returns 200", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ForceStreamError(gomock.Any(), streamID, userID, false).Return(nil)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/force-error", handlers.ForceStreamError)
+
+		req := httptest.NewRequest("POST", "/streams/"+streamID.String()+"/force-error", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("admin flag is passed through", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ForceStreamError(gomock.Any(), streamID, userID, true).Return(nil)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "admin"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/force-error", handlers.ForceStreamError)
+
+		req := httptest.NewRequest("POST", "/streams/"+streamID.String()+"/force-error", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("invalid id returns 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/force-error", handlers.ForceStreamError)
+
+		req := httptest.NewRequest("POST", "/streams/not-a-uuid/force-error", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("not processing returns 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ForceStreamError(gomock.Any(), streamID, userID, false).
+			Return(service.ErrStreamNotProcessing)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/force-error", handlers.ForceStreamError)
+
+		req := httptest.NewRequest("POST", "/streams/"+streamID.String()+"/force-error", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("forbidden returns 403", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ForceStreamError(gomock.Any(), streamID, userID, false).
+			Return(service.ErrStreamForbidden)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/force-error", handlers.ForceStreamError)
+
+		req := httptest.NewRequest("POST", "/streams/"+streamID.String()+"/force-error", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("not found returns 404", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ForceStreamError(gomock.Any(), streamID, userID, false).
+			Return(service.ErrStreamNotFound)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/force-error", handlers.ForceStreamError)
+
+		req := httptest.NewRequest("POST", "/streams/"+streamID.String()+"/force-error", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("unexpected error returns 500", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ForceStreamError(gomock.Any(), streamID, userID, false).
+			Return(errors.New("boom"))
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/:id/force-error", handlers.ForceStreamError)
+
+		req := httptest.NewRequest("POST", "/streams/"+streamID.String()+"/force-error", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
+func TestStreamHandler_ForceStreamErrorBatch(t *testing.T) {
+	userID := uuid.New()
+	streamID := uuid.New()
+
+	setUser := func(claims *dto.AccessClaims) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			c.Set("user", userID)
+			if claims != nil {
+				c.Set("claims", claims)
+			}
+			c.Next()
+		}
+	}
+
+	t.Run("success returns processed and failed", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ForceStreamErrorBatch(gomock.Any(), userID, false, gomock.Any()).
+			Return(&service.StreamBatchResult{
+				Processed: []uuid.UUID{streamID},
+				Failed: []service.StreamBatchFailure{
+					{StreamID: uuid.New(), Reason: service.StreamBatchReasonNotProcessing},
+					{StreamID: uuid.New(), Reason: service.StreamBatchReasonInternal},
+				},
+			}, nil)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/force-error/batch", handlers.ForceStreamErrorBatch)
+
+		req := httptest.NewRequest("POST", "/streams/force-error/batch", strings.NewReader(`{"ids":["`+streamID.String()+`"]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp response.ForceErrorBatchResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, []string{streamID.String()}, resp.Processed)
+		require.Len(t, resp.Failed, 2)
+		assert.Equal(t, "not processing", resp.Failed[0].Reason)
+		assert.Equal(t, "internal error", resp.Failed[1].Reason)
+	})
+
+	t.Run("invalid body returns 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/force-error/batch", handlers.ForceStreamErrorBatch)
+
+		req := httptest.NewRequest("POST", "/streams/force-error/batch", strings.NewReader(`{"ids":[]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("duplicate ids return 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		id := streamID.String()
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/force-error/batch", handlers.ForceStreamErrorBatch)
+
+		req := httptest.NewRequest("POST", "/streams/force-error/batch", strings.NewReader(`{"ids":["`+id+`","`+id+`"]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("too many ids return 400", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+
+		ids := make([]string, 0, request.MaxForceErrorBatchSize+1)
+		for i := 0; i <= request.MaxForceErrorBatchSize; i++ {
+			ids = append(ids, uuid.New().String())
+		}
+		body, _ := json.Marshal(map[string][]string{"ids": ids})
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/force-error/batch", handlers.ForceStreamErrorBatch)
+
+		req := httptest.NewRequest("POST", "/streams/force-error/batch", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("service error returns 500", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockService := servicemock.NewMockStreamService(ctrl)
+		mockService.EXPECT().ForceStreamErrorBatch(gomock.Any(), userID, false, gomock.Any()).
+			Return(nil, errors.New("boom"))
+
+		router := setupTestRouter()
+		router.Use(setUser(&dto.AccessClaims{Role: "member"}))
+		handlers := NewStreamHandler(mockService, nil)
+		router.POST("/streams/force-error/batch", handlers.ForceStreamErrorBatch)
+
+		req := httptest.NewRequest("POST", "/streams/force-error/batch", strings.NewReader(`{"ids":["`+streamID.String()+`"]}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
