@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mrhumster/stream-service/gen/go/stream"
+	"github.com/mrhumster/stream-service/internal/domain/models"
 	"github.com/mrhumster/stream-service/internal/service"
 	servicemock "github.com/mrhumster/stream-service/internal/service/mock"
 	"github.com/stretchr/testify/require"
@@ -74,6 +75,34 @@ func TestProtoMetadataReqToService_InvalidUUID(t *testing.T) {
 
 	_, err := protoMetadataReqToService(req)
 	require.Error(t, err)
+}
+
+func TestProtoProcessingReqToService_EmptyStepsStayArray(t *testing.T) {
+	// proto3 has no presence for repeated fields, so a worker that reports
+	// progress without steps ("steps" absent on the wire, which is what the
+	// transcoder's final update does) decodes to a nil slice here. Running the
+	// request through the model writer is what proves the persisted JSON keeps
+	// an array: no steps is the normal case, "steps": null is not.
+	req := &stream.UpdateStreamProcessingRequest{
+		StreamUuid: "0f6bd119-9e4c-4f3b-9f4a-2a4f2b1e7c1e",
+		Task:       "transcode",
+		Progress:   100,
+	}
+
+	got, err := protoProcessingReqToService(req)
+	require.NoError(t, err)
+	require.Nil(t, got.Processing.Steps, "proto3 absent repeated field decodes to nil")
+
+	st := models.Stream{}
+	require.NoError(t, st.SetInitialTasks([]models.StreamProcessingTask{{TaskType: "transcode", Steps: []string{"Transcoding"}}}))
+	require.NoError(t, st.SetTaskProgress(got.Processing.TaskType, int(got.Processing.Progress), got.Processing.Steps, nil, nil))
+
+	require.NotContains(t, string(st.Processing), `"steps":null`)
+	tasks, err := st.ProcessingTasks()
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	require.NotNil(t, tasks[0].Steps)
+	require.Empty(t, tasks[0].Steps)
 }
 
 func TestParseOptionalString(t *testing.T) {

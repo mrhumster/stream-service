@@ -1147,7 +1147,7 @@ func (s *StreamServiceImpl) reprocessStreamTask(ctx context.Context, stream *mod
 		tasks[i].TaskID = taskID
 		tasks[i].Error = nil
 		tasks[i].Progress = 0
-		tasks[i].Steps = nil
+		tasks[i].Steps = []string{}
 		if taskID != nil {
 			slog.Info("reprocess enqueued", "stream", stream.ID, "task_type", tasks[i].TaskType, "task_id", *taskID)
 		}

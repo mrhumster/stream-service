@@ -4272,7 +4272,14 @@ func TestStreamServiceImpl_ReprocessStreamBatch(t *testing.T) {
 				require.NoError(t, err)
 				for _, task := range tasks {
 					assert.Nil(t, task.Error, "task %s still carries an error", task.TaskType)
+					// Reset tasks must persist an empty steps array: clients read
+					// task.steps.length on a stream that is being reprocessed, and
+					// "steps": null crashes the page until a worker reports back.
+					assert.NotNil(t, task.Steps, "task %s persisted null steps", task.TaskType)
+					assert.Empty(t, task.Steps, "task %s kept stale steps", task.TaskType)
 				}
+				assert.NotContains(t, string(s.Processing), `"steps":null`,
+					"persisted processing must not carry null steps")
 				return nil
 			}).
 			Return(nil)

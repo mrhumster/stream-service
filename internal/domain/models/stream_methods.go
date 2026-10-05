@@ -98,6 +98,7 @@ func (s *Stream) SetTaskProgress(taskType string, progress int, steps []string, 
 	if err != nil {
 		return err
 	}
+	steps = normalizeSteps(steps)
 
 	updated := false
 	for i := range tasks {
@@ -129,12 +130,27 @@ func (s *Stream) SetTaskProgress(taskType string, progress int, steps []string, 
 }
 
 func (s *Stream) SetInitialTasks(tasks []StreamProcessingTask) error {
+	for i := range tasks {
+		tasks[i].Steps = normalizeSteps(tasks[i].Steps)
+	}
 	data, err := json.Marshal(tasks)
 	if err != nil {
 		return err
 	}
 	s.Processing = datatypes.JSON(data)
 	return nil
+}
+
+// normalizeSteps keeps Steps a JSON array in every code path. Steps has no
+// omitempty, so a nil slice is persisted (and served) as `"steps": null`, which
+// breaks every client reading task.steps.length. Callers reach this method
+// from proto3 handlers, where an absent repeated field decodes to a nil slice,
+// so the guard has to live here rather than in each call site.
+func normalizeSteps(steps []string) []string {
+	if steps == nil {
+		return []string{}
+	}
+	return steps
 }
 
 func (s *Stream) IsPublic() bool {

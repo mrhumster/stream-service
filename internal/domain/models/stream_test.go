@@ -173,3 +173,65 @@ func TestStream_SetMetadata(t *testing.T) {
 		require.Equal(t, &meta, metaOut)
 	})
 }
+
+// Steps has no omitempty, so a nil slice is served as "steps": null and breaks
+// clients reading task.steps.length. Both writers must keep it an array: the
+// proto3 handler path (absent repeated field decodes to nil) and the reprocess
+// path (steps reset before the worker reports).
+func TestStream_TaskStepsAlwaysSerializeAsArray(t *testing.T) {
+	t.Run("SetTaskProgress with nil steps", func(t *testing.T) {
+		stream := Stream{Title: "nil steps"}
+		require.NoError(t, stream.SetInitialTasks([]StreamProcessingTask{{
+			TaskType: TaskTypeTranscode,
+		}}))
+
+		require.NoError(t, stream.SetTaskProgress(TaskTypeTranscode, 100, nil, nil, nil))
+
+		assert.NotContains(t, string(stream.Processing), `"steps":null`)
+		tasks, err := stream.ProcessingTasks()
+		require.NoError(t, err)
+		require.Len(t, tasks, 1)
+		assert.NotNil(t, tasks[0].Steps)
+		assert.Empty(t, tasks[0].Steps)
+	})
+
+	t.Run("SetTaskProgress appends a task with nil steps", func(t *testing.T) {
+		stream := Stream{Title: "new task nil steps"}
+		require.NoError(t, stream.SetInitialTasks([]StreamProcessingTask{}))
+
+		require.NoError(t, stream.SetTaskProgress(TaskTypeFaces, 0, nil, nil, nil))
+
+		assert.NotContains(t, string(stream.Processing), `"steps":null`)
+	})
+
+	t.Run("SetTaskProgress keeps real steps", func(t *testing.T) {
+		stream := Stream{Title: "real steps"}
+		require.NoError(t, stream.SetInitialTasks([]StreamProcessingTask{{
+			TaskType: TaskTypeTranscode,
+			Steps:    []string{"Transcoding"},
+		}}))
+
+		require.NoError(t, stream.SetTaskProgress(TaskTypeTranscode, 50, []string{"Transcoding", "Uploading"}, nil, nil))
+
+		tasks, err := stream.ProcessingTasks()
+		require.NoError(t, err)
+		require.Len(t, tasks, 1)
+		assert.Equal(t, []string{"Transcoding", "Uploading"}, tasks[0].Steps)
+	})
+
+	t.Run("SetInitialTasks with nil steps", func(t *testing.T) {
+		stream := Stream{Title: "initial nil steps"}
+		require.NoError(t, stream.SetInitialTasks([]StreamProcessingTask{
+			{TaskType: TaskTypeTranscode},
+			{TaskType: TaskTypeThumbnail, Steps: []string{"Generating thumbnail"}},
+		}))
+
+		assert.NotContains(t, string(stream.Processing), `"steps":null`)
+		tasks, err := stream.ProcessingTasks()
+		require.NoError(t, err)
+		require.Len(t, tasks, 2)
+		assert.NotNil(t, tasks[0].Steps)
+		assert.Empty(t, tasks[0].Steps)
+		assert.Equal(t, []string{"Generating thumbnail"}, tasks[1].Steps)
+	})
+}
