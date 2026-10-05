@@ -5,8 +5,8 @@ Video upload, HLS serving, stream catalog and real-time updates for GoCast.
 ## Functionality
 
 - Stream CRUD + lifecycle: `draft → uploading → processing → ready → published`, `error`
-  (failed transcode), with **reprocess** from the error state and **force-error** to unstick a
-  stream whose worker died mid-processing;
+  (failed transcode), with **reprocess** from the error state (single or in bulk) and
+  **force-error** to unstick a stream whose worker died mid-processing;
 - Visibility model: `public` / `private` / `unlisted`;
 - Upload: simple single-request for small files, **multipart** (`init` → `part` → `complete`)
   for larger ones;
@@ -58,6 +58,7 @@ Routes are defined in `internal/delivery/http/routes/routes.go`.
 | `POST` | `/stream/:id/reprocess` | bearer + `stream/write` | Retry failed processing tasks (error → processing) |
 | `POST` | `/stream/:id/force-error` | bearer + `stream/write` | Mark a stuck processing stream as errored so reprocess becomes available (owner + admin) |
 | `POST` | `/stream/force-error/batch` | bearer | Same, for up to 100 streams at once (per-stream auth in the service, partial-success body) |
+| `POST` | `/stream/reprocess/batch` | bearer | Retry failed processing for up to 100 streams at once (per-stream auth in the service, partial-success body) |
 | `POST` | `/stream/:id/faces` | bearer + `stream/write` | Enqueue face detection for one stream (HLS fallback if the source is gone) |
 | `POST` | `/stream/faces/batch` | bearer | Enqueue face detection for up to 100 streams at once (per-stream auth in the service, partial-success body) |
 | `GET` | `/stream/health` | – | Liveness/DB check |
@@ -111,6 +112,31 @@ else `500`. Counted as `stream_lifecycle_total{event="force_failed"}`; no activi
 duplicates and nil ids rejected) checks ownership per stream inside the service and always
 answers HTTP 200 with `{processed, failed:[{stream_id, reason}]}`; `reason` is one of
 `forbidden`, `not found`, `not processing`, `internal error`.
+
+### Bulk reprocess
+
+`POST /stream/reprocess/batch` is the other end of that round trip: the selection can be sent back
+to the workers without opening each stream page. It takes the same request shape
+(`ReprocessBatchRequest{ids}`, `MaxReprocessBatchSize` = 100) and reuses the transition itself —
+`ReprocessStream` and the batch both go through `reprocessStreamTask`, the way the single and
+batch force-error paths share `forceProcessingError`.
+
+Two details worth knowing:
+
+- **Ownership is checked in the service.** The single endpoint is guarded by per-resource
+  `authorize(permissionClient, "stream", "write")`, which a batch carrying many ids cannot be, so
+  the batch compares `stream.OwnerID` against the caller itself (admin excepted).
+- **The reasons are reprocess-specific.** `not processing` cannot stand in for a missing failure,
+  so there are two extra ones: `not failed` (no task carries an error, e.g. the stream was already
+  restarted) and `source removed` (the original was deleted after an earlier successful pass —
+  the single endpoint reports that as a 409 and the owner has to upload again).
+
+`400` on a malformed body, otherwise always HTTP 200 with `{processed, failed:[{stream_id,
+reason}]}`; `reason` is one of `forbidden`, `not found`, `not failed`, `source removed`,
+`internal error`. Counted as `stream_lifecycle_total{event="reprocessed"}`, one per stream, and
+each processed stream writes its own `stream.reprocessed` activity event. The route is registered
+**before** `/:id/reprocess`, otherwise gin resolves the wildcard first and reads `reprocess` as a
+stream id.
 
 ## Video metadata
 
