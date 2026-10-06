@@ -13,7 +13,10 @@ import (
 )
 
 const (
-	transcodeTaskTimeout = 120 * time.Minute
+	// transcodeTaskTimeout must cover the chunked pipeline: sources over
+	// 6 GB encode as sequential ~30-minute chunks at roughly realtime x4,
+	// so a 2-hour video can legitimately run for hours.
+	transcodeTaskTimeout = 360 * time.Minute
 	thumbnailTaskTimeout = 15 * time.Minute
 	facesTaskTimeout     = 60 * time.Minute
 )
