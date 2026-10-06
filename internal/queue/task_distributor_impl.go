@@ -6,9 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+)
+
+const (
+	transcodeTaskTimeout = 120 * time.Minute
+	thumbnailTaskTimeout = 15 * time.Minute
+	facesTaskTimeout     = 60 * time.Minute
 )
 
 type AsyncDistributor struct {
@@ -28,7 +35,7 @@ func (d *AsyncDistributor) DistributeVideoTranscoding(ctx context.Context, strea
 	if err != nil {
 		return nil, err
 	}
-	info, err := d.client.EnqueueContext(ctx, task, asynq.MaxRetry(1))
+	info, err := d.client.EnqueueContext(ctx, task, asynq.MaxRetry(1), asynq.Timeout(transcodeTaskTimeout))
 	if err != nil {
 		if errors.Is(err, asynq.ErrDuplicateTask) {
 			slog.Warn("task already equeued", "uuid", streamUUID)
@@ -45,7 +52,7 @@ func (d *AsyncDistributor) ReprocessVideoTranscoding(ctx context.Context, stream
 	if err != nil {
 		return nil, err
 	}
-	info, err := d.client.EnqueueContext(ctx, task, asynq.MaxRetry(1))
+	info, err := d.client.EnqueueContext(ctx, task, asynq.MaxRetry(1), asynq.Timeout(transcodeTaskTimeout))
 	if err != nil {
 		return nil, fmt.Errorf("failed to enqueue re-process task: %w", err)
 	}
@@ -85,6 +92,7 @@ func (d *AsyncDistributor) DistributeThumbsnailProcessor(ctx context.Context, st
 		ctx,
 		task,
 		asynq.MaxRetry(1),
+		asynq.Timeout(thumbnailTaskTimeout),
 		asynq.Queue("thumbsnails"),
 	)
 	if err != nil {
@@ -107,6 +115,7 @@ func (d *AsyncDistributor) ReprocessThumbsnailProcessor(ctx context.Context, str
 		ctx,
 		task,
 		asynq.MaxRetry(1),
+		asynq.Timeout(thumbnailTaskTimeout),
 		asynq.Queue("thumbsnails"),
 	)
 	if err != nil {
@@ -136,6 +145,7 @@ func (d *AsyncDistributor) DistributeFacesProcessor(ctx context.Context, streamU
 		ctx,
 		task,
 		asynq.MaxRetry(1),
+		asynq.Timeout(facesTaskTimeout),
 		asynq.Queue("faces"),
 	)
 	if err != nil {
@@ -158,6 +168,7 @@ func (d *AsyncDistributor) ReprocessFacesProcessor(ctx context.Context, streamUU
 		ctx,
 		task,
 		asynq.MaxRetry(1),
+		asynq.Timeout(facesTaskTimeout),
 		asynq.Queue("faces"),
 	)
 	if err != nil {
