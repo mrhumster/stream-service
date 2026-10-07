@@ -186,7 +186,7 @@ func validStreamStatus(status string) bool {
 
 func validStreamSort(sortBy string) bool {
 	switch sortBy {
-	case "created_at", "title", "status":
+	case "created_at", "title", "status", "recorded_at":
 		return true
 	default:
 		return false
@@ -236,6 +236,22 @@ func (h *StreamHandler) ListStreamPublic(c *gin.Context) {
 			return
 		}
 		filter.Search = q
+	}
+
+	if sortBy := c.Query("sort"); sortBy != "" {
+		if !validStreamSort(sortBy) {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid sort query"))
+			return
+		}
+		filter.SortBy = sortBy
+	}
+
+	if sortOrder := c.Query("order"); sortOrder != "" {
+		if sortOrder != "asc" && sortOrder != "desc" {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse("not valid order query"))
+			return
+		}
+		filter.SortOrder = sortOrder
 	}
 
 	streams, total, err := h.service.ListStreams(c.Request.Context(), filter)

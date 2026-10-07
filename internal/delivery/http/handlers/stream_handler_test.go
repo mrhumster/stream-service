@@ -1553,6 +1553,37 @@ func TestStreamHandler_ListStreamPublic(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, w.Code, http.StatusInternalServerError)
 	})
+
+	t.Run("propagates sort and order", func(t *testing.T) {
+		router, mockService, _ := setupTest()
+		mockService.EXPECT().ListStreams(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, filter repository.StreamFilter) ([]*models.Stream, int64, error) {
+				require.Equal(t, "recorded_at", filter.SortBy)
+				require.Equal(t, "asc", filter.SortOrder)
+				return []*models.Stream{}, int64(0), nil
+			},
+		)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?sort=recorded_at&order=asc", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusOK)
+	})
+
+	t.Run("rejects invalid sort", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?sort=owner_id", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
+	})
+
+	t.Run("rejects invalid order", func(t *testing.T) {
+		router, _, _ := setupTest()
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/streams?order=sideways", nil)
+		router.ServeHTTP(w, req)
+		require.Equal(t, w.Code, http.StatusBadRequest)
+	})
 }
 
 func TestStreamHandler_ListStreamOwner(t *testing.T) {

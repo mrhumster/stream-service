@@ -17,6 +17,10 @@ var sortColumns = map[string]string{
 	"created_at": "created_at",
 	"title":      "title",
 	"status":     "status",
+	// The recording timestamp lives inside the metadata jsonb. Videos that do
+	// not carry a creation_time fall back to the row's own created_at, so they
+	// keep a stable, meaningful position in either direction.
+	"recorded_at": "COALESCE(CAST(NULLIF(metadata->>'recorded_at', '') AS timestamptz), created_at)",
 }
 
 func sortColumnFor(sortBy string) string {

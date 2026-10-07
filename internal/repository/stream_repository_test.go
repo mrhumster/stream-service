@@ -193,6 +193,54 @@ func TestGormStreamRepository_List(t *testing.T) {
 	require.Len(t, streams, 2)
 }
 
+func TestGormStreamRepository_ListSortRecordedAt(t *testing.T) {
+	db, gorm, mock := setupMockDB(t)
+	defer db.Close()
+	repo := repository.NewGormStreamRepository(gorm)
+	ctx := context.Background()
+
+	visibility := models.VisibilityPublic
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "streams" WHERE visibility = $1 AND "streams"."deleted_at" IS NULL`)).
+		WithArgs(visibility).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	mock.ExpectQuery(`SELECT \* FROM "streams" WHERE visibility = \$1 AND "streams"\."deleted_at" IS NULL ORDER BY COALESCE\(CAST\(NULLIF\(metadata->>'recorded_at', ''\) AS timestamptz\), created_at\) DESC`).
+		WithArgs(visibility, 50).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	filter := repository.StreamFilter{
+		Visibility: &visibility,
+		SortBy:     "recorded_at",
+		SortOrder:  "desc",
+	}
+	streams, total, err := repo.List(ctx, filter)
+	require.NoError(t, err)
+	assert.Len(t, streams, 0)
+	assert.Equal(t, int64(1), total)
+}
+
+func TestGormStreamRepository_ListSortRecordedAtAsc(t *testing.T) {
+	db, gorm, mock := setupMockDB(t)
+	defer db.Close()
+	repo := repository.NewGormStreamRepository(gorm)
+	ctx := context.Background()
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "streams" WHERE "streams"."deleted_at" IS NULL`)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	mock.ExpectQuery(`SELECT \* FROM "streams" WHERE "streams"\."deleted_at" IS NULL ORDER BY COALESCE\(CAST\(NULLIF\(metadata->>'recorded_at', ''\) AS timestamptz\), created_at\) ASC`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	filter := repository.StreamFilter{
+		SortBy:    "recorded_at",
+		SortOrder: "asc",
+	}
+	streams, _, err := repo.List(ctx, filter)
+	require.NoError(t, err)
+	assert.Len(t, streams, 0)
+}
+
 func TestGormStreamRepository_ListWithLimit(t *testing.T) {
 	db := setupTestDB(t)
 	repo := repository.NewGormStreamRepository(db)
