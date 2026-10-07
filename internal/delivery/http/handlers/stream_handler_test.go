@@ -1816,7 +1816,7 @@ func TestStreamHandler_StreamUpload(t *testing.T) {
 			StreamID: streamID,
 		}
 
-		serviceReq := body.ToService(streamID, userID)
+		serviceReq, _ := body.ToService(streamID, userID)
 
 		mockService.EXPECT().
 			StartStreamUpload(
@@ -1870,7 +1870,7 @@ func TestStreamHandler_StreamUpload(t *testing.T) {
 			ContentType: "video/mp4",
 		}
 
-		serviceReq := body.ToService(streamID, userID)
+		serviceReq, _ := body.ToService(streamID, userID)
 
 		mockService.EXPECT().
 			StartStreamUpload(

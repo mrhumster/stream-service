@@ -15,13 +15,19 @@ type StartUploadRequest struct {
 	ContentType string `json:"content_type" binding:"required"`
 }
 
-func (s *StartUploadRequest) ToService(streamID, userID uuid.UUID) *service.StartUploadRequest {
+func (s *StartUploadRequest) ToService(streamID, userID uuid.UUID) (*service.StartUploadRequest, error) {
+	if !isValidVideoContentType(s.ContentType) {
+		return nil, NewValidationError("invalid video format. allowed: mp4, webm, mov, avi, mkv, 3gp, 3g2")
+	}
+	if !isValidVideoExtension(s.FileName) {
+		return nil, NewValidationError("invalid file extension. allowed: mp4, webm, mov, avi, mkv, 3gp, 3g2")
+	}
 	return &service.StartUploadRequest{
 		StreamID:  streamID,
 		UserID:    userID,
 		Filename:  s.FileName,
 		TotalSize: s.TotalSize,
-	}
+	}, nil
 }
 
 type UploadPartRequest struct {

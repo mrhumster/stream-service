@@ -601,7 +601,16 @@ func (h *StreamHandler) InitUpload(c *gin.Context) {
 
 	userUUID := c.MustGet("user").(uuid.UUID)
 
-	serviceReq := req.ToService(streamUUID, userUUID)
+	serviceReq, err := req.ToService(streamUUID, userUUID)
+	if err != nil {
+		if _, ok := err.(*request.ValidationError); ok {
+			c.JSON(http.StatusBadRequest, response.ErrorResponse(err.Error()))
+		} else {
+			slog.Error("start upload request conversion failed", "error", err)
+			c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		}
+		return
+	}
 
 	uploadInfo, err := h.service.StartStreamUpload(
 		c.Request.Context(),
