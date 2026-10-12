@@ -42,7 +42,7 @@ test:
 	go test -v ./...
 
 logs:
-	kubectl -n $(NAMESPACE) logs -f -l app=stream
+	kubectl -n $(NAMESPACE) logs -f -l app=$(DEPLOYMENT)
 
 init-minio:
 	@MINIO_POD=$$(kubectl get pods -n go-app -l app=minio -o jsonpath='{.items[0].metadata.name}'); \
