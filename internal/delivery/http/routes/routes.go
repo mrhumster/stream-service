@@ -116,6 +116,7 @@ func SetupRoutes(db *gorm.DB, mode config.ServerMode, permissionClient auth.Perm
 	authGroup.Use(middleware.Authorize(permissionClient, "stream", "read"))
 	{
 		authGroup.GET("/own", streamHandler.ListStreamOwner)
+		authGroup.GET("/own/duplicates", streamHandler.ListDuplicateStreams)
 		authGroup.POST("/", streamHandler.CreateStream)
 		authGroup.PATCH("/:id", middleware.Authorize(permissionClient, "stream", "write"), streamHandler.UpdateStream)
 		authGroup.DELETE("/:id", middleware.Authorize(permissionClient, "stream", "delete"), streamHandler.DeleteStream)

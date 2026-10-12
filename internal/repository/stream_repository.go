@@ -18,6 +18,7 @@ type StreamRepository interface {
 
 	List(ctx context.Context, filter StreamFilter) ([]*models.Stream, int64, error)
 	GetByOwner(ctx context.Context, ownerID uuid.UUID) ([]*models.Stream, error)
+	ListDuplicateStreams(ctx context.Context, ownerID uuid.UUID) ([]*models.Stream, error)
 	Exists(ctx context.Context, id uuid.UUID) bool
 
 	UpdateStatus(ctx context.Context, id uuid.UUID, status models.StreamStatus) error

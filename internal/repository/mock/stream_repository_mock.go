@@ -116,6 +116,21 @@ func (mr *MockStreamRepositoryMockRecorder) List(ctx, filter any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockStreamRepository)(nil).List), ctx, filter)
 }
 
+// ListDuplicateStreams mocks base method.
+func (m *MockStreamRepository) ListDuplicateStreams(ctx context.Context, ownerID uuid.UUID) ([]*models.Stream, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListDuplicateStreams", ctx, ownerID)
+	ret0, _ := ret[0].([]*models.Stream)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListDuplicateStreams indicates an expected call of ListDuplicateStreams.
+func (mr *MockStreamRepositoryMockRecorder) ListDuplicateStreams(ctx, ownerID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDuplicateStreams", reflect.TypeOf((*MockStreamRepository)(nil).ListDuplicateStreams), ctx, ownerID)
+}
+
 // Read mocks base method.
 func (m *MockStreamRepository) Read(ctx context.Context, id uuid.UUID) (*models.Stream, error) {
 	m.ctrl.T.Helper()

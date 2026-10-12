@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
@@ -287,6 +288,28 @@ func TestGormStreamRepository_GetByOwner(t *testing.T) {
 	streams, err := repo.GetByOwner(ctx, ownerID)
 	require.NoError(t, err)
 	require.Len(t, streams, 2)
+}
+
+func TestGormStreamRepository_ListDuplicateStreams(t *testing.T) {
+	db, gormDB, mock := setupMockDB(t)
+	defer db.Close()
+	repo := repository.NewGormStreamRepository(gormDB)
+	ctx := context.Background()
+	ownerID := uuid.New()
+	streamID := uuid.New()
+
+	rows := sqlmock.NewRows([]string{"id", "title", "status", "owner_id", "created_at"}).
+		AddRow(streamID.String(), "clip", "ready", ownerID.String(), time.Now())
+
+	mock.ExpectQuery(`(?s)SELECT \* FROM streams s.*HAVING count\(\*\) > 1`).
+		WithArgs(ownerID, ownerID).
+		WillReturnRows(rows)
+
+	streams, err := repo.ListDuplicateStreams(ctx, ownerID)
+	require.NoError(t, err)
+	require.Len(t, streams, 1)
+	assert.Equal(t, streamID, streams[0].ID)
+	assert.Equal(t, "clip", streams[0].Title)
 }
 
 func TestGormStreamRepository_Exists(t *testing.T) {

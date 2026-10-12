@@ -78,6 +78,55 @@ func (r *GormStreamRepository) Update(ctx context.Context, stream *models.Stream
 	return nil
 }
 
+// duplicateStreamsSQL returns every stream of an owner that belongs to a
+// duplicate group. A group is a set of streams sharing (a) the same
+// case-insensitive, trimmed title and (b) the same duration+size pair. Streams
+// that were not transcoded yet carry no metadata; they share one empty key, so
+// two unprocessed copies of the same title still group together ("both-missing
+// counts as a match"), while a stream that does carry metadata only groups with
+// one whose duration+size are byte-equal. Only real stream columns are
+// selected so the result maps straight onto models.Stream. Rows arrive grouped
+// by title and, inside a group, newest first.
+const duplicateStreamsSQL = `
+SELECT * FROM streams s
+WHERE s.owner_id = ? AND s.deleted_at IS NULL
+  AND (lower(btrim(s.title)),
+       CASE
+         WHEN NULLIF(s.metadata->>'duration', '') IS NOT NULL
+          AND NULLIF(s.metadata->>'size', '') IS NOT NULL
+         THEN (s.metadata->>'duration') || ':' || (s.metadata->>'size')
+         ELSE ''
+       END)
+      IN (
+        SELECT lower(btrim(title)),
+               CASE
+                 WHEN NULLIF(metadata->>'duration', '') IS NOT NULL
+                  AND NULLIF(metadata->>'size', '') IS NOT NULL
+                 THEN (metadata->>'duration') || ':' || (metadata->>'size')
+                 ELSE ''
+               END
+        FROM streams
+        WHERE owner_id = ? AND deleted_at IS NULL
+        GROUP BY 1, 2
+        HAVING count(*) > 1
+      )
+ORDER BY lower(btrim(s.title)),
+         CASE
+           WHEN NULLIF(s.metadata->>'duration', '') IS NOT NULL
+            AND NULLIF(s.metadata->>'size', '') IS NOT NULL
+           THEN (s.metadata->>'duration') || ':' || (s.metadata->>'size')
+           ELSE ''
+         END,
+         s.created_at DESC`
+
+func (r *GormStreamRepository) ListDuplicateStreams(ctx context.Context, ownerID uuid.UUID) ([]*models.Stream, error) {
+	streams := make([]*models.Stream, 0)
+	if err := r.db.WithContext(ctx).Raw(duplicateStreamsSQL, ownerID, ownerID).Scan(&streams).Error; err != nil {
+		return nil, fmt.Errorf("failed to list duplicate streams: %w", err)
+	}
+	return streams, nil
+}
+
 func (r *GormStreamRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	var existing *models.Stream
 	if err := r.db.WithContext(ctx).First(&existing, "id = ?", id).Error; err != nil {

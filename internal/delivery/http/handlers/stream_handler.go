@@ -174,6 +174,42 @@ func (h *StreamHandler) ListStreamOwner(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+func (h *StreamHandler) ListDuplicateStreams(c *gin.Context) {
+	userUUID := c.MustGet("user").(uuid.UUID)
+
+	groups, err := h.service.FindDuplicateStreams(c.Request.Context(), userUUID)
+	if err != nil {
+		slog.Error("find duplicate streams failed", "error", err)
+		c.JSON(http.StatusInternalServerError, response.ErrorResponse("internal server error"))
+		return
+	}
+
+	resp := response.DuplicatesResponse{
+		Groups: make([]response.DuplicateGroupResponse, 0, len(groups)),
+	}
+	for _, g := range groups {
+		group := response.DuplicateGroupResponse{
+			Title:     g.Title,
+			Count:     len(g.Deletable) + len(g.Protected) + 1,
+			Keep:      response.FromDomainModel(g.Keep),
+			Deletable: make([]response.StreamResponse, 0, len(g.Deletable)),
+			Protected: make([]response.StreamResponse, 0, len(g.Protected)),
+		}
+		for _, s := range g.Deletable {
+			group.Deletable = append(group.Deletable, response.FromDomainModel(s))
+		}
+		for _, s := range g.Protected {
+			group.Protected = append(group.Protected, response.FromDomainModel(s))
+		}
+		resp.Groups = append(resp.Groups, group)
+		resp.TotalDeletable += len(group.Deletable)
+		resp.TotalProtected += len(group.Protected)
+	}
+	resp.TotalGroups = len(resp.Groups)
+
+	c.JSON(http.StatusOK, resp)
+}
+
 func validStreamStatus(status string) bool {
 	switch models.StreamStatus(status) {
 	case models.StatusDraft, models.StatusProcessing, models.StatusReady,

@@ -368,6 +368,98 @@ func (s *StreamServiceImpl) ListUserStreams(ctx context.Context, userID uuid.UUI
 	return s.ListStreams(ctx, filter)
 }
 
+// StreamDuplicateGroup is one set of same-name, same-duration/size streams.
+// Members are ordered newest first. Keep is the newest usable member (ready or
+// published), or the newest member overall when none is usable; Deletable holds
+// the remaining non-published members and Protected the published ones, which
+// are never deleted automatically.
+type StreamDuplicateGroup struct {
+	Title     string
+	Keep      *models.Stream
+	Deletable []*models.Stream
+	Protected []*models.Stream
+
+	members []*models.Stream
+}
+
+func (g *StreamDuplicateGroup) finalize() {
+	keep := g.members[0]
+	for _, m := range g.members {
+		if isUsableStatus(m.Status) {
+			keep = m
+			break
+		}
+	}
+	g.Keep = keep
+	g.Deletable = make([]*models.Stream, 0, len(g.members)-1)
+	g.Protected = make([]*models.Stream, 0)
+	for _, m := range g.members {
+		if m.ID == keep.ID {
+			continue
+		}
+		if m.Status == models.StatusPublished {
+			g.Protected = append(g.Protected, m)
+		} else {
+			g.Deletable = append(g.Deletable, m)
+		}
+	}
+}
+
+func isUsableStatus(status models.StreamStatus) bool {
+	return status == models.StatusReady || status == models.StatusPublished
+}
+
+// streamMetadataKey mirrors the SQL grouping key: it is empty when the stream
+// carries no metadata (unprocessed streams share one bucket) and otherwise
+// duration:size using the raw jsonb text, so it stays byte-equal to the value
+// the repository already grouped on.
+func streamMetadataKey(stream *models.Stream) string {
+	if len(stream.Metadata) == 0 {
+		return ""
+	}
+	var md map[string]json.RawMessage
+	if err := json.Unmarshal(stream.Metadata, &md); err != nil {
+		return ""
+	}
+	duration, okD := md["duration"]
+	size, okS := md["size"]
+	if !okD || !okS {
+		return ""
+	}
+	d := strings.Trim(string(duration), `"`)
+	sz := strings.Trim(string(size), `"`)
+	if d == "" || sz == "" || d == "null" || sz == "null" {
+		return ""
+	}
+	return d + ":" + sz
+}
+
+func (s *StreamServiceImpl) FindDuplicateStreams(ctx context.Context, userID uuid.UUID) ([]StreamDuplicateGroup, error) {
+	streams, err := s.repo.ListDuplicateStreams(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find duplicate streams: %w", err)
+	}
+
+	groups := make([]StreamDuplicateGroup, 0)
+	var current *StreamDuplicateGroup
+	var currentTitle, currentKey string
+	for i, stream := range streams {
+		title := strings.ToLower(strings.TrimSpace(stream.Title))
+		key := streamMetadataKey(stream)
+		if i == 0 || title != currentTitle || key != currentKey {
+			groups = append(groups, StreamDuplicateGroup{Title: stream.Title})
+			current = &groups[len(groups)-1]
+			currentTitle = title
+			currentKey = key
+		}
+		current.members = append(current.members, stream)
+	}
+	for i := range groups {
+		groups[i].finalize()
+	}
+	return groups, nil
+}
+
 func (s *StreamServiceImpl) PublishStream(ctx context.Context, streamID uuid.UUID) error {
 	stream, err := s.repo.Read(ctx, streamID)
 	if err != nil {

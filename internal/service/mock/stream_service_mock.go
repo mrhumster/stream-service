@@ -101,6 +101,21 @@ func (mr *MockStreamServiceMockRecorder) DeleteStream(ctx, id any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteStream", reflect.TypeOf((*MockStreamService)(nil).DeleteStream), ctx, id)
 }
 
+// FindDuplicateStreams mocks base method.
+func (m *MockStreamService) FindDuplicateStreams(ctx context.Context, userID uuid.UUID) ([]service.StreamDuplicateGroup, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindDuplicateStreams", ctx, userID)
+	ret0, _ := ret[0].([]service.StreamDuplicateGroup)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindDuplicateStreams indicates an expected call of FindDuplicateStreams.
+func (mr *MockStreamServiceMockRecorder) FindDuplicateStreams(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindDuplicateStreams", reflect.TypeOf((*MockStreamService)(nil).FindDuplicateStreams), ctx, userID)
+}
+
 // ForceStreamError mocks base method.
 func (m *MockStreamService) ForceStreamError(ctx context.Context, streamID, userID uuid.UUID, isAdmin bool) error {
 	m.ctrl.T.Helper()
